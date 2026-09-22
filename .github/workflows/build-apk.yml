@@ -20,10 +20,8 @@ jobs:
       - name: Extract Android project
         run: unzip -q -o HiNote_Studio_Tablet_Android_Source.zip
 
-      - name: Patch Chaquopy Android import
-        run: |
-          sed -i 's/import com\.chaquo\.python\.AndroidPlatform;/import com.chaquo.python.android.AndroidPlatform;/'             HiNote_Studio_Tablet_Android/app/src/main/java/com/hinote/studio/MainActivity.java
-          grep -n "AndroidPlatform" HiNote_Studio_Tablet_Android/app/src/main/java/com/hinote/studio/MainActivity.java
+      - name: Apply V20 performance and formatting patch
+        run: python .github/scripts/apply_v20_patch.py
 
       - uses: actions/setup-java@v5
         with:
@@ -45,6 +43,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK
+          name: HiNote-Studio-Tablet-APK-V20
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
