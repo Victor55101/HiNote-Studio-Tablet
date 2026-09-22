@@ -1,0 +1,40 @@
+name: Build HiNote Studio APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify source bundle
+        run: |
+          test -f HiNote_Studio_Tablet_Android_Source.zip || {
+            echo "Falta HiNote_Studio_Tablet_Android_Source.zip en la raíz del repositorio."
+            exit 1
+          }
+
+      - name: Extract Android project
+        run: unzip -q HiNote_Studio_Tablet_Android_Source.zip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build debug APK
+        working-directory: HiNote_Studio_Tablet_Android
+        run: gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-Studio-Tablet-APK
+          path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/debug/app-debug.apk
