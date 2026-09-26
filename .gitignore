@@ -6,6 +6,7 @@ local.properties
 node_modules/
 test-results/
 HiNote_Studio_Tablet_Android/app/src/main/assets/glyphs_v11.json
+HiNote_Studio_Tablet_Android/app/src/main/assets/glyphs_v22.json
 HiNote_Studio_Tablet_Android/app/src/main/assets/template_1stroke.hinote
 HiNote_Studio_Tablet_Android/test_mobile_export.hinote
 HiNote_Studio_Tablet_Android/.github/

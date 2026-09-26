@@ -1,9 +1,12 @@
-# HiNote Studio Tablet — V21
+# HiNote Studio Tablet — V22
 
 App Android para convertir texto a los trazos de la calibración personal incluida y exportarlo a Huawei Notes como `.hinote`.
 
 ## Cambios
 
+- Logo de HiNote Studio integrado en el editor y como icono normal/adaptativo de Android.
+- Asociaciones de calibración reconstruidas desde la nota original para `+`, `=`, `%`, `#`, `@`, `•`, `*` y `<`. Las listas de viñetas y asteriscos usan ahora sus trazos manuscritos correctos.
+- El guion bajo `_` conserva su glifo propio y su posición inferior; ya no se superpone visualmente con el guion `-`.
 - Composición por páginas en un hilo de trabajo. Los trazos se guardan en archivos temporales; el editor recibe un resumen y carga una sola imagen por página.
 - Cancelación de trabajos obsoletos, progreso visible y eliminación de temporales. La exportación utiliza los mismos trazos que la vista previa.
 - Escritura y validación de los archivos binarios y ZIP por bloques. Se evita conservar todos los puntos y miniaturas del documento en memoria.
@@ -11,7 +14,7 @@ App Android para convertir texto a los trazos de la calibración personal inclui
 - Editor con pegado multilínea, selección persistente, formato absoluto, listas que conservan el formato, deshacer/rehacer y borrador local.
 - Notas largas: actualizar manualmente; el modo automático funciona hasta 12000 caracteres. Límites de protección: 200000 caracteres, 10000 párrafos, 20000 segmentos, 500 páginas y 512 MiB de archivos de composición.
 
-La app utiliza el banco `glyphs_v11.json` existente. Este repositorio no contiene una pantalla para importar una nueva calibración. La fidelidad depende de los caracteres y variantes de ese banco.
+La compilación genera `glyphs_v22.json` combinando el banco original archivado con las asociaciones corregidas de la nota de calibración. Este repositorio no contiene una pantalla para importar una nueva calibración. La fidelidad depende de los caracteres y variantes de ese banco.
 
 ## Compilar
 

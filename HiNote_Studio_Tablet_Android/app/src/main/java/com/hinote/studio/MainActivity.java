@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
                 File[] old=getCacheDir().listFiles();
                 if(old!=null)for(File f:old)if(f.getName().startsWith("hinote-session-")&&!f.equals(sessionDir)&&System.currentTimeMillis()-f.lastModified()>86400000L)deleteTree(f);
                 synchronized(ENGINE_START_LOCK){
-                    copyEngineAsset("glyphs_v11.json");copyEngineAsset("template_1stroke.hinote");
+                    copyEngineAsset("glyphs_v22.json");copyEngineAsset("template_1stroke.hinote");
                     if(!Python.isStarted())Python.start(new AndroidPlatform(getApplicationContext()));
                 }
                 backend=Python.getInstance().getModule("mobile_backend");

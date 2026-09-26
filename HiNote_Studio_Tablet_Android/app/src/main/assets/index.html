@@ -13,7 +13,7 @@
 *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);height:100vh;overflow:hidden}
 button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-rows:auto auto 1fr}
 .topbar{display:flex;align-items:center;gap:14px;padding:12px 18px;background:#0f172a;color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.18);z-index:5}
-.logo{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#6675ff,#4cc7b5);display:grid;place-items:center;font-weight:800;font-size:20px}
+.logo{width:40px;height:40px;border-radius:14px;background:#f8fafc;display:grid;place-items:center;padding:3px;overflow:hidden;flex:0 0 auto}.logo img{display:block;width:100%;height:100%;object-fit:contain}
 .titlewrap{min-width:0;flex:1}.titlewrap h1{font-size:18px;margin:0}.titlewrap small{color:#b8c4d9}.topactions{display:flex;gap:8px}
 .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 13px;border-radius:10px;font-weight:650;cursor:pointer}.btn.primary{background:var(--accent2);color:#fff;border-color:transparent}.btn.accent{background:var(--accent);color:#fff;border-color:transparent}.btn.ghost{background:transparent;color:#fff;border-color:#40506c}.btn:disabled{opacity:.45}
 .toolbar{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);overflow:auto;white-space:nowrap}
@@ -34,7 +34,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="logo">H</div>
+    <div class="logo"><img src="logo-hinote.svg" alt=""></div>
     <div class="titlewrap"><h1>HiNote Studio</h1><small>Edición directa en tu MatePad · exporta a Huawei Notes</small></div>
     <div class="topactions"><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar</button><button class="btn primary" id="exportBtn">Guardar .hinote</button></div>
   </div>

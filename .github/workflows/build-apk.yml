@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V21
+name: Build HiNote Studio Tablet V22
 on:
   workflow_dispatch:
   push:
@@ -52,5 +52,5 @@ jobs:
         working-directory: HiNote_Studio_Tablet_Android
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V21
+          name: HiNote-Studio-Tablet-APK-V22
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/debug/app-debug.apk

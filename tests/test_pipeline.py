@@ -16,6 +16,7 @@ from pencilengine_reader import read_pencilengine, validate_pencilengine
 from validate_hinote import validate_hinote, loadj
 
 ASSETS = APP / 'assets'
+GLYPHS = ASSETS / 'glyphs_v22.json'
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
@@ -42,9 +43,9 @@ class PipelineTests(unittest.TestCase):
 
     def test_streaming_matches_full_composition(self):
         doc = document_from_plain_text(('1. Una nota de prueba.\n    a) Mi letra personal.\n') * 12)
-        full = compose_document(ASSETS / 'glyphs_v11.json', doc)
+        full = compose_document(GLYPHS, doc)
         pages = []
-        streamed = compose_document(ASSETS / 'glyphs_v11.json', doc, page_sink=lambda p: pages.append(copy.deepcopy(p)))
+        streamed = compose_document(GLYPHS, doc, page_sink=lambda p: pages.append(copy.deepcopy(p)))
         self.assertEqual(pages, full['pages'])
         self.assertEqual(streamed['page_count'], full['page_count'])
         self.assertEqual(streamed['pages'], [])
@@ -84,7 +85,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_oversize_word_wraps_within_page(self):
         doc = document_from_plain_text('W' * 1800, scale=2)
-        composed = compose_document(ASSETS / 'glyphs_v11.json', doc)
+        composed = compose_document(GLYPHS, doc)
         self.assertGreater(composed['page_count'], 1)
         self.assertEqual(sum(len(p['placements']) for p in composed['pages']), 1800)
         for page in composed['pages']:
@@ -107,8 +108,45 @@ class PipelineTests(unittest.TestCase):
         result = self.compose('🙂' * 1000)
         self.assertEqual(len(result['warnings']), 1)
 
+    def test_corrected_symbols_lists_and_underscore_height(self):
+        library = json.loads(GLYPHS.read_text(encoding='utf-8'))
+        expected_rows = {'+': 5, '=': 6, '%': 7, '#': 8, '@': 9, '•': 10, '*': 11, '<': 12}
+        for char, row in expected_rows.items():
+            variants = library['glyphs'][char]
+            self.assertEqual(len(variants), 8)
+            self.assertEqual([variant['source_col'] for variant in variants], list(range(8)))
+            self.assertTrue(all(variant['source_page'] == 8 and variant['source_row'] == row for variant in variants))
+
+        self.assertEqual(
+            [[stroke['source_stroke'] for stroke in variant['strokes']] for variant in library['glyphs']['•']],
+            [[169 + column] for column in range(8)],
+        )
+        self.assertEqual(
+            [[stroke['source_stroke'] for stroke in variant['strokes']] for variant in library['glyphs']['*']],
+            [[177 + column, 185 + column, 193 + 2 * column, 194 + 2 * column] for column in range(8)],
+        )
+        self.assertEqual(library['placement_y_offsets']['-'], -16.0)
+        self.assertEqual(library['placement_y_offsets']['_'], -7.25)
+        self.assertTrue(all(variant['source_row'] == 10 for variant in library['glyphs']['-']))
+        self.assertTrue(all(variant['source_row'] == 11 for variant in library['glyphs']['_']))
+
+        plain = compose_document(GLYPHS, document_from_plain_text('_-Hola'), jitter_x=0)
+        underscore, dash = plain['pages'][0]['placements'][:2]
+        self.assertEqual((underscore['char'], dash['char']), ('_', '-'))
+        self.assertAlmostEqual(underscore['baseline_y'] - dash['baseline_y'], 8.75)
+
+        listed = compose_document(GLYPHS, document_from_plain_text('• Viñeta\n* Asterisco'), jitter_x=0)
+        page = listed['pages'][0]
+        self.assertEqual([p['char'] for p in page['placements'] if p['char'] in {'•', '*'}], ['•', '*'])
+        bullet_sources = [s['source_stroke'] for s in page['strokes'] if s['char'] == '•']
+        star_sources = [s['source_stroke'] for s in page['strokes'] if s['char'] == '*']
+        self.assertEqual(len(bullet_sources), 1)
+        self.assertIn(bullet_sources[0], range(169, 177))
+        self.assertEqual(len(star_sources), 4)
+        self.assertTrue(set(star_sources).issubset(set(range(177, 209))))
+
     def test_limits_invalid_settings_and_snapshot_paths(self):
-        with self.assertRaises(ValueError): compose_document(ASSETS / 'glyphs_v11.json', document_from_plain_text('a\n' * 60), max_pages=1)
+        with self.assertRaises(ValueError): compose_document(GLYPHS, document_from_plain_text('a\n' * 60), max_pages=1)
         with self.assertRaises(ValueError): self.compose('Hola', settings={'word_spacing': float('inf')})
         with self.assertRaises(ValueError): backend.snapshot_info(str(self.cache), '../escape')
         with self.assertRaises(ValueError): self.compose('a' * 200001)
