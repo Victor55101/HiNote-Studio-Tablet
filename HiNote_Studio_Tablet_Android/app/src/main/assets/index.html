@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://hinote.local">
+<link rel="stylesheet" href="images.css">
 <title>HiNote Studio Tablet</title>
 <style>
 :root{
@@ -42,7 +43,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   <div class="toolbar">
     <button class="btn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button><button class="btn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
     <div class="segment" id="tabs">
-      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button>
+      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button>
     </div>
     <div class="toolpanel" id="panelText">
       <div class="field"><label>Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected>100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
@@ -63,6 +64,18 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <label class="field"><input id="autoPreview" type="checkbox" checked> Vista automática</label>
       <label class="field"><input id="gridCheck" type="checkbox" checked> Cuadrícula</label>
     </div>
+    <div class="toolpanel hidden" id="panelImages">
+      <button class="btn accent" id="insertImage">＋ Insertar imagen</button>
+      <button class="btn" id="imageNewPage">＋ Página</button>
+      <button class="btn" id="replaceImage" data-image-action>Reemplazar</button>
+      <button class="btn" id="cropImage" data-image-action>Recortar</button>
+      <button class="btn" id="rotateImageLeft" data-image-action aria-label="Girar imagen 90 grados a la izquierda">↶ 90°</button>
+      <button class="btn" id="rotateImageRight" data-image-action aria-label="Girar imagen 90 grados a la derecha">↷ 90°</button>
+      <div class="field"><label for="imageAngle">Ángulo</label><input id="imageAngle" type="number" min="0" max="359.9" step="1" value="0" data-image-action><span>°</span></div>
+      <div class="field"><label for="imagePage">Página</label><input id="imagePage" type="number" min="1" max="500" value="1" data-image-action></div>
+      <button class="btn" id="imageBack" data-image-action>Atrás</button><button class="btn" id="imageFront" data-image-action>Adelante</button>
+      <button class="btn" id="duplicateImage" data-image-action>Duplicar</button><button class="btn danger" id="deleteImage" data-image-action>Eliminar</button>
+    </div>
   </div>
 
   <div class="workspace">
@@ -76,7 +89,8 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
     <section class="card previewCard">
       <div class="cardhead"><h2>Previsualización</h2><span class="badge" id="pageBadge">Página 1/1</span></div>
       <details class="warningPanel hidden" id="warningPanel"><summary id="warningCount"></summary><ul id="warnings"></ul></details>
-      <div class="previewWrap" id="previewWrap"><div class="canvasShell" id="canvasShell"><canvas id="previewCanvas" width="1000" height="1600"></canvas></div></div>
+      <div id="imageHint" class="imageHint hidden" role="status">Toca una imagen para editarla. Arrastra para mover; usa dos dedos para cambiar tamaño y girar. La escritura siempre queda encima.</div>
+      <div class="previewWrap" id="previewWrap"><div class="canvasShell" id="canvasShell"><canvas id="gridCanvas" width="675" height="1080"></canvas><div id="imageLayer"></div><canvas id="previewCanvas" width="675" height="1080"></canvas><div id="imageSelection" class="hidden"><button data-handle="nw" aria-label="Redimensionar esquina superior izquierda"></button><button data-handle="ne" aria-label="Redimensionar esquina superior derecha"></button><button data-handle="sw" aria-label="Redimensionar esquina inferior izquierda"></button><button data-handle="se" aria-label="Redimensionar esquina inferior derecha"></button><button data-handle="rotate" aria-label="Girar imagen">↻</button></div></div></div>
       <div class="previewFooter">
         <button class="btn" id="prevPage">←</button>
         <div class="center"><button class="btn" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="btn" id="zoomIn">+</button><button class="btn" id="zoomFit">Ajustar</button><span class="status" id="status" role="status" aria-live="polite">Listo</span></div>
@@ -86,6 +100,16 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div id="cropDialog" class="cropDialog hidden" role="dialog" aria-modal="true" aria-labelledby="cropTitle">
+  <div class="cropCard"><h2 id="cropTitle">Recortar imagen</h2><p>Arrastra dentro de la imagen para seleccionar el recorte. También puedes ajustar sus bordes con los controles.</p>
+    <div id="cropStage"><img id="cropSource" alt="Imagen original para recortar" draggable="false"><div id="cropBox"></div></div>
+    <div class="cropSliders">
+      <label>Izquierda <input id="cropLeft" type="range" min="0" max="99" step="1"></label><label>Arriba <input id="cropTop" type="range" min="0" max="99" step="1"></label>
+      <label>Derecha <input id="cropRight" type="range" min="1" max="100" step="1"></label><label>Abajo <input id="cropBottom" type="range" min="1" max="100" step="1"></label>
+    </div><div class="cropActions"><button class="btn" id="resetCrop">Restablecer</button><button class="btn" id="cancelCrop">Cancelar</button><button class="btn primary" id="applyCrop">Aplicar recorte</button></div>
+  </div>
+</div>
+<script src="images.js"></script>
 <script src="editor.js"></script>
 </body>
 </html>

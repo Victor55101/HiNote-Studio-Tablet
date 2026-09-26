@@ -80,11 +80,13 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
     work = cache / snapshot_id
     work.mkdir(parents=True)
     cache_bytes = 0
+    stroke_counts = []
     try:
         def sink(page):
             nonlocal cache_bytes
             _check(token)
             index = page["page_number"] - 1
+            stroke_counts.append(len(page["strokes"]))
             if shutil.disk_usage(cache).free < 20 * 1024 * 1024:
                 raise ValueError("No queda suficiente espacio para generar la nota.")
             binary = work / f"page-{index}.bin"
@@ -99,11 +101,12 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             if cache_bytes > MAX_CACHE_BYTES:
                 raise ValueError("La nota supera el espacio de trabajo de 512 MB; divídela en varias notas.")
             if token is not None: token.onProgress(index + 1)
-        result = compose_document(project / "glyphs_v22.json", doc, **settings,
+        result = compose_document(project / "glyphs_v23.json", doc, **settings,
             page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES)
         _check(token)
         manifest = {"snapshot": snapshot_id, "page_count": result["page_count"],
-                    "layout": result["layout"], "warnings": result["warnings"]}
+                    "layout": result["layout"], "warnings": result["warnings"],
+                    "stroke_counts": stroke_counts}
         (work / "manifest.json").write_text(_json(manifest), encoding="utf-8")
         return _json(manifest)
     except BaseException:
@@ -119,16 +122,25 @@ def page_preview(cache_dir, snapshot_id, index):
     if not 0 <= index < info["page_count"]: raise ValueError("Página fuera de rango")
     return (work/f"page-{index}.json").read_text(encoding="utf-8")
 
-def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_path, token=None):
+def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_path, token=None,
+                    images_json="[]", page_count=0, export_dir=None):
     work = _snapshot(cache_dir, snapshot_id)
-    count = json.loads((work/"manifest.json").read_text(encoding="utf-8"))["page_count"]
-    bins = [work/f"page-{i}.bin" for i in range(count)]
-    thumbs = [work/f"page-{i}-{'grid' if grid else 'plain'}.jpg" for i in range(count)]
+    info = json.loads((work/"manifest.json").read_text(encoding="utf-8"))
+    count = max(info["page_count"], int(page_count))
+    if not 1 <= count <= MAX_PAGES:
+        raise ValueError("El documento supera 500 páginas")
+    rendered = Path(export_dir) if export_dir else work
+    if export_dir and rendered.resolve().parent != Path(cache_dir).resolve():
+        raise ValueError("Directorio de exportación inválido")
+    images = _export_images(images_json, count, rendered)
+    stroke_counts = info.get("stroke_counts", [1] * info["page_count"])
+    bins = [work/f"page-{i}.bin" if i < info["page_count"] and stroke_counts[i] else None for i in range(count)]
+    thumbs = [rendered/f"page-{i}-{'grid' if grid else 'plain'}.jpg" for i in range(count)]
     output = Path(output_path)
     try:
         _check(token)
         build_hinote_multi(Path(project_dir)/"template_1stroke.hinote", bins, output,
-            title=title or "Nueva nota", thumbnails=thumbs, check_cancelled=lambda: _check(token))
+            title=title or "Nueva nota", thumbnails=thumbs, images=images, check_cancelled=lambda: _check(token))
         if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
             raise RuntimeError("La nota generada no pasó la validación local")
         _check(token)
@@ -136,6 +148,35 @@ def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_pat
     except BaseException:
         output.unlink(missing_ok=True)
         raise
+
+def _export_images(raw, count, directory):
+    """Only native-prepared image files inside this isolated export are trusted."""
+    records = json.loads(raw)
+    if not isinstance(records, list) or len(records) > 200:
+        raise ValueError("La nota admite hasta 200 imágenes")
+    pages = [[] for _ in range(count)]
+    ids = set()
+    for item in records:
+        page = item.get("page")
+        if not isinstance(page, int) or not 0 <= page < count:
+            raise ValueError("Página de imagen inválida")
+        identity = item.get("id", "")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", identity) or identity in ids:
+            raise ValueError("Identificador de imagen inválido o repetido")
+        ids.add(identity)
+        source = Path(item["path"]).resolve()
+        if not source.is_relative_to(directory.resolve()) or not source.is_file() or source.suffix not in (".jpg", ".png"):
+            raise ValueError("Archivo de imagen inválido")
+        clean = {"path": str(source)}
+        for key, low, high in (("x",-3200,3200),("y",-3200,3200),("width",1,3200),("height",1,3200),("angle",-360,360)):
+            value = float(item[key])
+            if not math.isfinite(value) or not low <= value <= high:
+                raise ValueError("Transformación de imagen inválida")
+            clean[key] = value
+        pages[page].append(clean)
+        if len(pages[page]) > 20:
+            raise ValueError("Cada página admite hasta 20 imágenes")
+    return pages
 
 def remove_snapshot(cache_dir, snapshot_id):
     if re.fullmatch(r"[0-9a-f]{32}", snapshot_id):

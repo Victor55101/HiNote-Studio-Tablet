@@ -1,0 +1,33 @@
+/* Large touch targets, independent image/ink layers, no full-size bitmap in JS. */
+button { touch-action: manipulation; }
+.toolbar button,.previewFooter button { min-height:44px; min-width:44px; }
+.previewWrap { touch-action:none; overscroll-behavior:contain; }
+.canvasShell { position:relative; overflow:hidden; }
+#gridCanvas,#imageLayer,#previewCanvas { position:absolute; inset:0; width:100%; height:100%; }
+#gridCanvas { z-index:0; pointer-events:none; }
+#imageLayer { z-index:1; pointer-events:none; }
+#previewCanvas { z-index:2; pointer-events:none; }
+.pageImage { position:absolute; transform-origin:center; overflow:hidden; }
+.pageImage img { position:absolute; max-width:none; user-select:none; -webkit-user-drag:none; }
+#imageSelection { position:absolute; z-index:3; border:2px solid #4059e8; transform-origin:center; pointer-events:none; box-shadow:0 0 0 1px white; }
+#imageSelection button { width:44px; height:44px; position:absolute; border:0; background:transparent; padding:0; pointer-events:auto; touch-action:none; color:#fff; font-size:23px; }
+#imageSelection button::after { content:''; position:absolute; inset:13px; border:2px solid white; border-radius:50%; background:#4059e8; box-shadow:0 1px 4px #0006; }
+#imageSelection [data-handle=nw] { left:-23px; top:-23px; }
+#imageSelection [data-handle=ne] { right:-23px; top:-23px; }
+#imageSelection [data-handle=sw] { left:-23px; bottom:-23px; }
+#imageSelection [data-handle=se] { right:-23px; bottom:-23px; }
+#imageSelection [data-handle=rotate] { left:calc(50% - 22px); top:-55px; border-radius:50%; background:#4059e8; border:2px solid white; }
+#imageSelection [data-handle=rotate]::after { display:none; }
+.imageHint { background:#eef4ff; color:#31436b; padding:8px 14px; font-size:12px; line-height:1.45; }
+.btn.danger { color:#b32635; }
+.cropDialog { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center; padding:12px; background:#0f172ab3; }
+.cropCard { background:white; color:#14213d; border-radius:18px; padding:18px; max-width:680px; width:100%; max-height:96vh; overflow:auto; }
+.cropCard h2 { margin:0; font-size:19px; }.cropCard p { font-size:13px; color:#52627b; }
+#cropStage { position:relative; margin:auto; width:fit-content; max-width:100%; touch-action:none; background:repeating-conic-gradient(#eef1f5 0% 25%,#fff 0% 50%) 50% / 20px 20px; overflow:hidden; }
+#cropSource { display:block; max-width:100%; max-height:43vh; user-select:none; pointer-events:none; }
+#cropBox { position:absolute; border:2px solid #4059e8; background:#4059e822; box-shadow:0 0 0 900px #0f172a66; pointer-events:none; }
+.cropSliders { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin-top:12px; }.cropSliders label { font-size:13px; }
+.cropSliders input { width:100%; height:36px; accent-color:#4059e8; }
+.cropActions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }.cropActions button { min-height:44px; }
+.toolpanel input:disabled { opacity:.5; }
+@media(max-width:900px) { .toolbar .toolpanel { padding-right:16px; }.previewCard { min-height:480px; } }

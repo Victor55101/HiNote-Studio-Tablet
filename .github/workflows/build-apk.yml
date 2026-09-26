@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V22
+name: Build HiNote Studio Tablet V23
 on:
   workflow_dispatch:
   push:
@@ -27,9 +27,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node tests/editor.spec.cjs
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: editor-test-failures
+          name: editor-test-results
           path: test-results/
           if-no-files-found: ignore
   build:
@@ -48,9 +48,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - run: gradle --no-daemon assembleDebug
+      - run: gradle --no-daemon testDebugUnitTest assembleDebug
         working-directory: HiNote_Studio_Tablet_Android
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: HiNote-Studio-Tablet-APK-V22
+          name: android-test-results
+          path: HiNote_Studio_Tablet_Android/app/build/reports/tests/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-Studio-Tablet-APK-V23
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/debug/app-debug.apk

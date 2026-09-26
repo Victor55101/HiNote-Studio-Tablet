@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const editor = $('editor');
 const DEFAULT_STYLE = {scale: 1, color: '#000000', opacity: 100};
-const MAX_CHARS = 200000, DRAFT_KEY = 'hinote-draft-v21';
+const MAX_CHARS = 200000, DRAFT_KEY = 'hinote-draft-v23';
 const listRegex = /^([ \t]*)(•|\*|-|\d+[.)]|[A-Za-z]+[.)])([ \t]+|$)(.*)$/;
 let savedSelection = null, ime = false, refreshTimer, draftTimer, historyTimer, toastTimer;
 let revision = 0, previewRevision = -1, pageRequest = 0;
@@ -128,7 +128,7 @@ function normalizeRoots() {
 }
 function checkpoint() {
   clearTimeout(historyTimer);
-  const data = JSON.stringify(readLines()), selection = bookmark();
+  const data = JSON.stringify({lines:readLines(),...ImageEditor.state()}), selection = bookmark();
   if (history[historyIndex]?.data === data) { history[historyIndex].selection = selection; return; }
   history = history.slice(0, historyIndex + 1); history.push({data, selection});
   let bytes = history.reduce((sum, entry) => sum + entry.data.length * 2, 0);
@@ -146,10 +146,13 @@ function edit(operation) {
   renderLines(result.lines); restoreSelection(result.selection || mark); checkpoint(); changed();
 }
 function undoRedo(direction) {
-  if (exporting || ime) return;
+  if (exporting || ime || ImageEditor.isBusy()) return;
+  ImageEditor.finishGesture(false);
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
-  historyIndex = next; const entry = history[next]; renderLines(JSON.parse(entry.data)); restoreSelection(entry.selection); changed();
+  historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines);
+  renderLines(data.lines); ImageEditor.restore(data); restoreSelection(entry.selection);
+  if(sameText){ImageEditor.modified();drawCurrent();}else changed();
 }
 function replaceText(lines, mark, text) {
   const {start, end} = mark, before = sliceSegments(lines[start.line], 0, start.offset);
@@ -270,23 +273,28 @@ function serializeDocument() {
 }
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.add('show'); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500); }
 function saveDraft() {
+  ImageEditor.finishGesture(false);
   clearTimeout(draftTimer);
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({version: 21, lines: readLines(), title: $('noteTitle').value, settings: settings(), grid: $('gridCheck').checked, auto: $('autoPreview').checked}));
+    const raw=JSON.stringify({version:23,lines:readLines(),...ImageEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
+    const nativeSaved=window.AndroidBridge?.saveDraft ? AndroidBridge.saveDraft(raw) : false;
+    try{localStorage.setItem(DRAFT_KEY,raw);}catch(e){if(!nativeSaved)throw e;}
     $('draftStatus').textContent = 'Borrador guardado';
   } catch (_) { $('draftStatus').textContent = 'No se pudo guardar el borrador: revisa el espacio disponible'; }
 }
 function queueDraft() { $('draftStatus').textContent = 'Guardando…'; clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); }
 function restoreDraft() {
   try {
-    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY));
-    if (!draft || draft.version !== 21 || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
+    const native=window.AndroidBridge?.getDraft?AndroidBridge.getDraft():'';
+    const draft = JSON.parse(native||localStorage.getItem(DRAFT_KEY)||localStorage.getItem('hinote-draft-v21'));
+    if (!draft || ![21,23].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
     let count = draft.lines.length - 1, segments = 0;
     for (const line of draft.lines) {
       if (!Array.isArray(line)) return false;
       for (const s of line) { if (!s || typeof s.text !== 'string') return false; count += s.text.length; segments++; }
     }
     if (count > MAX_CHARS || segments > 20000) return false;
+    ImageEditor.restore(draft);
     renderLines(draft.lines); $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
     for (const [id, key, min, max, fallback] of [['letterSpacing','letter_spacing',-8,8,0],['wordSpacing','word_spacing',12,60,26],['lineRows','line_grid_rows',1,4,1],['listIndent','list_indent_squares',0,6,1]]) $(id).value = bounded(draft.settings?.[key], min, max, fallback);
     $('gridCheck').checked = draft.grid !== false; $('autoPreview').checked = draft.auto !== false; return true;
@@ -294,13 +302,14 @@ function restoreDraft() {
 }
 function controls() {
   $('charCount').textContent = `${characterCount().toLocaleString('es')} caracteres`;
-  $('exportBtn').disabled = exporting || composing || !composition || previewRevision !== revision;
+  $('exportBtn').disabled = exporting || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision;
   $('refreshBtn').disabled = exporting; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
   $('prevPage').disabled = exporting || composing || !composition || currentPage <= 0;
-  $('nextPage').disabled = exporting || composing || !composition || currentPage >= composition.page_count - 1;
+  $('nextPage').disabled = exporting || composing || currentPage >= ImageEditor.count() - 1;
   editor.contentEditable = String(!exporting); $('noteTitle').disabled = exporting;
   document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el => el.disabled = exporting);
-  $('undoBtn').disabled = exporting || historyIndex <= 0; $('redoBtn').disabled = exporting || historyIndex >= history.length - 1;
+  $('undoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex <= 0; $('redoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex >= history.length - 1;
+  ImageEditor.updateControls();
 }
 function changed() {
   clearTimeout(refreshTimer); revision++; composing = false;
@@ -321,7 +330,7 @@ window.onComposeResult = (id, json) => {
   if (id !== revision) return; composing = false;
   try {
     const result = JSON.parse(json); if (result.error) throw new Error(result.error);
-    composition = result; previewRevision = id; currentPage = Math.min(currentPage, result.page_count - 1);
+    composition = result; previewRevision = id; currentPage = Math.min(currentPage, ImageEditor.count() - 1);
     const warnings = result.warnings || []; $('warnings').replaceChildren();
     warnings.forEach(message => { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); });
     $('warningPanel').classList.toggle('hidden', warnings.length === 0); $('warningCount').textContent = `${warnings.length} avisos de escritura`;
@@ -334,8 +343,14 @@ window.onWorkProgress = (kind, id, page) => {
   if (kind === 'export' && exporting) $('status').textContent = `Guardando página ${page}…`;
 };
 function drawCurrent() {
-  if (!composition || previewRevision !== revision || exporting) return;
-  $('pageBadge').textContent = `Página ${currentPage + 1}/${composition.page_count}`;
+  ImageEditor.finishGesture(false);ImageEditor.render();
+  $('pageBadge').textContent = `Página ${currentPage + 1}/${ImageEditor.count()}`;
+  if(exporting)return;
+  if(!composition || currentPage >= composition.page_count){
+    pageRequest++;const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);applyZoom();return;
+  }
+  if (previewRevision !== revision) return;
+  const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);
   AndroidBridge.requestPage(composition.snapshot, currentPage, $('gridCheck').checked, ++pageRequest);
 }
 window.onPageResult = (id, snapshot, index, data, error) => {
@@ -343,18 +358,19 @@ window.onPageResult = (id, snapshot, index, data, error) => {
   if (!fresh()) return;
   if (error) { $('status').textContent = 'Error de vista'; toast(error); return; }
   const img = new Image();
-  img.onload = () => { if (!fresh()) return; const canvas = $('previewCanvas'); canvas.width = img.width; canvas.height = img.height; canvas.getContext('2d').drawImage(img, 0, 0); applyZoom(); $('status').textContent = 'Listo'; };
+  img.onload = () => { if (!fresh()) return; const canvas = $('previewCanvas'); canvas.width = img.width; canvas.height = img.height; canvas.getContext('2d').drawImage(img, 0, 0); applyZoom(); ImageEditor.render(); $('status').textContent = 'Listo'; };
   img.onerror = () => { if (fresh()) $('status').textContent = 'No se pudo abrir la vista'; }; img.src = data;
 };
 function applyZoom() {
   const canvas = $('previewCanvas'), shell = $('canvasShell'); canvas.style.display = 'block';
   canvas.style.width = `${675 * zoom}px`; canvas.style.height = `${1080 * zoom}px`;
   shell.style.width = `${675 * zoom}px`; shell.style.height = `${1080 * zoom}px`; shell.style.flexShrink = '0'; $('zoomLabel').textContent = `${Math.round(zoom * 100)}%`;
+  ImageEditor.render();
 }
 function exportNote() {
-  if (exporting || composing || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
+  if (exporting || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
   clearTimeout(refreshTimer); saveDraft(); exporting = true; controls(); $('status').textContent = 'Elige dónde guardar…';
-  try { AndroidBridge.requestSave(composition.snapshot, $('noteTitle').value || 'Nueva nota', $('gridCheck').checked); }
+  try { AndroidBridge.requestSave(composition.snapshot, $('noteTitle').value || 'Nueva nota', $('gridCheck').checked,ImageEditor.exportJSON(),ImageEditor.count()); }
   catch (e) { window.onExportComplete(false, e.message); }
 }
 window.onExportStage = message => { if (exporting) $('status').textContent = message; };
@@ -366,7 +382,8 @@ document.querySelector('.toolbar').addEventListener('pointerdown', captureSelect
 $('tabs').addEventListener('click', event => {
   if (event.target.tagName !== 'BUTTON') return;
   [...$('tabs').children].forEach(b => b.classList.toggle('active', b === event.target));
-  ['text','lists','page'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
+  ['text','lists','page','images'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
+  ImageEditor.mode(event.target.dataset.tab==='images');
 });
 $('colorPick').addEventListener('input', () => $('hexInput').value = $('colorPick').value.toUpperCase());
 $('hexInput').addEventListener('change', () => { const v = $('hexInput').value.trim().replace(/^#?/, '#'); if (/^#[\da-f]{6}$/i.test(v)) $('colorPick').value = v; });
@@ -405,7 +422,7 @@ $('cancelBtn').onclick = () => {
   else { clearTimeout(refreshTimer); revision++; AndroidBridge.invalidateCompose(revision); composing = false; $('status').textContent = 'Generación cancelada'; controls(); }
 };
 $('prevPage').onclick = () => { if (currentPage > 0) { currentPage--; drawCurrent(); controls(); } };
-$('nextPage').onclick = () => { if (composition && currentPage < composition.page_count - 1) { currentPage++; drawCurrent(); controls(); } };
+$('nextPage').onclick = () => { if (currentPage < ImageEditor.count() - 1) { currentPage++; drawCurrent(); controls(); } };
 $('zoomOut').onclick = () => { zoom = Math.max(.25, zoom - .1); applyZoom(); };
 $('zoomIn').onclick = () => { zoom = Math.min(2, zoom + .1); applyZoom(); };
 $('zoomFit').onclick = () => { zoom = Math.max(.25, Math.min(2, ($('previewWrap').clientWidth - 32) / 675)); applyZoom(); };

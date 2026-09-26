@@ -15,6 +15,8 @@ with ZipFile(ROOT / 'HiNote_Studio_Tablet_Android_Source.zip') as archive:
     library['format'] = 'hinote-glyph-library-v4-corrected'
     library['glyphs'].update(corrections['glyphs'])
     library.setdefault('placement_y_offsets', {}).update(corrections['placement_y_offsets'])
+    # V23: keep the separate calibrated underscore, lower it another 4 units.
+    library['placement_y_offsets']['_'] = -3.25
     library['corrections_applied'] = {
         'version': corrections['version'],
         'source_hinote': corrections['source_hinote'],
@@ -28,12 +30,12 @@ with ZipFile(ROOT / 'HiNote_Studio_Tablet_Android_Source.zip') as archive:
 
     assets = ROOT / PREFIX
     assets.mkdir(parents=True, exist_ok=True)
-    (assets / 'glyphs_v22.json').write_text(
+    (assets / 'glyphs_v23.json').write_text(
         json.dumps(library, ensure_ascii=False, separators=(',', ':')),
         encoding='utf-8',
     )
     (assets / 'template_1stroke.hinote').write_bytes(
         archive.read(PREFIX + 'template_1stroke.hinote')
     )
-    print('Built glyphs_v22.json with corrected calibration mappings')
+    print('Built glyphs_v23.json with corrected symbols and lower underscore')
     print('Restored template_1stroke.hinote')

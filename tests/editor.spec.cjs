@@ -91,7 +91,7 @@ test('Stale composition cannot export; a fresh snapshot is immutable during expo
   assert.equal(await page.isDisabled('#exportBtn'),true);
   await page.click('#refreshBtn'); await page.evaluate(() => { const id=bridgeCalls.filter(c=>c[0]==='compose').at(-1)[3]; onComposeResult(id,JSON.stringify({snapshot:'current',page_count:2,warnings:[]})); });
   assert.equal(await page.isDisabled('#exportBtn'),false); await page.click('#exportBtn');
-  assert.deepEqual(await page.evaluate(() => bridgeCalls.filter(c=>c[0]==='save').at(-1)),['save','current','Nueva nota',true]);
+  assert.deepEqual(await page.evaluate(() => bridgeCalls.filter(c=>c[0]==='save').at(-1)),['save','current','Nueva nota',true,'[]',2]);
   assert.equal(await page.getAttribute('#editor','contenteditable'),'false');
   await page.evaluate(() => onExportComplete(false,'Guardado cancelado')); assert.equal(await page.getAttribute('#editor','contenteditable'),'true');
 });
@@ -124,23 +124,98 @@ test('Page controls use the backend setting names', async page => {
   assert.equal(s.line_grid_rows,3); assert.equal(s.word_spacing,35); assert.equal(s.letter_spacing,2); assert.equal(s.auto_line_spacing,true);
 });
 
+// Image editing is tested with real pointer/touch events and a mocked file picker.
+async function importImage(page,asset='a',size=[640,480]){
+  await page.click('[data-tab="images"]');await page.click('#insertImage');
+  await page.evaluate(({asset,size})=>{
+    const id=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];
+    onImageImported(id,JSON.stringify({asset:asset.repeat(64),pixelWidth:size[0],pixelHeight:size[1]}),null);
+  },{asset,size});
+}
+async function imageState(page){return page.evaluate(()=>ImageEditor.state());}
+test('Import, rotate, crop, duplicate, order and undo preserve image metadata',async page=>{
+  await setup(page,'Hola');await importImage(page);
+  assert.equal((await imageState(page)).images.length,1);
+  const original=(await imageState(page)).images[0];
+  await page.click('#rotateImageRight');assert.equal((await imageState(page)).images[0].angle,90);
+  await page.fill('#imageAngle','320');await page.press('#imageAngle','Tab');assert.equal((await imageState(page)).images[0].angle,320);
+  await page.click('#cropImage');await page.evaluate(()=>{$('cropLeft').value='25';$('cropLeft').dispatchEvent(new Event('input'));});await page.click('#applyCrop');
+  assert.equal((await imageState(page)).images[0].crop.left,.25);
+  assert.equal((await imageState(page)).images[0].width,original.width*.75);
+  await page.click('#undoBtn');assert.equal((await imageState(page)).images[0].crop.left,0);
+  await page.click('#redoBtn');assert.equal((await imageState(page)).images[0].crop.left,.25);
+  await page.click('#duplicateImage');assert.equal((await imageState(page)).images.length,2);
+  const id=await page.evaluate(()=>ImageEditor.selected().id);await page.click('#imageBack');assert.equal((await imageState(page)).images[0].id,id);
+  await page.click('#deleteImage');assert.equal((await imageState(page)).images.length,1);
+  await page.click('#undoBtn');assert.equal((await imageState(page)).images.length,2);
+});
+test('Image moves do not recompose text, and only current page images are mounted',async page=>{
+  await setup(page,'Hola');await importImage(page);await page.evaluate(()=>{zoom=.65;applyZoom();window.bridgeCalls=[];});
+  const box=await page.locator('.pageImage').boundingBox();const before=(await imageState(page)).images[0];
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+35,box.y+box.height/2+40,{steps:6});await page.mouse.up();
+  const after=(await imageState(page)).images[0];assert.ok(after.x>before.x+50);assert.ok(after.y>before.y+50);
+  assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').length),0);
+  await page.fill('#imagePage','3');await page.press('#imagePage','Tab');assert.equal(await page.textContent('#pageBadge'),'Página 3/3');
+  await page.click('#prevPage');assert.equal(await page.locator('.pageImage').count(),0);
+  await page.click('#nextPage');assert.equal(await page.locator('.pageImage').count(),1);
+});
+test('Reload preserves images, crops and empty pages without putting binary data in draft',async page=>{
+  await setup(page,'Con imagen');await importImage(page);await page.click('#rotateImageRight');
+  await page.click('#imageNewPage');await importImage(page,'b',[480,640]);
+  const before=await imageState(page);await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
+  assert.deepEqual(await imageState(page),before);assert.deepEqual(await lines(page),['Con imagen']);
+  assert.ok(await page.evaluate(()=>localStorage.getItem(DRAFT_KEY).length)<2500);
+  assert.equal(await page.evaluate(()=>ImageEditor.count()),2);
+});
+test('Cancelled import unlocks controls and stale import result is ignored',async page=>{
+  await setup(page);await page.click('[data-tab="images"]');await page.click('#insertImage');
+  assert.equal(await page.isDisabled('#insertImage'),true);
+  await page.evaluate(()=>{const t=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];onImageImported(t-1,'{}',null);});assert.equal(await page.isDisabled('#insertImage'),true);
+  await page.evaluate(()=>{const t=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];onImageImported(t,null,null);});assert.equal(await page.isDisabled('#insertImage'),false);
+  assert.equal((await imageState(page)).images.length,0);
+});
+test('Two finger touch scales and rotates an image and undo restores it',async page=>{
+  await setup(page);await importImage(page);await page.evaluate(()=>{zoom=.55;applyZoom();});
+  const before=(await imageState(page)).images[0],box=await page.locator('.pageImage').boundingBox();
+  const x=box.x+box.width/2,y=box.y+box.height/2,client=await page.context().newCDPSession(page);
+  await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:x-35,y,id:1},{x:x+35,y,id:2}]});
+  await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-50,y:y-20,id:1},{x:x+50,y:y+20,id:2}]});
+  await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  const after=(await imageState(page)).images[0];assert.ok(after.width>before.width);assert.ok(after.angle>10);
+  await page.click('#undoBtn');assert.deepEqual((await imageState(page)).images[0],before);
+});
+test('Old V21 text draft migrates without losing formatting',async page=>{
+  await page.evaluate(()=>{localStorage.removeItem(DRAFT_KEY);localStorage.removeItem('native-draft');localStorage.setItem('hinote-draft-v21',JSON.stringify({version:21,lines:[[{text:'Anterior',scale:1.5,color:'#336699',opacity:60}]],title:'V22',settings:{},grid:false}));});
+  await page.reload();await page.waitForSelector('#editor .line');assert.deepEqual(await lines(page),['Anterior']);
+  assert.equal(await page.evaluate(()=>readLines()[0][0].scale),1.5);assert.equal((await imageState(page)).images.length,0);
+});
+test('Image metadata is frozen during export and extra image pages are included',async page=>{
+  await setup(page,'Hola');await importImage(page);await page.fill('#imagePage','4');await page.press('#imagePage','Tab');
+  await page.click('#refreshBtn');await page.evaluate(()=>{const id=bridgeCalls.filter(c=>c[0]==='compose').at(-1)[3];onComposeResult(id,JSON.stringify({snapshot:'with-images',page_count:1,warnings:[]}));});
+  await page.click('#exportBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='save').at(-1));
+  assert.equal(call[5],4);assert.equal(JSON.parse(call[4])[0].page,3);assert.equal(await page.isDisabled('#rotateImageRight'),true);
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
-    const file = request.url.split('?')[0] === '/editor.js' ? 'editor.js' : 'index.html';
-    response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
+    response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
-  const browser = await chromium.launch({headless:true}); let failed = 0;
+  let browser;try{browser=await chromium.launch({headless:true});}catch(e){server.close();throw e;} let failed = 0;
   try {
     for (const {name,fn} of tests) {
-      const context = await browser.newContext({viewport:{width:1280,height:850}});
+      const context = await browser.newContext({viewport:{width:1280,height:850},hasTouch:true});
+      await context.route('https://hinote.local/images/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect x="10" y="10" width="620" height="460" fill="#21bca8"/><circle cx="320" cy="240" r="140" fill="#273c75"/></svg>'}));
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
-        requestPage:(...a)=>bridgeCalls.push(['page',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel'])}; });
+        requestPage:(...a)=>bridgeCalls.push(['page',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
+        requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;}}; });
       const page = await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       try {
         await page.goto(`http://127.0.0.1:${server.address().port}`); await page.waitForSelector('#editor .line'); await fn(page);
         assert.deepEqual(errors,[],'Uncaught browser errors'); console.log('PASS '+name);
+        if(name.startsWith('Import, rotate')){fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/images-editor.png')});}
       } catch (error) {
         failed++; console.error('FAIL '+name+'\n'+error.stack); fs.mkdirSync(path.join(root,'test-results'),{recursive:true});
         await page.screenshot({path:path.join(root,'test-results',name.replace(/[^a-z0-9]+/gi,'-')+'.png'),fullPage:true});
