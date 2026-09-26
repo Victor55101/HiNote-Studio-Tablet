@@ -28,3 +28,16 @@ Dispositivo objetivo proporcionado: MatePad Pro 2025, HarmonyOS 4.3.0, Huawei No
 10. Comprueba `_-Hola`: el guion bajo debe verse ligeramente más abajo que en V22.
 
 Límites de seguridad: 20 imágenes por página, 200 por nota, 32 MiB/100 MP por archivo de entrada y 256 MiB de imágenes normalizadas almacenadas. El procesamiento no conserva las animaciones WebP. Las miniaturas son de 512 px; la imagen exportada usa el archivo normalizado de mayor resolución.
+
+## V24: papel nativo, guardado y espacios
+
+La importación nativa y las funciones de imágenes V23 fueron confirmadas por el usuario en su MatePad. Para esta actualización:
+
+1. Exporta una nota con varias páginas, imágenes y páginas vacías con la cuadrícula de previsualización activada y otra desactivada. Importa ambas como notas nuevas. Al desplazarte, sus miniaturas deben conservar el papel cuadriculado de Huawei. Las notas exportadas con versiones anteriores conservan sus miniaturas antiguas; vuelve a exportarlas para aplicar la corrección.
+2. Comprueba `_-Hola` al 100 % y 200 %: `_` ahora debe quedar por debajo de la base de `Hola`.
+3. Escribe `         O --- O` y, en la siguiente línea, doce espacios seguidos de `I`. Actualiza, exporta y confirma que se mantiene la sangría. El ancho de la letra manuscrita es variable; no equivale a una fuente monoespaciada para diagramas.
+4. Abre **Guardado → Elegir carpeta**, selecciona una carpeta local para tus notas y guarda. Repite sin abrir el selector: los archivos deben aparecer allí como `Título.hinote`, `Título (1).hinote`, etc., conservando las copias anteriores.
+5. Cierra y abre la app; verifica la carpeta. Cancela un cambio de carpeta y comprueba que se conserva la anterior. Con **Preguntar cada vez**, el guardado vuelve a abrir el selector.
+6. Comprueba la cancelación de una exportación larga: no debe quedar un `.hinote` incompleto. Si se elimina la carpeta o revoca su permiso, la app debe mostrar un error y permitir elegir otra desde Guardado.
+
+Android puede impedir seleccionar la raíz del almacenamiento o la carpeta Descargas completa; elige o crea una subcarpeta, por ejemplo Documentos/HiNote. La selección usa el permiso persistente del sistema y no requiere acceso general a todos los archivos.

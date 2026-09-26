@@ -4,21 +4,39 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Rect;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-/** One native thumbnail at a time; the WebView receives only a JPEG. */
+/** One page at a time. Preview ink is transparent; exports use Huawei's native paper. */
 final class PageRenderer {
+    static void renderForExport(String json, File destination, JSONArray images, File paper, Runnable check) throws Exception {
+        render(json, destination, false, 0, images, false, paper, check);
+    }
     static void render(String json, File destination, boolean grid, double gridStep, Runnable check) throws Exception {
         render(json, destination, grid, gridStep, new JSONArray(), false, check);
     }
     static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, Runnable check) throws Exception {
+        render(json, destination, grid, gridStep, images, inkOnly, null, check);
+    }
+    private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, Runnable check) throws Exception {
         Bitmap bitmap=Bitmap.createBitmap(675,1080,Bitmap.Config.ARGB_8888);
         File partial=new File(destination.getPath()+".part");
         try {
-            Canvas canvas=new Canvas(bitmap); canvas.drawColor(inkOnly ? Color.TRANSPARENT : Color.WHITE); canvas.scale(.675f,.675f);
+            Canvas canvas=new Canvas(bitmap); canvas.drawColor(inkOnly ? Color.TRANSPARENT : Color.WHITE);
+            if(paper!=null){
+                Bitmap nativePaper=ImageStore.decode(paper,1080);
+                try{
+                    if(nativePaper.getWidth()!=675 || nativePaper.getHeight()!=1080)throw new IOException("Papel nativo inválido");
+                    canvas.drawBitmap(nativePaper,0,0,null);
+                    // Remove the template's single dash with a clean band from
+                    // the same columns; vertical grid lines keep their exact phase.
+                    canvas.drawBitmap(nativePaper,new Rect(40,88,88,104),new Rect(40,56,88,72),null);
+                }finally{nativePaper.recycle();}
+            }
+            canvas.scale(.675f,.675f);
             Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
             if(grid && !inkOnly){
                 paint.setColor(Color.argb(46,115,160,180)); paint.setStrokeWidth(.6f);

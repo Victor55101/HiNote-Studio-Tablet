@@ -1,5 +1,7 @@
 /* Large touch targets, independent image/ink layers, no full-size bitmap in JS. */
 button { touch-action: manipulation; }
+.saveLocation { display:flex; flex-direction:column; gap:3px; max-width:440px; white-space:normal; font-size:13px; }
+.saveLocation strong { overflow-wrap:anywhere; }.saveLocation small { color:#6b7a90; font-size:12px; }
 .toolbar button,.previewFooter button { min-height:44px; min-width:44px; }
 .previewWrap { touch-action:none; overscroll-behavior:contain; }
 .canvasShell { position:relative; overflow:hidden; }

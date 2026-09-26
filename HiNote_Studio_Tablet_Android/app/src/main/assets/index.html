@@ -43,7 +43,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   <div class="toolbar">
     <button class="btn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button><button class="btn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
     <div class="segment" id="tabs">
-      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button>
+      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button><button data-tab="save">Guardado</button>
     </div>
     <div class="toolpanel" id="panelText">
       <div class="field"><label>Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected>100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
@@ -75,6 +75,11 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <div class="field"><label for="imagePage">Página</label><input id="imagePage" type="number" min="1" max="500" value="1" data-image-action></div>
       <button class="btn" id="imageBack" data-image-action>Atrás</button><button class="btn" id="imageFront" data-image-action>Adelante</button>
       <button class="btn" id="duplicateImage" data-image-action>Duplicar</button><button class="btn danger" id="deleteImage" data-image-action>Eliminar</button>
+    </div>
+    <div class="toolpanel hidden" id="panelSave">
+      <button class="btn accent" id="chooseFolder">Elegir carpeta</button>
+      <button class="btn" id="clearFolder">Preguntar cada vez</button>
+      <div class="saveLocation"><strong id="folderLabel" role="status">Se preguntará dónde guardar</strong><small id="folderHint">Elige una carpeta para guardar directamente en ella.</small></div>
     </div>
   </div>
 

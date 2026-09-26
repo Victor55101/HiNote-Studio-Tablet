@@ -1,15 +1,18 @@
-# HiNote Studio Tablet — V23
+# HiNote Studio Tablet — V24
 
 App Android para convertir texto a los trazos de la calibración personal incluida y exportarlo a Huawei Notes como `.hinote`.
 
 ## Cambios
 
+- Las miniaturas exportadas usan el papel nativo `base3` de la plantilla Huawei, independientemente del interruptor de cuadrícula de la previsualización. Así se evita alternar entre hoja blanca/cuadrícula tenue y el papel nativo mientras carga una página.
+- **Guardado → Elegir carpeta** recuerda la carpeta y el permiso de Android entre sesiones. **Guardar .hinote** guarda allí directamente y crea otra copia numerada si ya existe el nombre. **Preguntar cada vez** restablece el selector anterior. Si la carpeta se mueve, elimina o pierde su permiso, se solicita volver a elegirla.
+- Se conservan los espacios y tabulaciones al inicio de cada párrafo, incluido texto con formato mixto. Los renglones creados por ajuste automático vuelven al margen normal; una sangría demasiado larga se distribuye sin sacar los trazos de la página.
+- El guion bajo queda debajo de la línea base de las letras, conservando el glifo de su fila de calibración.
 - Imágenes JPG, PNG y WebP estático desde el selector de Android. Transparencia conservada y orientación EXIF aplicada.
 - Modo Imágenes: mover con un dedo, pellizcar/girar con dos, controles de esquinas, ángulo numérico, giros de 90°, recorte, reemplazar, duplicar y eliminar. Deshacer/rehacer incluye las imágenes.
 - Páginas con imágenes nativas editables en Huawei Notes. Orden entre imágenes; la escritura permanece siempre encima. Las imágenes se anclan a una página, no al párrafo: no hay ajuste automático del texto alrededor de ellas.
 - Borrador V23 con copia nativa atómica. Migra el texto de V21/V22; los archivos de imagen se guardan fuera de `localStorage` y sobreviven al cierre normal y a la recuperación del WebView.
 - Importación y exportación en el hilo de trabajo; miniaturas de imagen de hasta 512 px, máximo 20 imágenes visibles por página y 200 por documento. Original normalizado de hasta 2560 px; entrada máxima 32 MiB/100 MP, almacén de 256 MiB. WebP se convierte a JPG o PNG; las animaciones no se conservan.
-- Guion bajo 4 unidades lógicas más abajo que V22, manteniendo el glifo de su propia fila de calibración.
 - Logo de HiNote Studio integrado en el editor y como icono normal/adaptativo de Android.
 - Asociaciones de calibración reconstruidas desde la nota original para `+`, `=`, `%`, `#`, `@`, `•`, `*` y `<`. Las listas de viñetas y asteriscos usan ahora sus trazos manuscritos correctos.
 - El guion bajo `_` conserva su glifo propio y su posición inferior; ya no se superpone visualmente con el guion `-`.
@@ -20,7 +23,7 @@ App Android para convertir texto a los trazos de la calibración personal inclui
 - Editor con pegado multilínea, selección persistente, formato absoluto, listas que conservan el formato, deshacer/rehacer y borrador local.
 - Notas largas: actualizar manualmente; el modo automático funciona hasta 12000 caracteres. Límites de protección: 200000 caracteres, 10000 párrafos, 20000 segmentos, 500 páginas y 512 MiB de archivos de composición.
 
-La compilación genera `glyphs_v23.json` combinando el banco original archivado con las asociaciones corregidas de la nota de calibración. Este repositorio no contiene una pantalla para importar una nueva calibración. La fidelidad depende de los caracteres y variantes de ese banco.
+La compilación genera `glyphs_v24.json` combinando el banco original archivado con las asociaciones corregidas de la nota de calibración. Conserva el borrador y almacén de imágenes V23. Este repositorio no contiene una pantalla para importar una nueva calibración. La fidelidad depende de los caracteres y variantes de ese banco.
 
 ## Imágenes en la tablet
 

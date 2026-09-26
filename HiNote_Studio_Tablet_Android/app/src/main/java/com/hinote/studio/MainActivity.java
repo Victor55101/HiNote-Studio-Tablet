@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MainActivity extends Activity {
-    private static final int REQUEST_SAVE=501, REQUEST_IMAGE=502;
+    private static final int REQUEST_SAVE=501, REQUEST_IMAGE=502, REQUEST_FOLDER=503;
     private static final Object ENGINE_START_LOCK=new Object();
     private WebView webView;
     private PyObject backend;
@@ -42,6 +42,8 @@ public class MainActivity extends Activity {
     private volatile Future<?> composeJob,pageJob;
     private volatile ExportJob pendingExport;
     private ImageStore imageStore;
+    private ExportFolder exportFolder;
+    private final AtomicBoolean choosingFolder=new AtomicBoolean();
     private AtomicFile draftFile;
     private final AtomicBoolean importing=new AtomicBoolean();
     private int importTicket;
@@ -50,6 +52,7 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
         draftFile=new AtomicFile(new File(getFilesDir(),"draft-v23.json"));
+        exportFolder=new ExportFolder(this);
         try {imageStore=new ImageStore(getFilesDir());} catch(IOException e){startupError=message(e);}
         getWindow().setStatusBarColor(Color.rgb(15,23,42)); getWindow().setNavigationBarColor(Color.rgb(15,23,42));
         sessionDir=new File(getCacheDir(),"hinote-session-"+UUID.randomUUID());
@@ -61,7 +64,7 @@ public class MainActivity extends Activity {
                 File[] old=getCacheDir().listFiles();
                 if(old!=null)for(File f:old)if(f.getName().startsWith("hinote-session-")&&!f.equals(sessionDir)&&System.currentTimeMillis()-f.lastModified()>86400000L)deleteTree(f);
                 synchronized(ENGINE_START_LOCK){
-                    copyEngineAsset("glyphs_v23.json");copyEngineAsset("template_1stroke.hinote");
+                    copyEngineAsset("glyphs_v24.json");copyEngineAsset("template_1stroke.hinote");copyEngineAsset("paper_base3_source.jpg");
                     if(!Python.isStarted())Python.start(new AndroidPlatform(getApplicationContext()));
                 }
                 backend=Python.getInstance().getModule("mobile_backend");
@@ -114,6 +117,26 @@ public class MainActivity extends Activity {
     }
     private void removeQueued(Future<?> job){if(job!=null){job.cancel(false);if(job instanceof Runnable)worker.remove((Runnable)job);}}
     public final class Bridge{
+        @JavascriptInterface public String getExportFolder(){return exportFolder.describe();}
+        @JavascriptInterface public void requestExportFolder(){
+            if(destroyed||exporting.get()||importing.get()||!choosingFolder.compareAndSet(false,true)){
+                folderResult("Espera a que termine la operación actual");return;
+            }
+            runOnUiThread(()->{
+                try{
+                    Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                    if(android.os.Build.VERSION.SDK_INT>=26&&exportFolder.selected()!=null)intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,exportFolder.selected());
+                    startActivityForResult(intent,REQUEST_FOLDER);
+                }catch(Exception e){choosingFolder.set(false);folderResult(message(e));}
+            });
+        }
+        @JavascriptInterface public void clearExportFolder(){
+            if(destroyed||exporting.get()||importing.get()||!choosingFolder.compareAndSet(false,true)){
+                folderResult("Espera a que termine la operación actual");return;
+            }
+            worker.execute(()->{String error=null;try{exportFolder.clear();}catch(Exception e){error=message(e);}finally{choosingFolder.set(false);}folderResult(error);});
+        }
         @JavascriptInterface public String getDraft(){
             synchronized(draftLock){
                 try{byte[] bytes=draftFile.readFully();return bytes.length<=4_000_000?new String(bytes,java.nio.charset.StandardCharsets.UTF_8):"";}
@@ -129,7 +152,7 @@ public class MainActivity extends Activity {
             }
         }
         @JavascriptInterface public void requestImage(int ticket){
-            if(destroyed||exporting.get()||!importing.compareAndSet(false,true))return;
+            if(destroyed||exporting.get()||choosingFolder.get()||!importing.compareAndSet(false,true))return;
             importTicket=ticket;
             runOnUiThread(()->{
                 try{
@@ -174,23 +197,24 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void requestSave(String snapshot,String title,boolean grid,String images,int pages){
-            if(destroyed||importing.get()||!exporting.compareAndSet(false,true))return;
+            if(destroyed||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
             if(!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de guardar");return;}
             if(pages<1||pages>500||images==null||images.length()>300000){finishExport(false,"Demasiadas páginas o imágenes");return;}
-            ExportJob job=new ExportJob(snapshot,title,grid,images,pages);pendingExport=job;
+            ExportJob job=new ExportJob(snapshot,title,images,pages,exportFolder.selected());pendingExport=job;
+            if(job.folder!=null){startExport(job,null);return;}
             runOnUiThread(()->{
                 if(destroyed)return;
                 try{
                     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/octet-stream");
-                    String safe=job.title.replaceAll("[\\\\/:*?\"<>|]","_");intent.putExtra(Intent.EXTRA_TITLE,safe+".hinote");startActivityForResult(intent,REQUEST_SAVE);
+                    intent.putExtra(Intent.EXTRA_TITLE,ExportFolder.fileName(job.title));startActivityForResult(intent,REQUEST_SAVE);
                 }catch(Exception e){finishExport(false,message(e));}
             });
         }
         @JavascriptInterface public void cancelExport(){ExportJob job=pendingExport;if(job!=null)job.cancelled.set(true);}
     }
     private static final class ExportJob{
-        final String snapshot,title,images;final int pages;final boolean grid;final AtomicBoolean cancelled=new AtomicBoolean();
-        ExportJob(String snapshot,String title,boolean grid,String images,int pages){this.snapshot=snapshot;this.grid=grid;this.images=images;this.pages=pages;String clean=title==null?"":title.trim();this.title=clean.isEmpty()?"Nueva nota":clean.substring(0,Math.min(128,clean.length()));}
+        final String snapshot,title,images;final int pages;final Uri folder;final AtomicBoolean cancelled=new AtomicBoolean();
+        ExportJob(String snapshot,String title,String images,int pages,Uri folder){this.snapshot=snapshot;this.folder=folder;this.images=images;this.pages=pages;String clean=title==null?"":title.trim();this.title=clean.isEmpty()?"Nueva nota":clean.substring(0,Math.min(128,clean.length()));}
     }
     private File thumbnail(String snapshot,int index,boolean grid,JSONObject info,TaskToken token)throws Exception{
         if(index<0||index>=info.getInt("page_count"))throw new IOException("Página fuera de rango");
@@ -203,6 +227,12 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int code,int result,Intent data){
         super.onActivityResult(code,result,data);
+        if(code==REQUEST_FOLDER){
+            if(result!=RESULT_OK||data==null||data.getData()==null){choosingFolder.set(false);folderResult(null);return;}
+            final Uri tree=data.getData();final int flags=data.getFlags();
+            worker.execute(()->{String error=null;try{exportFolder.remember(tree,flags);}catch(Exception e){error=message(e);}finally{choosingFolder.set(false);}folderResult(error);});
+            return;
+        }
         if(code==REQUEST_IMAGE){
             final int ticket=importTicket;
             if(result!=RESULT_OK||data==null||data.getData()==null){importing.set(false);send("onImageImported",ticket+",null,null");return;}
@@ -218,12 +248,17 @@ public class MainActivity extends Activity {
         if(code!=REQUEST_SAVE)return;
         ExportJob job=pendingExport;
         if(result!=RESULT_OK||data==null||data.getData()==null||job==null){finishExport(false,"Guardado cancelado");return;}
-        Uri uri=data.getData();
+        startExport(job,data.getData());
+    }
+    private void folderResult(String error){send("onExportFolder",quote(exportFolder.describe())+","+(error==null?"null":quote(error)));}
+    private void startExport(ExportJob job,Uri pickedDestination){
         worker.execute(()->{
+            Uri uri=pickedDestination;
             File output=new File(sessionDir,"export-"+UUID.randomUUID()+".hinote");TaskToken token=new TaskToken("export",0,job.cancelled);
             File work=new File(sessionDir,"export-"+UUID.randomUUID().toString().replace("-",""));
             try{
                 token.check();ready();JSONObject info=new JSONObject(backend.callAttr("snapshot_info",sessionDir.getPath(),job.snapshot).toString());
+                if(job.folder!=null)exportFolder.validate(job.folder);
                 if(!work.mkdirs())throw new IOException("No se pudo preparar la exportación");
                 int count=Math.max(job.pages,info.getInt("page_count"));
                 send("onExportStage",quote("Preparando imágenes y recortes…"));
@@ -234,17 +269,19 @@ public class MainActivity extends Activity {
                     JSONArray pageImages=new JSONArray();
                     for(int j=0;j<images.length();j++)if(images.getJSONObject(j).getInt("page")==i)pageImages.put(images.getJSONObject(j));
                     String json=i<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),job.snapshot,i).toString():"{\"strokes\":[]}";
-                    PageRenderer.render(json,new File(work,"page-"+i+(job.grid?"-grid.jpg":"-plain.jpg")),job.grid,info.getJSONObject("layout").getDouble("grid_step"),pageImages,false,token::check);
+                    PageRenderer.renderForExport(json,new File(work,"page-"+i+"-native.jpg"),pageImages,new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
                     token.onProgress(i+1);
                 }
                 send("onExportStage",quote("Empaquetando y comprobando la nota…"));
-                backend.callAttr("export_snapshot",getFilesDir().getPath(),sessionDir.getPath(),job.snapshot,job.title,job.grid,output.getPath(),token,images.toString(),count,work.getPath());
+                backend.callAttr("export_snapshot",getFilesDir().getPath(),sessionDir.getPath(),job.snapshot,job.title,true,output.getPath(),token,images.toString(),count,work.getPath());
                 send("onExportStage",quote("Escribiendo el archivo…"));
+                if(job.folder!=null)uri=exportFolder.create(job.folder,job.title,token::check);
+                token.check();
                 try(InputStream in=new FileInputStream(output);OutputStream out=getContentResolver().openOutputStream(uri,"wt")){
                     if(out==null)throw new IOException("No se pudo abrir el destino");
                     byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1){token.check();out.write(buffer,0,n);}out.flush();
                 }
-                token.check();finishExport(true,"HiNote guardado correctamente");
+                token.check();finishExport(true,"Guardado: "+exportFolder.displayName(uri,ExportFolder.fileName(job.title)));
             }catch(OutOfMemoryError e){
                 try{DocumentsContract.deleteDocument(getContentResolver(),uri);}catch(Exception ignored){}
                 finishExport(false,"No hay memoria suficiente para esta imagen. Reduce su tamaño.");

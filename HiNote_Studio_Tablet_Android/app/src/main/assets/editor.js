@@ -8,6 +8,7 @@ let savedSelection = null, ime = false, refreshTimer, draftTimer, historyTimer, 
 let revision = 0, previewRevision = -1, pageRequest = 0;
 let composition = null, composing = false, exporting = false, currentPage = 0, zoom = 1;
 let history = [], historyIndex = -1;
+let folderBusy = false, exportFolderState = {configured:false,label:''};
 
 function bounded(value, min, max, fallback) {
   const n = Number(value); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
@@ -308,10 +309,30 @@ function controls() {
   $('prevPage').disabled = exporting || composing || !composition || currentPage <= 0;
   $('nextPage').disabled = exporting || composing || currentPage >= ImageEditor.count() - 1;
   editor.contentEditable = String(!exporting); $('noteTitle').disabled = exporting;
-  document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el => el.disabled = exporting);
+  document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el => el.disabled = exporting || folderBusy);
   $('undoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex <= 0; $('redoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex >= history.length - 1;
   ImageEditor.updateControls();
+  $('chooseFolder').disabled = exporting || ImageEditor.isBusy();
+  $('clearFolder').disabled = exporting || ImageEditor.isBusy() || !exportFolderState.configured;
 }
+function showExportFolder(raw) {
+  const data=JSON.parse(raw || '{}');
+  exportFolderState={configured:data.configured===true,label:String(data.label||'Carpeta elegida')};
+  $('folderLabel').textContent=exportFolderState.configured?exportFolderState.label:'Se preguntará dónde guardar';
+  $('folderHint').textContent=exportFolderState.configured?'Se recuerda al cerrar la app. Si el nombre existe, se guarda otra copia.':'Elige una carpeta para guardar directamente en ella.';
+}
+function changeExportFolder(clear=false) {
+  if(exporting||ImageEditor.isBusy())return;
+  if(!window.AndroidBridge?.requestExportFolder){toast('Configura la carpeta desde la app Android');return;}
+  saveDraft();folderBusy=true;controls();
+  try{clear?AndroidBridge.clearExportFolder():AndroidBridge.requestExportFolder();}
+  catch(e){folderBusy=false;controls();toast(e.message);}
+}
+window.onExportFolder=(raw,error)=>{
+  folderBusy=false;
+  try{showExportFolder(raw);}catch(e){toast('No se pudo leer la carpeta elegida');}
+  controls();if(error)toast(error);
+};
 function changed() {
   clearTimeout(refreshTimer); revision++; composing = false;
   if (window.AndroidBridge) AndroidBridge.invalidateCompose(revision);
@@ -370,7 +391,7 @@ function applyZoom() {
 }
 function exportNote() {
   if (exporting || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
-  clearTimeout(refreshTimer); saveDraft(); exporting = true; controls(); $('status').textContent = 'Elige dónde guardar…';
+  clearTimeout(refreshTimer); saveDraft(); exporting = true; controls(); $('status').textContent = exportFolderState.configured?'Guardando en la carpeta elegida…':'Elige dónde guardar…';
   try { AndroidBridge.requestSave(composition.snapshot, $('noteTitle').value || 'Nueva nota', $('gridCheck').checked,ImageEditor.exportJSON(),ImageEditor.count()); }
   catch (e) { window.onExportComplete(false, e.message); }
 }
@@ -383,7 +404,7 @@ document.querySelector('.toolbar').addEventListener('pointerdown', captureSelect
 $('tabs').addEventListener('click', event => {
   if (event.target.tagName !== 'BUTTON') return;
   [...$('tabs').children].forEach(b => b.classList.toggle('active', b === event.target));
-  ['text','lists','page','images'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
+  ['text','lists','page','images','save'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
   ImageEditor.mode(event.target.dataset.tab==='images');
 });
 $('colorPick').addEventListener('input', () => $('hexInput').value = $('colorPick').value.toUpperCase());
@@ -418,6 +439,7 @@ editor.addEventListener('drop', event => event.preventDefault());
 ['letterSpacing','wordSpacing','lineRows','listIndent','autoPreview'].forEach(id => $(id).addEventListener('change', changed));
 $('gridCheck').addEventListener('change', () => { queueDraft(); drawCurrent(); }); $('noteTitle').addEventListener('input', queueDraft);
 $('refreshBtn').onclick = refreshPreview; $('exportBtn').onclick = exportNote;
+$('chooseFolder').onclick=()=>changeExportFolder();$('clearFolder').onclick=()=>changeExportFolder(true);
 $('cancelBtn').onclick = () => {
   if (exporting) { AndroidBridge.cancelExport(); $('status').textContent = 'Cancelando…'; }
   else { clearTimeout(refreshTimer); revision++; AndroidBridge.invalidateCompose(revision); composing = false; $('status').textContent = 'Generación cancelada'; controls(); }
@@ -430,4 +452,5 @@ $('zoomFit').onclick = () => { zoom = Math.max(.25, Math.min(2, ($('previewWrap'
 window.addEventListener('resize', applyZoom); window.addEventListener('pagehide', saveDraft);
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveDraft(); });
 if (!restoreDraft()) renderLines([[]]);
+try{if(window.AndroidBridge?.getExportFolder)showExportFolder(AndroidBridge.getExportFolder());}catch(e){toast('No se pudo leer la carpeta de guardado');}
 checkpoint(); applyZoom(); changed();

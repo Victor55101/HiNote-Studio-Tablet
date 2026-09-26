@@ -328,22 +328,36 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
         return line
     def place_word():
         nonlocal current, word, pending_space
-        candidate = current + ([pending_space] if current and pending_space else []) + word
+        if not current and pending_space:
+            yield from place_leading_space()
+        candidate = current + ([pending_space] if pending_space else []) + word
         if current and not fits(candidate, start_x):
             yield flush()
             candidate = word
         current = candidate
         word, pending_space = [], None
+    def place_leading_space():
+        nonlocal current, pending_space
+        # Preserve explicit paragraph indentation. Consume very wide whitespace
+        # as empty wrapped lines instead of moving ink beyond the page boundary.
+        space, pending_space = pending_space, None
+        width = float(space['width'])
+        while width >= max(1.0, right_limit - start_x):
+            available = max(1.0, right_limit - start_x)
+            current = [{**space, 'width': available}]
+            width -= available
+            yield flush()
+        if width > 0:
+            current = [{**space, 'width': width}]
     for item in items:
         if item["kind"] == "space":
             if word:
                 yield from place_word()
             long_word = False
-            if current:
-                if pending_space is None:
-                    pending_space = dict(item)
-                else:
-                    pending_space["width"] += item["width"]
+            if pending_space is None:
+                pending_space = dict(item)
+            else:
+                pending_space["width"] += item["width"]
             continue
         if long_word:
             if current and not fits(current + [item], start_x):
@@ -354,6 +368,8 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
         if not fits(word, continuation_x):
             if current:
                 yield flush()
+            elif pending_space:
+                yield from place_leading_space()
             pending_space = None
             for letter in word:
                 if current and not fits(current + [letter], start_x):

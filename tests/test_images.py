@@ -29,7 +29,7 @@ class ImageExportTests(unittest.TestCase):
 
     def build(self, text='', count=3, images=None):
         snapshot = json.loads(compose(str(self.assets), str(self.root), json.dumps(document_from_plain_text(text)), '{}'))
-        for i in range(count): (self.work / f'page-{i}-grid.jpg').write_bytes(self.jpeg)
+        for i in range(count): (self.work / f'page-{i}-native.jpg').write_bytes(self.jpeg)
         output = self.root / 'test.hinote'
         export_snapshot(str(self.assets), str(self.root), snapshot['snapshot'], 'Imágenes', True, str(output),
                         images_json=json.dumps(images or []), page_count=count, export_dir=str(self.work))

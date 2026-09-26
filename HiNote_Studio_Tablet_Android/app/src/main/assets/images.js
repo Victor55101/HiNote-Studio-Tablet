@@ -70,9 +70,9 @@ const ImageEditor = (() => {
   function scheduleRender(){if(frame===null)frame=requestAnimationFrame(()=>{frame=null;render();});}
   function updateControls(){
     const im=selected();
-    document.querySelectorAll('[data-image-action]').forEach(n=>n.disabled=exporting||busy||!im);
-    el('insertImage').disabled=exporting||busy||images.length>=200;
-    el('imageNewPage').disabled=exporting||busy||count()>=500;
+    document.querySelectorAll('[data-image-action]').forEach(n=>n.disabled=exporting||busy||folderBusy||!im);
+    el('insertImage').disabled=exporting||busy||folderBusy||images.length>=200;
+    el('imageNewPage').disabled=exporting||busy||folderBusy||count()>=500;
     if(im && document.activeElement!==el('imageAngle'))el('imageAngle').value=Math.round(normalizeAngle(im.angle)*10)/10;
     if(im && document.activeElement!==el('imagePage'))el('imagePage').value=im.page+1;
     el('imageHint').classList.toggle('hidden',!active);
@@ -232,5 +232,5 @@ const ImageEditor = (() => {
     if(e.key==='Escape'&&active){finishGesture(true);select(null);}
   });
   return {state,restore,count,render,updateControls,mode,finishGesture,sanitize,selected,select,normalizeAngle,
-    isBusy:()=>busy,exportJSON:()=>JSON.stringify(images),selection,modified};
+    isBusy:()=>busy||folderBusy,exportJSON:()=>JSON.stringify(images),selection,modified};
 })();

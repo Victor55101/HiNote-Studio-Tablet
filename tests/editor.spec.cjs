@@ -123,6 +123,35 @@ test('Page controls use the backend setting names', async page => {
   await page.click('#refreshBtn'); const s = await page.evaluate(() => JSON.parse(bridgeCalls.filter(c=>c[0]==='compose').at(-1)[2]));
   assert.equal(s.line_grid_rows,3); assert.equal(s.word_spacing,35); assert.equal(s.letter_spacing,2); assert.equal(s.auto_line_spacing,true);
 });
+test('Leading spaces typed or pasted survive serialization, formatting and draft reload',async page=>{
+  await setup(page);await paste(page,'         O --- O\n            I\n            O');
+  const before=await lines(page);assert.equal(before[0],'         O --- O');
+  await select(page,{line:0,offset:0},{line:0,offset:9});await page.selectOption('#sizeSel','150');
+  await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
+  assert.deepEqual(await lines(page),before);
+  assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs.map(p=>p.segments.map(s=>s.text).join(''))),before);
+});
+test('Save folder persists, cancellation retains it, and manual mode can be restored',async page=>{
+  await setup(page,'Hola');await page.click('[data-tab="save"]');await page.click('#chooseFolder');
+  assert.equal(await page.isDisabled('#exportBtn'),true);
+  await page.evaluate(()=>{localStorage.setItem('test-export-folder',JSON.stringify({configured:true,label:'Documentos / HiNote'}));onExportFolder(AndroidBridge.getExportFolder(),null);});
+  assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');
+  await page.reload();await page.waitForSelector('#editor .line');await page.click('[data-tab="save"]');
+  assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');
+  await page.click('#chooseFolder');await page.evaluate(()=>onExportFolder(AndroidBridge.getExportFolder(),null));
+  assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');assert.equal(await page.isDisabled('#chooseFolder'),false);
+  await page.click('#clearFolder');await page.evaluate(()=>{localStorage.removeItem('test-export-folder');onExportFolder(AndroidBridge.getExportFolder(),null);});
+  assert.equal(await page.textContent('#folderLabel'),'Se preguntará dónde guardar');assert.equal(await page.isDisabled('#clearFolder'),true);
+});
+test('Saved-folder export is immediate in the UI and errors allow retry',async page=>{
+  await setup(page,'Hola');await page.evaluate(()=>onExportFolder(JSON.stringify({configured:true,label:'HiNote'}),null));
+  await page.click('#refreshBtn');await page.evaluate(()=>onComposeResult(revision,JSON.stringify({snapshot:'folder-note',page_count:1,warnings:[]})));
+  await page.click('#exportBtn');assert.equal(await page.textContent('#status'),'Guardando en la carpeta elegida…');
+  assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='save').length),1);
+  assert.equal(await page.isDisabled('#chooseFolder'),true);
+  await page.evaluate(()=>onExportComplete(false,'La carpeta ya no está disponible'));
+  assert.equal(await page.isDisabled('#exportBtn'),false);assert.equal(await page.isDisabled('#chooseFolder'),false);
+});
 
 // Image editing is tested with real pointer/touch events and a mocked file picker.
 async function importImage(page,asset='a',size=[640,480]){
@@ -212,7 +241,8 @@ test('Image metadata is frozen during export and extra image pages are included'
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
         requestPage:(...a)=>bridgeCalls.push(['page',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
-        requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;}}; });
+        requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
+        getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder'])}; });
       const page = await context.newPage(); page.setDefaultTimeout(10000); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       try {
         await page.goto(`http://127.0.0.1:${server.address().port}`); await page.waitForSelector('#editor .line'); await fn(page);

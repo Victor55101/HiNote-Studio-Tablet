@@ -101,7 +101,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             if cache_bytes > MAX_CACHE_BYTES:
                 raise ValueError("La nota supera el espacio de trabajo de 512 MB; divídela en varias notas.")
             if token is not None: token.onProgress(index + 1)
-        result = compose_document(project / "glyphs_v23.json", doc, **settings,
+        result = compose_document(project / "glyphs_v24.json", doc, **settings,
             page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES)
         _check(token)
         manifest = {"snapshot": snapshot_id, "page_count": result["page_count"],
@@ -135,7 +135,9 @@ def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_pat
     images = _export_images(images_json, count, rendered)
     stroke_counts = info.get("stroke_counts", [1] * info["page_count"])
     bins = [work/f"page-{i}.bin" if i < info["page_count"] and stroke_counts[i] else None for i in range(count)]
-    thumbs = [rendered/f"page-{i}-{'grid' if grid else 'plain'}.jpg" for i in range(count)]
+    # `grid` is a preview-only preference, retained in the bridge signature.
+    # Native page metadata is base3, so cached thumbnails must use that paper too.
+    thumbs = [rendered/f"page-{i}-native.jpg" for i in range(count)]
     output = Path(output_path)
     try:
         _check(token)
