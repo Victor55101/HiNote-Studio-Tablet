@@ -99,7 +99,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             if cache_bytes > MAX_CACHE_BYTES:
                 raise ValueError("La nota supera el espacio de trabajo de 512 MB; divídela en varias notas.")
             if token is not None: token.onProgress(index + 1)
-        result = compose_document(project / "glyphs_v11.json", doc, **settings,
+        result = compose_document(project / "glyphs_v22.json", doc, **settings,
             page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES)
         _check(token)
         manifest = {"snapshot": snapshot_id, "page_count": result["page_count"],
