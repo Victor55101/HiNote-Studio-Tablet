@@ -16,7 +16,7 @@ from pencilengine_reader import read_pencilengine, validate_pencilengine
 from validate_hinote import validate_hinote, loadj
 
 ASSETS = APP / 'assets'
-GLYPHS = ASSETS / 'glyphs_v22.json'
+GLYPHS = ASSETS / 'glyphs_v23.json'
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
@@ -126,14 +126,14 @@ class PipelineTests(unittest.TestCase):
             [[177 + column, 185 + column, 193 + 2 * column, 194 + 2 * column] for column in range(8)],
         )
         self.assertEqual(library['placement_y_offsets']['-'], -16.0)
-        self.assertEqual(library['placement_y_offsets']['_'], -7.25)
+        self.assertEqual(library['placement_y_offsets']['_'], -3.25)
         self.assertTrue(all(variant['source_row'] == 10 for variant in library['glyphs']['-']))
         self.assertTrue(all(variant['source_row'] == 11 for variant in library['glyphs']['_']))
 
         plain = compose_document(GLYPHS, document_from_plain_text('_-Hola'), jitter_x=0)
         underscore, dash = plain['pages'][0]['placements'][:2]
         self.assertEqual((underscore['char'], dash['char']), ('_', '-'))
-        self.assertAlmostEqual(underscore['baseline_y'] - dash['baseline_y'], 8.75)
+        self.assertAlmostEqual(underscore['baseline_y'] - dash['baseline_y'], 12.75)
 
         listed = compose_document(GLYPHS, document_from_plain_text('• Viñeta\n* Asterisco'), jitter_x=0)
         page = listed['pages'][0]

@@ -53,14 +53,17 @@ def _load_template(template_hinote: Path):
     return entries, roots[0], _gunzip_json(entries[roots[0]]), pages[0], _gunzip_json(entries[pages[0]])
 
 
-def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title="Nueva nota", thumbnails=None, check_cancelled=None):
+def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title="Nueva nota", thumbnails=None, images=None, check_cancelled=None):
     check = check_cancelled or (lambda: None)
     template_hinote = Path(template_hinote)
     output_hinote = Path(output_hinote)
-    generated_bins = [Path(p) for p in generated_bins]
+    generated_bins = [Path(p) if p is not None else None for p in generated_bins]
     thumbnails = [Path(p) for p in (thumbnails or [])]
+    images = images or [[] for _ in generated_bins]
     if not generated_bins or len(generated_bins) != len(thumbnails):
         raise ValueError("Se requiere un thumbnail JPEG por página")
+    if len(images) != len(generated_bins):
+        raise ValueError("Las imágenes deben corresponder a las páginas")
 
     entries, _old_root, root_obj, _old_page, template_page_obj = _load_template(template_hinote)
     note = root_obj["customNoteContent"]
@@ -99,7 +102,8 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
         page_jh = f"pages/{page_id}.jhinote"
         bin_name = f"files/{page_id}.bin"
         thumb_name = f"files/{page_id}.jpg"
-        files[bin_name] = bin_path
+        if bin_path is not None:
+            files[bin_name] = bin_path
         files[thumb_name] = thumb_path
 
         page["id"] = page_id
@@ -129,10 +133,30 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
             att.setdefault("playbackProgress", 0)
 
         page["thumbnail"] = f"/data/data/com.huawei.hinote/files/thumbnail/{page_id}.jpg"
-        page_obj["fileList"] = [
-            {"hash": _sha(thumb_path), "name": Path(thumb_name).name},
-            {"hash": _sha(bin_path), "name": Path(bin_name).name},
-        ]
+        page_obj["fileList"] = [{"hash": _sha(thumb_path), "name": Path(thumb_name).name}]
+        if bin_path is None:
+            page["attachment"] = []
+        else:
+            page_obj["fileList"].append({"hash": _sha(bin_path), "name": Path(bin_name).name})
+        page["pageElement"] = []
+        for layer, image in enumerate(images[idx - 1]):
+            check()
+            source = Path(image["path"])
+            digest = _sha(source)
+            image_name = digest + source.suffix.lower()
+            files["files/" + image_name] = source
+            if not any(item["name"] == image_name for item in page_obj["fileList"]):
+                page_obj["fileList"].append({"hash": digest, "name": image_name})
+            page["pageElement"].append({
+                "id": str(uuid.uuid4()), "notePageId": page_id, "elementType": 1,
+                "filePath": f"/data/data/com.huawei.hinote/files/image/{image_name}",
+                "positionX": image["x"] / 1000.0, "positionY": image["y"] / 1600.0,
+                "width": image["width"] / 1000.0, "height": image["height"] / 1600.0,
+                "angle": image["angle"], "positionZ": layer, "scale": 1.0,
+                "data1": '{"sourceDpi":"0","type":"0","stretchSplits":"null"}',
+                "isDelete": 0, "cloudSyncState": 0, "playbackProgress": 0,
+                "createTime": now_ms + idx, "modifiedTime": now_ms + idx,
+            })
         page_records.append((page_jh, _gzip_json(page_obj), thumb_name, bin_name))
 
     root_obj["fileList"] = [
@@ -161,6 +185,7 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
                 _write_entry(out, name, files[name], check)
         for _, _, thumb_name, bin_name in page_records:
             _write_entry(out, thumb_name, files[thumb_name], check)
-            _write_entry(out, bin_name, files[bin_name], check)
+            if bin_name in files:
+                _write_entry(out, bin_name, files[bin_name], check)
         out.writestr("custom_md.jhinote", _gzip_json(md))
     return output_hinote
