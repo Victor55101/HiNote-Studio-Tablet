@@ -110,5 +110,7 @@ public class ImageStoreTest {
         for(int x=0;x<675;x+=3)for(int y=240;y<1080;y+=3){error+=Math.abs(Color.red(result.getPixel(x,y))-Color.red(original.getPixel(x,y)));samples++;}
         assertTrue("Export must retain native grid color and spacing",error/(double)samples<2);
         result.recycle();original.recycle();
+        File diagnostic=new File("build/reports/tests/native-paper.jpg");diagnostic.getParentFile().mkdirs();
+        Files.copy(output.toPath(),diagnostic.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 }

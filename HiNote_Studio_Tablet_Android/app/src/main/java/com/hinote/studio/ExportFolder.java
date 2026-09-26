@@ -46,9 +46,13 @@ final class ExportFolder {
     }
     private void release(Uri tree){try{resolver.releasePersistableUriPermission(tree,ACCESS);}catch(Exception ignored){}}
     private static Uri document(Uri tree){return DocumentsContract.buildDocumentUriUsingTree(tree,DocumentsContract.getTreeDocumentId(tree));}
+    private Cursor query(Uri uri,String[] columns){
+        if(android.os.Build.VERSION.SDK_INT>=26)return resolver.query(uri,columns,(android.os.Bundle)null,null);
+        return resolver.query(uri,columns,null,null,null);
+    }
     private String inspect(Uri tree)throws IOException{
-        try(Cursor c=resolver.query(document(tree),new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_FLAGS},null,null,null)){
+        try(Cursor c=query(document(tree),new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_FLAGS})){
             if(c==null||!c.moveToFirst()||!DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(1))
                     ||(c.getInt(2)&DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE)==0)
                 throw new IOException("La carpeta no permite crear archivos");
@@ -80,7 +84,7 @@ final class ExportFolder {
         String name=fileName(title),stem=name.substring(0,name.length()-7);boolean exists=false;long suffix=0;
         Pattern numbered=Pattern.compile(Pattern.quote(stem)+" \\((\\d{1,9})\\)\\.hinote",Pattern.CASE_INSENSITIVE);
         Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,DocumentsContract.getTreeDocumentId(tree));
-        try(Cursor c=resolver.query(children,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)){
+        try(Cursor c=query(children,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME})){
             if(c==null)throw new IOException("No se pudieron comprobar los nombres en la carpeta");
             while(c.moveToNext()){
                 check.run();String existing=c.getString(0);if(existing==null)continue;
@@ -94,7 +98,7 @@ final class ExportFolder {
         return created;
     }
     String displayName(Uri uri,String fallback){
-        try(Cursor c=resolver.query(uri,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)){
+        try(Cursor c=query(uri,new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME})){
             return c!=null&&c.moveToFirst()?c.getString(0):fallback;
         }catch(Exception e){return fallback;}
     }

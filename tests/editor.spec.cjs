@@ -138,6 +138,7 @@ test('Save folder persists, cancellation retains it, and manual mode can be rest
   assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');
   await page.reload();await page.waitForSelector('#editor .line');await page.click('[data-tab="save"]');
   assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');
+  await page.screenshot({path:path.join(root,'test-results','save-folder.png')});
   await page.click('#chooseFolder');await page.evaluate(()=>onExportFolder(AndroidBridge.getExportFolder(),null));
   assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');assert.equal(await page.isDisabled('#chooseFolder'),false);
   await page.click('#clearFolder');await page.evaluate(()=>{localStorage.removeItem('test-export-folder');onExportFolder(AndroidBridge.getExportFolder(),null);});
