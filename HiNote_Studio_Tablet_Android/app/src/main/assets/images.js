@@ -137,6 +137,7 @@ const ImageEditor = (() => {
   }
   function pointerDown(e){
     if(exporting||busy||e.button>0||!el('cropDialog').classList.contains('hidden'))return;
+    if(pointers.size>=2){e.preventDefault();return;}
     e.preventDefault();pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);
     if(pointers.size>2)return;
     if(pointers.size===2){startPair();return;}

@@ -129,8 +129,9 @@ function normalizeRoots() {
 function checkpoint() {
   clearTimeout(historyTimer);
   const data = JSON.stringify({lines:readLines(),...ImageEditor.state()}), selection = bookmark();
-  if (history[historyIndex]?.data === data) { history[historyIndex].selection = selection; return; }
-  history = history.slice(0, historyIndex + 1); history.push({data, selection});
+  const imageSelection=ImageEditor.selected()?.id||null;
+  if (history[historyIndex]?.data === data) { history[historyIndex].selection = selection; history[historyIndex].imageSelection=imageSelection; return; }
+  history = history.slice(0, historyIndex + 1); history.push({data, selection,imageSelection});
   let bytes = history.reduce((sum, entry) => sum + entry.data.length * 2, 0);
   while (history.length > 2 && (history.length > 40 || bytes > 8 * 1024 * 1024)) bytes -= history.shift().data.length * 2;
   historyIndex = history.length - 1; controls();
@@ -151,7 +152,7 @@ function undoRedo(direction) {
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
   historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines);
-  renderLines(data.lines); ImageEditor.restore(data); restoreSelection(entry.selection);
+  renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
   if(sameText){ImageEditor.modified();drawCurrent();}else changed();
 }
 function replaceText(lines, mark, text) {
@@ -349,7 +350,7 @@ function drawCurrent() {
   if(!composition || currentPage >= composition.page_count){
     pageRequest++;const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);applyZoom();return;
   }
-  if (previewRevision !== revision) return;
+  if (previewRevision !== revision) {const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);return;}
   const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);
   AndroidBridge.requestPage(composition.snapshot, currentPage, $('gridCheck').checked, ++pageRequest);
 }

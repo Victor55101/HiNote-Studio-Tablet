@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.net.Uri;
+import android.media.ExifInterface;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
@@ -58,6 +59,22 @@ public class ImageStoreTest {
     @Test public void decodesByContentNotExtension() throws Exception {
         File renamed=new File(directory,"really-png.jpg");Files.copy(source.toPath(),renamed.toPath());
         Bitmap b=ImageStore.decode(renamed,512);assertTrue(b.hasAlpha());b.recycle();
+    }
+    @Test public void webpWithTransparencyIsNormalizedToPng() throws Exception {
+        Bitmap bitmap=BitmapFactory.decodeFile(source.getPath());File webp=new File(directory,"input.webp");
+        try(FileOutputStream out=new FileOutputStream(webp)){bitmap.compress(Bitmap.CompressFormat.WEBP,100,out);}bitmap.recycle();
+        JSONObject imported=store.importImage(context.getContentResolver(),Uri.fromFile(webp));
+        assertTrue(store.asset(imported.getString("asset"),false).getName().endsWith(".png"));
+        Bitmap decoded=BitmapFactory.decodeFile(store.asset(imported.getString("asset"),false).getPath());
+        assertEquals(0,Color.alpha(decoded.getPixel(0,0)));decoded.recycle();
+    }
+    @Test public void jpgExifOrientationIsAppliedOnce() throws Exception {
+        Bitmap bitmap=Bitmap.createBitmap(120,80,Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.BLUE);
+        File jpg=new File(directory,"photo.jpg");try(FileOutputStream out=new FileOutputStream(jpg)){bitmap.compress(Bitmap.CompressFormat.JPEG,95,out);}bitmap.recycle();
+        ExifInterface exif=new ExifInterface(jpg.getPath());exif.setAttribute(ExifInterface.TAG_ORIENTATION,"6");exif.saveAttributes();
+        JSONObject imported=store.importImage(context.getContentResolver(),Uri.fromFile(jpg));
+        assertEquals(80,imported.getInt("pixelWidth"));assertEquals(120,imported.getInt("pixelHeight"));
+        assertTrue(store.asset(imported.getString("asset"),false).getName().endsWith(".jpg"));
     }
     @Test public void oversizedImageIsSampledBeforeDecoding() throws Exception {
         Bitmap b=Bitmap.createBitmap(3000,1500,Bitmap.Config.ARGB_8888);b.eraseColor(Color.GREEN);

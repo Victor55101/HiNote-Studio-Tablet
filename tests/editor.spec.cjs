@@ -130,6 +130,8 @@ async function importImage(page,asset='a',size=[640,480]){
   await page.evaluate(({asset,size})=>{
     const id=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];
     onImageImported(id,JSON.stringify({asset:asset.repeat(64),pixelWidth:size[0],pixelHeight:size[1]}),null);
+    const call=bridgeCalls.filter(c=>c[0]==='compose').at(-1);
+    if(call&&composing)onComposeResult(call[3],JSON.stringify({snapshot:'test-snapshot',page_count:1,warnings:[],layout:{grid_step:58.8}}));
   },{asset,size});
 }
 async function imageState(page){return page.evaluate(()=>ImageEditor.state());}
@@ -185,7 +187,7 @@ test('Two finger touch scales and rotates an image and undo restores it',async p
   await page.click('#undoBtn');assert.deepEqual((await imageState(page)).images[0],before);
 });
 test('Old V21 text draft migrates without losing formatting',async page=>{
-  await page.evaluate(()=>{localStorage.removeItem(DRAFT_KEY);localStorage.removeItem('native-draft');localStorage.setItem('hinote-draft-v21',JSON.stringify({version:21,lines:[[{text:'Anterior',scale:1.5,color:'#336699',opacity:60}]],title:'V22',settings:{},grid:false}));});
+  await page.addInitScript(()=>{localStorage.removeItem('hinote-draft-v23');localStorage.removeItem('native-draft');localStorage.setItem('hinote-draft-v21',JSON.stringify({version:21,lines:[[{text:'Anterior',scale:1.5,color:'#336699',opacity:60}]],title:'V22',settings:{},grid:false}));});
   await page.reload();await page.waitForSelector('#editor .line');assert.deepEqual(await lines(page),['Anterior']);
   assert.equal(await page.evaluate(()=>readLines()[0][0].scale),1.5);assert.equal((await imageState(page)).images.length,0);
 });
@@ -211,7 +213,7 @@ test('Image metadata is frozen during export and extra image pages are included'
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
         requestPage:(...a)=>bridgeCalls.push(['page',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
         requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;}}; });
-      const page = await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
+      const page = await context.newPage(); page.setDefaultTimeout(10000); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       try {
         await page.goto(`http://127.0.0.1:${server.address().port}`); await page.waitForSelector('#editor .line'); await fn(page);
         assert.deepEqual(errors,[],'Uncaught browser errors'); console.log('PASS '+name);
