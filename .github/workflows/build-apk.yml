@@ -1,48 +1,56 @@
-name: Build HiNote Studio APK
+name: Build HiNote Studio Tablet V21
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
-
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: hinote-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify source bundle
-        run: |
-          test -f HiNote_Studio_Tablet_Android_Source.zip || {
-            echo "Falta HiNote_Studio_Tablet_Android_Source.zip en la raíz del repositorio."
-            exit 1
-          }
-
-      - name: Extract Android project
-        run: unzip -q -o HiNote_Studio_Tablet_Android_Source.zip
-
-      - name: Apply V20 performance and formatting patch
-        run: python .github/scripts/apply_v20_patch.py
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python .github/scripts/prepare_assets.py
+      - run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - run: npm install --no-save --no-audit --no-fund playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/editor.spec.cjs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: editor-test-failures
+          path: test-results/
+          if-no-files-found: ignore
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python .github/scripts/prepare_assets.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-
-      - name: Build debug APK
+      - run: gradle --no-daemon assembleDebug
         working-directory: HiNote_Studio_Tablet_Android
-        run: gradle assembleDebug --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V20
+          name: HiNote-Studio-Tablet-APK-V21
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error

@@ -1,42 +1,38 @@
-# HiNote Studio Tablet
+# HiNote Studio Tablet — V21
 
-Aplicación Android/HarmonyOS para crear notas `.hinote` directamente en una HUAWEI MatePad y abrirlas después en Huawei Notes.
+App Android para convertir texto a los trazos de la calibración personal incluida y exportarlo a Huawei Notes como `.hinote`.
 
-El proyecto usa el mismo motor PencilEngine/HiNote que ya se validó en la versión de escritorio, incluyendo las correcciones de V19 para espaciado y strokes fragmentados.
+## Cambios
 
-## Estado del repositorio
+- Composición por páginas en un hilo de trabajo. Los trazos se guardan en archivos temporales; el editor recibe un resumen y carga una sola imagen por página.
+- Cancelación de trabajos obsoletos, progreso visible y eliminación de temporales. La exportación utiliza los mismos trazos que la vista previa.
+- Escritura y validación de los archivos binarios y ZIP por bloques. Se evita conservar todos los puntos y miniaturas del documento en memoria.
+- Ajuste de palabras largas, caracteres Unicode normalizados y trazos descendentes. Avisos de caracteres sin calibrar agrupados.
+- Editor con pegado multilínea, selección persistente, formato absoluto, listas que conservan el formato, deshacer/rehacer y borrador local.
+- Notas largas: actualizar manualmente; el modo automático funciona hasta 12000 caracteres. Límites de protección: 200000 caracteres, 10000 párrafos, 20000 segmentos, 500 páginas y 512 MiB de archivos de composición.
 
-El workflow de compilación automática ya está configurado.
+La app utiliza el banco `glyphs_v11.json` existente. Este repositorio no contiene una pantalla para importar una nueva calibración. La fidelidad depende de los caracteres y variantes de ese banco.
 
-Para generar el APK falta únicamente subir a la raíz del repositorio este archivo:
+## Compilar
 
-`HiNote_Studio_Tablet_Android_Source.zip`
+1. Instalar JDK 17, Python 3.11, Gradle 8.13 y Android SDK 35.
+2. Desde la raíz: `python .github/scripts/prepare_assets.py`.
+3. Abrir `HiNote_Studio_Tablet_Android` en Android Studio o ejecutar dentro de esa carpeta `gradle assembleDebug`.
+4. APK en `app/build/outputs/apk/debug/app-debug.apk`.
 
-Una vez que el ZIP esté en `main`, GitHub Actions compilará automáticamente la aplicación.
+El ZIP original se conserva como fuente de los dos recursos de calibración. El código editable está en `HiNote_Studio_Tablet_Android`; no se vuelve a extraer ni se parchea durante la compilación. El workflow de GitHub Actions verifica las pruebas y genera el APK al publicarse los cambios.
 
-## Descargar el APK
+## Pruebas
 
-1. Abre la pestaña **Actions**.
-2. Entra en **Build HiNote Studio APK**.
-3. Abre la ejecución más reciente que haya terminado correctamente.
-4. En **Artifacts**, descarga **HiNote-Studio-Tablet-APK**.
-5. Descomprime el archivo descargado.
-6. Instala `app-debug.apk` en la MatePad.
+```sh
+python .github/scripts/prepare_assets.py
+python -m unittest discover -s tests -p 'test_*.py' -v
+npm install --no-save playwright@1.55.0
+npx playwright install chromium
+node tests/editor.spec.cjs
+python tools/benchmark_engine.py --paragraphs 100
+```
 
-## Funciones previstas en la versión Tablet
+Consultar `docs/PRUEBA_TABLET.md` para verificar el resultado en Huawei Notes. Las pruebas del motor en Linux y del editor en Chromium no sustituyen la prueba en una tablet física ni garantizan compatibilidad con todas las versiones de Huawei Notes.
 
-- Editor de texto táctil.
-- Previsualización paginada.
-- Banco de escritura manuscrita personalizado.
-- Listas y sublistas.
-- Tamaño de escritura.
-- Color y opacidad.
-- Paginación automática.
-- Exportación directa a `.hinote` usando el selector de archivos del sistema.
-- Uso offline después de instalar el APK.
-
-## Arquitectura
-
-La aplicación es Android `arm64-v8a` y usa Chaquopy para ejecutar dentro de la tablet el núcleo Python del generador de HiNote.
-
-El APK se compila con Java 17, Gradle y GitHub Actions.
+Los APK de depuración pueden tener una firma distinta de la instalación anterior. Conserva tus notas y una copia del texto antes de desinstalar una versión: desinstalar borra el borrador local.

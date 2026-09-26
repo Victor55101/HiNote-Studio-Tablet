@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>HiNote Studio Tablet</title>
+<style>
+:root{
+  --bg:#f4f7fb;--panel:#ffffff;--ink:#14213d;--muted:#6b7a90;--line:#dde5ef;
+  --accent:#5b6df7;--accent2:#11a37f;--danger:#d9485f;--shadow:0 8px 24px rgba(20,33,61,.08);
+}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);height:100vh;overflow:hidden}
+button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-rows:auto auto 1fr}
+.topbar{display:flex;align-items:center;gap:14px;padding:12px 18px;background:#0f172a;color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.18);z-index:5}
+.logo{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#6675ff,#4cc7b5);display:grid;place-items:center;font-weight:800;font-size:20px}
+.titlewrap{min-width:0;flex:1}.titlewrap h1{font-size:18px;margin:0}.titlewrap small{color:#b8c4d9}.topactions{display:flex;gap:8px}
+.btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 13px;border-radius:10px;font-weight:650;cursor:pointer}.btn.primary{background:var(--accent2);color:#fff;border-color:transparent}.btn.accent{background:var(--accent);color:#fff;border-color:transparent}.btn.ghost{background:transparent;color:#fff;border-color:#40506c}.btn:disabled{opacity:.45}
+.toolbar{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);overflow:auto;white-space:nowrap}
+.segment{display:flex;border:1px solid var(--line);border-radius:11px;overflow:hidden;flex:0 0 auto}.segment button{border:0;background:#fff;padding:9px 12px;color:var(--muted)}.segment button.active{background:#eef1ff;color:#4255e7;font-weight:700}
+.toolpanel{display:flex;gap:10px;align-items:center}.field{display:flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid var(--line);padding:6px 8px;border-radius:10px}.field label{font-size:12px;color:var(--muted)}.field input[type=number]{width:64px;border:0;background:transparent;outline:0}.field input[type=color]{width:34px;height:30px;border:0;background:transparent;padding:0}.field select{border:0;background:transparent;outline:0}
+.workspace{display:grid;grid-template-columns:minmax(360px,1fr) minmax(360px,1fr);gap:12px;padding:12px;min-height:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);min-height:0;overflow:hidden}.editorCard{display:grid;grid-template-rows:auto auto 1fr auto}.cardhead{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}.cardhead h2{font-size:15px;margin:0}.badge{font-size:12px;color:#4d5df0;background:#edf0ff;padding:5px 8px;border-radius:999px}
+.noteTitle{margin:10px 12px 0;border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none;font-size:15px}.editorScroll{overflow:auto;padding:10px 12px 18px}.editor{min-height:100%;outline:none;line-height:1.55;font-size:17px;white-space:pre-wrap;word-break:break-word}.editor .line{min-height:1.55em}.editor .line:focus{outline:none}.editor .line.selLine{background:#f5f7ff}
+.previewCard{display:flex;flex-direction:column}.previewWrap{flex:1;min-height:0;overflow:auto;background:#e8edf5;padding:16px;display:flex;justify-content:flex-start;align-items:flex-start}.canvasShell{margin-inline:auto;background:#fff;box-shadow:0 5px 20px rgba(15,23,42,.18);transform-origin:top center}.previewFooter{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}.previewFooter .center{display:flex;align-items:center;gap:8px}.status{font-size:12px;color:var(--muted);min-width:120px;text-align:center}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:.2s;z-index:20}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.hidden{display:none!important}
+@media(max-width:900px){body{overflow:auto;height:auto}.app{height:auto;min-height:100vh;grid-template-rows:auto auto auto}.workspace{grid-template-columns:1fr;min-height:auto}.editorCard{height:55vh}.previewCard{height:75vh}.toolbar{position:sticky;top:0;z-index:4}.topbar{position:sticky;top:0}.titlewrap small{display:none}.btn{padding:8px 10px}}
+@media(max-width:600px){.titlewrap h1{font-size:16px}.logo{width:34px;height:34px;border-radius:11px}.topbar{padding:9px 10px}.workspace{padding:8px;gap:8px}.toolbar{padding:8px}.field label{display:none}.editor{font-size:16px}.previewWrap{padding:8px}}
+.draftFooter{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
+.warningPanel{padding:8px 14px;background:#fff8e6;font-size:12px;max-height:130px;overflow:auto}.warningPanel summary{cursor:pointer}.editor:has(> .line:only-child > br:only-child)::before{content:attr(data-placeholder);color:#7a879b;pointer-events:none;position:absolute}.editorCard .editorScroll{position:relative}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">H</div>
+    <div class="titlewrap"><h1>HiNote Studio</h1><small>Edición directa en tu MatePad · exporta a Huawei Notes</small></div>
+    <div class="topactions"><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar</button><button class="btn primary" id="exportBtn">Guardar .hinote</button></div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button><button class="btn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
+    <div class="segment" id="tabs">
+      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button>
+    </div>
+    <div class="toolpanel" id="panelText">
+      <div class="field"><label>Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected>100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
+      <div class="field"><label>Color</label><input type="color" id="colorPick" value="#000000"><input id="hexInput" value="#000000" style="width:82px;border:0;background:transparent;outline:0"></div>
+      <div class="field"><label>Opacidad</label><input id="opacity" type="number" min="1" max="100" value="100"><span>%</span></div>
+      <button class="btn" id="applyFormat">Aplicar</button>
+      <select id="caseSel" class="btn"><option value="">Aa</option><option value="sentence">Tipo oración.</option><option value="lower">minúscula</option><option value="upper">MAYÚSCULAS</option><option value="title">Mayúsculas Cada Palabra</option><option value="toggle">tIPO iNVERSO</option></select>
+    </div>
+    <div class="toolpanel hidden" id="panelLists">
+      <select id="listType" class="btn"><option value="bullet">• Viñeta</option><option value="dash">- Guion</option><option value="asterisk">* Asterisco</option><option value="num_dot">1. Numérica</option><option value="num_paren">1) Numérica</option><option value="alpha_lower_dot">a. Alfabética</option><option value="alpha_lower_paren">a) Alfabética</option><option value="alpha_upper_dot">A. Alfabética</option><option value="alpha_upper_paren">A) Alfabética</option></select>
+      <button class="btn" id="applyList">Aplicar lista</button><button class="btn" id="removeList">Quitar</button><button class="btn" id="indentBtn">Nivel →</button><button class="btn" id="outdentBtn">← Nivel</button>
+      <div class="field"><label>Sangría</label><input type="number" id="listIndent" min="0" max="6" value="1"><span>cuadros</span></div>
+    </div>
+    <div class="toolpanel hidden" id="panelPage">
+      <div class="field"><label>Interlineado</label><input id="lineRows" type="number" min="1" max="4" value="1"></div>
+      <div class="field"><label>Letras</label><input id="letterSpacing" type="number" min="-8" max="8" step="0.5" value="0"></div>
+      <div class="field"><label>Palabras</label><input id="wordSpacing" type="number" min="12" max="60" step="1" value="26"></div>
+      <label class="field"><input id="autoPreview" type="checkbox" checked> Vista automática</label>
+      <label class="field"><input id="gridCheck" type="checkbox" checked> Cuadrícula</label>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <section class="card editorCard">
+      <div class="cardhead"><h2>Documento</h2><span class="badge" id="charCount">0 caracteres</span></div>
+      <input class="noteTitle" id="noteTitle" maxlength="128" aria-label="Título de la nota" value="Nueva nota" placeholder="Título de la nota">
+      <div class="editorScroll"><div id="editor" class="editor" aria-label="Texto de la nota" data-placeholder="Escribe o pega tu texto aquí…" contenteditable="true" spellcheck="true"></div></div>
+      <div class="draftFooter"><span id="draftStatus" role="status">Borrador guardado</span><span>Enter continúa listas · Ctrl+Z deshace</span></div>
+    </section>
+
+    <section class="card previewCard">
+      <div class="cardhead"><h2>Previsualización</h2><span class="badge" id="pageBadge">Página 1/1</span></div>
+      <details class="warningPanel hidden" id="warningPanel"><summary id="warningCount"></summary><ul id="warnings"></ul></details>
+      <div class="previewWrap" id="previewWrap"><div class="canvasShell" id="canvasShell"><canvas id="previewCanvas" width="1000" height="1600"></canvas></div></div>
+      <div class="previewFooter">
+        <button class="btn" id="prevPage">←</button>
+        <div class="center"><button class="btn" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="btn" id="zoomIn">+</button><button class="btn" id="zoomFit">Ajustar</button><span class="status" id="status" role="status" aria-live="polite">Listo</span></div>
+        <button class="btn" id="nextPage">→</button>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="editor.js"></script>
+</body>
+</html>
