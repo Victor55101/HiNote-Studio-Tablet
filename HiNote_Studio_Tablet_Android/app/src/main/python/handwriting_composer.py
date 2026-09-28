@@ -8,6 +8,7 @@ import re
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
+from pencilengine_width import width_level
 
 
 LIST_RE = re.compile(
@@ -196,7 +197,8 @@ def _flatten_segments(segments: list[dict], base_scale: float) -> list[dict]:
         color = _normalize_hex_color(seg.get("color", "#000000"))
         opacity = max(1.0, min(100.0, float(seg.get("opacity", 100.0))))
         for ch in unicodedata.normalize("NFC", str(seg.get("text", ""))):
-            yield {"ch": ch, "scale": seg_scale, "color": color, "opacity": opacity}
+            yield {"ch": ch, "scale": seg_scale, "color": color, "opacity": opacity,
+                   "thickness": width_level(seg.get("thickness", 0))}
 
 
 def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word_spacing: float, warnings: list[str]):
@@ -228,6 +230,7 @@ def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word
                 "visual_right": _glyph_visual_right(glyph, scale),
                 "color": color,
                 "opacity": opacity,
+                "thickness": c.get("thickness", 0),
             }
 
 
@@ -471,6 +474,7 @@ def _place_glyph_sequence(
                 "point_header_hex": source_stroke.get("point_header_hex"),
                 "color": item.get("color", "#000000"),
                 "opacity": float(item.get("opacity", 100.0)),
+                "thickness": item.get("thickness", 0),
                 "points": points,
             })
 
@@ -538,6 +542,7 @@ def compose_document(
     page_sink=None,
     check_cancelled=None,
     max_pages=500,
+    library_data=None,
 ):
     """Compose a rich document into Huawei PencilEngine-ready stroke geometry.
 
@@ -545,7 +550,7 @@ def compose_document(
     List markers are centered inside grid cells; ``list_indent_squares`` is the
     number of blank grid cells to leave before the marker cell.
     """
-    lib = load_library(library_path)
+    lib = library_data if library_data is not None else load_library(library_path)
     glyphs = lib["glyphs"]
     placement_y_offsets = lib.get("placement_y_offsets", {})
     grid_step = float(grid_step if grid_step is not None else _grid_step_from_library(lib))
@@ -597,7 +602,8 @@ def compose_document(
             marker_scale = max(0.35, float(list_info.get("marker_scale", 1.0)) * base_scale)
             marker_color = _normalize_hex_color(list_info.get("marker_color", "#000000"))
             marker_opacity = max(1.0, min(100.0, float(list_info.get("marker_opacity", 100.0))))
-            marker_chars = [{"ch": ch, "scale": marker_scale, "color": marker_color, "opacity": marker_opacity} for ch in str(list_info.get("marker", "•"))]
+            marker_chars = [{"ch": ch, "scale": marker_scale, "color": marker_color, "opacity": marker_opacity,
+                             "thickness": width_level(list_info.get("marker_thickness", 0))} for ch in str(list_info.get("marker", "•"))]
             marker_items = list(_choose_char_items(marker_chars, glyphs, glyph_rng, float(word_spacing), warnings))
 
             # V13: each logical list group can carry its own base indentation.

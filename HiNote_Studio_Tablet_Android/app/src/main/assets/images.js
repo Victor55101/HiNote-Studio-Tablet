@@ -82,12 +82,12 @@ const ImageEditor = (() => {
     el('pageBadge').textContent=`Página ${currentPage+1}/${count()}`;
   }
   function edit(op){
-    if(exporting||busy||ime)return; finishGesture(false);checkpoint();op();checkpoint();modified();
+    if(exporting||CalibrationUI.isBusy()||busy||ime)return; finishGesture(false);checkpoint();op();checkpoint();modified();
   }
   function mode(enabled){finishGesture(false);active=enabled;render();}
   function select(id){selectedId=id;selection();updateControls();}
   function insert(replace=false){
-    if(exporting||busy)return;
+    if(exporting||CalibrationUI.isBusy()||busy)return;
     if(!replace && images.length>=200){toast('La nota admite hasta 200 imágenes');return;}
     if(!replace && images.filter(im=>im.page===currentPage).length>=20){toast('Cada página admite hasta 20 imágenes. Añade otra página.');return;}
     if(!window.AndroidBridge?.requestImage){toast('Inserta imágenes desde la app Android');return;}
@@ -136,7 +136,7 @@ const ImageEditor = (() => {
       scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function pointerDown(e){
-    if(exporting||busy||e.button>0||!el('cropDialog').classList.contains('hidden'))return;
+    if(exporting||CalibrationUI.isBusy()||busy||e.button>0||!el('cropDialog').classList.contains('hidden'))return;
     if(pointers.size>=2){e.preventDefault();return;}
     e.preventDefault();pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);
     if(pointers.size>2)return;

@@ -63,14 +63,17 @@ final class PageRenderer {
                 paint.setColor(Color.parseColor(stroke.getString(0)));
                 paint.setAlpha((int)Math.round(255*stroke.getDouble(1)/100.0));
                 JSONArray points=stroke.getJSONArray(2);
+                // Native Rotulador width is stored independently of pressure.
+                // Preserve old preview behavior if an older cached page lacks it.
+                float widthScale=stroke.length()>3?(float)(stroke.getDouble(3)/(2.0/3.0)):1f;
                 if(points.length()==1){
                     JSONArray p=points.getJSONArray(0);
-                    canvas.drawCircle((float)p.getDouble(0),(float)p.getDouble(1),(.8f+(float)Math.max(.1,p.getDouble(2))*1.2f)/2,paint);
+                    canvas.drawCircle((float)p.getDouble(0),(float)p.getDouble(1),widthScale*(.8f+(float)Math.max(.1,p.getDouble(2))*1.2f)/2,paint);
                 }
                 for(int i=1;i<points.length();i++){
                     JSONArray a=points.getJSONArray(i-1),b=points.getJSONArray(i);
                     float pressure=(float)Math.max(.1,(a.getDouble(2)+b.getDouble(2))/2);
-                    paint.setStrokeWidth(.8f+pressure*1.2f);
+                    paint.setStrokeWidth(widthScale*(.8f+pressure*1.2f));
                     canvas.drawLine((float)a.getDouble(0),(float)a.getDouble(1),(float)b.getDouble(0),(float)b.getDouble(1),paint);
                 }
             }

@@ -48,6 +48,9 @@ public class MainActivity extends Activity {
     private final AtomicBoolean importing=new AtomicBoolean();
     private int importTicket;
     private final Object draftLock=new Object();
+    private CalibrationTasks calibrationTasks;
+    private final AtomicBoolean calibrating=new AtomicBoolean(),calibrationCancelled=new AtomicBoolean();
+    private volatile int calibrationTicket;
 
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
@@ -59,6 +62,14 @@ public class MainActivity extends Activity {
         worker=new ThreadPoolExecutor(1,1,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(8)){
             @Override protected void terminated(){deleteTree(sessionDir);}
         };
+        calibrationTasks=new CalibrationTasks(this,getFilesDir(),sessionDir,new CalibrationTasks.Host(){
+            public void result(int ticket,String data,String error){
+                calibrating.set(false);
+                send("onCalibrationResult",ticket+","+(data==null?"null":quote(data))+","+(error==null?"null":quote(error)));
+            }
+            public void status(int ticket,String text){send("onCalibrationProgress",ticket+","+quote(text));}
+            public void ui(Runnable action){runOnUiThread(action);}
+        });
         worker.execute(()->{
             try{
                 File[] old=getCacheDir().listFiles();
@@ -117,9 +128,22 @@ public class MainActivity extends Activity {
     }
     private void removeQueued(Future<?> job){if(job!=null){job.cancel(false);if(job instanceof Runnable)worker.remove((Runnable)job);}}
     public final class Bridge{
+        @JavascriptInterface public void requestCalibration(String action,String raw,int ticket){
+            if(!beginCalibration(raw,ticket))return;
+            worker.execute(()->{
+                try{ready();calibrationTasks.run(action,raw,ticket,new TaskToken("calibration",ticket,calibrationCancelled));}
+                catch(OutOfMemoryError e){calibrationTasks.failed(ticket,new IOException("No hay memoria suficiente para esta calibración. Usa una plantilla más pequeña."));}
+                catch(Exception e){calibrationTasks.failed(ticket,e);}
+            });
+        }
+        @JavascriptInterface public void requestCalibrationImport(String raw,int ticket){
+            if(!beginCalibration(raw,ticket))return;
+            runOnUiThread(()->{try{calibrationTasks.beginImport(raw,ticket);}catch(Exception e){calibrationTasks.failed(ticket,e);}});
+        }
+        @JavascriptInterface public void cancelCalibration(){calibrationCancelled.set(true);}
         @JavascriptInterface public String getExportFolder(){return exportFolder.describe();}
         @JavascriptInterface public void requestExportFolder(){
-            if(destroyed||exporting.get()||importing.get()||!choosingFolder.compareAndSet(false,true)){
+            if(destroyed||calibrating.get()||exporting.get()||importing.get()||!choosingFolder.compareAndSet(false,true)){
                 folderResult("Espera a que termine la operación actual");return;
             }
             runOnUiThread(()->{
@@ -132,7 +156,7 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void clearExportFolder(){
-            if(destroyed||exporting.get()||importing.get()||!choosingFolder.compareAndSet(false,true)){
+            if(destroyed||calibrating.get()||exporting.get()||importing.get()||!choosingFolder.compareAndSet(false,true)){
                 folderResult("Espera a que termine la operación actual");return;
             }
             worker.execute(()->{String error=null;try{exportFolder.clear();}catch(Exception e){error=message(e);}finally{choosingFolder.set(false);}folderResult(error);});
@@ -152,7 +176,7 @@ public class MainActivity extends Activity {
             }
         }
         @JavascriptInterface public void requestImage(int ticket){
-            if(destroyed||exporting.get()||choosingFolder.get()||!importing.compareAndSet(false,true))return;
+            if(destroyed||calibrating.get()||exporting.get()||choosingFolder.get()||!importing.compareAndSet(false,true))return;
             importTicket=ticket;
             runOnUiThread(()->{
                 try{
@@ -164,7 +188,7 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public void invalidateCompose(int id){revision.set(id);removeQueued(composeJob);pageRevision.incrementAndGet();removeQueued(pageJob);}
         @JavascriptInterface public void requestCompose(String doc,String settings,int id){
-            if(destroyed||exporting.get())return;revision.set(id);removeQueued(composeJob);
+            if(destroyed||calibrating.get()||exporting.get())return;revision.set(id);removeQueued(composeJob);
             TaskToken token=new TaskToken("compose",id,new AtomicBoolean());
             composeJob=worker.submit(()->{
                 String created=null;
@@ -182,7 +206,7 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void requestPage(String snapshot,int index,boolean grid,int id){
-            if(destroyed||exporting.get())return;pageRevision.set(id);removeQueued(pageJob);
+            if(destroyed||calibrating.get()||exporting.get())return;pageRevision.set(id);removeQueued(pageJob);
             TaskToken token=new TaskToken("page",id,new AtomicBoolean());
             pageJob=worker.submit(()->{
                 try{
@@ -197,7 +221,7 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void requestSave(String snapshot,String title,boolean grid,String images,int pages){
-            if(destroyed||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
+            if(destroyed||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
             if(!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de guardar");return;}
             if(pages<1||pages>500||images==null||images.length()>300000){finishExport(false,"Demasiadas páginas o imágenes");return;}
             ExportJob job=new ExportJob(snapshot,title,images,pages,exportFolder.selected());pendingExport=job;
@@ -211,6 +235,14 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void cancelExport(){ExportJob job=pendingExport;if(job!=null)job.cancelled.set(true);}
+    }
+    private boolean beginCalibration(String raw,int ticket){
+        if(raw==null||raw.length()>12000||destroyed||exporting.get()||importing.get()||choosingFolder.get()||!calibrating.compareAndSet(false,true)){
+            send("onCalibrationResult",ticket+",null,"+quote("Espera a que termine la operación actual"));return false;
+        }
+        calibrationTicket=ticket;calibrationCancelled.set(false);
+        revision.incrementAndGet();pageRevision.incrementAndGet();removeQueued(composeJob);removeQueued(pageJob);
+        return true;
     }
     private static final class ExportJob{
         final String snapshot,title,images;final int pages;final Uri folder;final AtomicBoolean cancelled=new AtomicBoolean();
@@ -227,6 +259,17 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int code,int result,Intent data){
         super.onActivityResult(code,result,data);
+        if(code==CalibrationTasks.IMPORT||code==CalibrationTasks.SAVE){
+            if(!calibrating.get())return;
+            if(result!=RESULT_OK||data==null||data.getData()==null){calibrationTasks.cancelled();return;}
+            final Uri selected=data.getData();
+            worker.execute(()->{
+                try{ready();TaskToken token=new TaskToken("calibration",calibrationTicket,calibrationCancelled);
+                    if(code==CalibrationTasks.IMPORT)calibrationTasks.imported(selected,token);else calibrationTasks.saved(selected,token);
+                }catch(OutOfMemoryError e){calibrationTasks.failed(new IOException("No hay memoria suficiente para esta calibración"));}
+                catch(Exception e){calibrationTasks.failed(e);}
+            });return;
+        }
         if(code==REQUEST_FOLDER){
             if(result!=RESULT_OK||data==null||data.getData()==null){choosingFolder.set(false);folderResult(null);return;}
             final Uri tree=data.getData();final int flags=data.getFlags();

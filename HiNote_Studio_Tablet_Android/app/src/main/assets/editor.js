@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const editor = $('editor');
-const DEFAULT_STYLE = {scale: 1, color: '#000000', opacity: 100};
+const DEFAULT_STYLE = {scale: 1, color: '#000000', opacity: 100, thickness: 0};
 const MAX_CHARS = 200000, DRAFT_KEY = 'hinote-draft-v23';
 const listRegex = /^([ \t]*)(•|\*|-|\d+[.)]|[A-Za-z]+[.)])([ \t]+|$)(.*)$/;
 let savedSelection = null, ime = false, refreshTimer, draftTimer, historyTimer, toastTimer;
@@ -9,6 +9,7 @@ let revision = 0, previewRevision = -1, pageRequest = 0;
 let composition = null, composing = false, exporting = false, currentPage = 0, zoom = 1;
 let history = [], historyIndex = -1;
 let folderBusy = false, exportFolderState = {configured:false,label:''};
+let activeProfile = 'original';
 
 function bounded(value, min, max, fallback) {
   const n = Number(value); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
@@ -16,9 +17,9 @@ function bounded(value, min, max, fallback) {
 function cleanStyle(st = DEFAULT_STYLE) {
   return {scale: bounded(st.scale, .35, 2, 1),
     color: /^#[\da-f]{6}$/i.test(st.color || '') ? st.color.toUpperCase() : '#000000',
-    opacity: bounded(st.opacity, 1, 100, 100)};
+    opacity: bounded(st.opacity, 1, 100, 100), thickness: Math.round(bounded(st.thickness,0,10,0))};
 }
-function sameStyle(a, b) { return a.scale === b.scale && a.color === b.color && a.opacity === b.opacity; }
+function sameStyle(a, b) { return a.scale === b.scale && a.color === b.color && a.opacity === b.opacity && (a.thickness||0) === (b.thickness||0); }
 function mergeSegments(segments) {
   const out = [];
   for (const seg of segments) {
@@ -138,7 +139,7 @@ function checkpoint() {
   historyIndex = history.length - 1; controls();
 }
 function edit(operation) {
-  if (exporting || ime) return;
+  if (exporting || CalibrationUI.isBusy() || ime) return;
   normalizeRoots(); checkpoint();
   const mark = bookmark() || {start: {line: 0, offset: 0}, end: {line: 0, offset: 0}};
   const result = operation(readLines(), mark); if (!result) return;
@@ -148,7 +149,7 @@ function edit(operation) {
   renderLines(result.lines); restoreSelection(result.selection || mark); checkpoint(); changed();
 }
 function undoRedo(direction) {
-  if (exporting || ime || ImageEditor.isBusy()) return;
+  if (exporting || CalibrationUI.isBusy() || ime || ImageEditor.isBusy()) return;
   ImageEditor.finishGesture(false);
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
@@ -261,7 +262,7 @@ function changeCase(mode) {
 }
 function settings() {
   return {letter_spacing: bounded($('letterSpacing').value, -8, 8, 0), word_spacing: bounded($('wordSpacing').value, 12, 60, 26),
-    line_grid_rows: Math.round(bounded($('lineRows').value, 1, 4, 1)), list_indent_squares: bounded($('listIndent').value, 0, 6, 1), auto_line_spacing: true, seed: 12345};
+    line_grid_rows: Math.round(bounded($('lineRows').value, 1, 4, 1)), list_indent_squares: bounded($('listIndent').value, 0, 6, 1), auto_line_spacing: true, seed: 12345, profile: activeProfile};
 }
 function serializeDocument() {
   const config = settings();
@@ -270,7 +271,7 @@ function serializeDocument() {
     if (!match) return {segments: line};
     const prefix = text.length - match[4].length, style = styleAt(line, match[1].length);
     return {segments: sliceSegments(line, prefix), list: {marker: match[2], level: Math.min(6, Math.floor(match[1].replace(/\t/g, '    ').length / 4)),
-      marker_scale: style.scale, marker_color: style.color, marker_opacity: style.opacity, base_indent_squares: config.list_indent_squares}};
+      marker_scale: style.scale, marker_color: style.color, marker_opacity: style.opacity, marker_thickness: style.thickness, base_indent_squares: config.list_indent_squares}};
   })};
 }
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.add('show'); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500); }
@@ -278,7 +279,7 @@ function saveDraft() {
   ImageEditor.finishGesture(false);
   clearTimeout(draftTimer);
   try {
-    const raw=JSON.stringify({version:23,lines:readLines(),...ImageEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
+    const raw=JSON.stringify({version:25,lines:readLines(),...ImageEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
     const nativeSaved=window.AndroidBridge?.saveDraft ? AndroidBridge.saveDraft(raw) : false;
     try{localStorage.setItem(DRAFT_KEY,raw);}catch(e){if(!nativeSaved)throw e;}
     $('draftStatus').textContent = 'Borrador guardado';
@@ -289,7 +290,7 @@ function restoreDraft() {
   try {
     const native=window.AndroidBridge?.getDraft?AndroidBridge.getDraft():'';
     const draft = JSON.parse(native||localStorage.getItem(DRAFT_KEY)||localStorage.getItem('hinote-draft-v21'));
-    if (!draft || ![21,23].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
+    if (!draft || ![21,23,25].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
     let count = draft.lines.length - 1, segments = 0;
     for (const line of draft.lines) {
       if (!Array.isArray(line)) return false;
@@ -297,23 +298,27 @@ function restoreDraft() {
     }
     if (count > MAX_CHARS || segments > 20000) return false;
     ImageEditor.restore(draft);
+    activeProfile = /^(original|[a-f0-9]{32})$/.test(draft.settings?.profile||'')?draft.settings.profile:'original';
     renderLines(draft.lines); $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
     for (const [id, key, min, max, fallback] of [['letterSpacing','letter_spacing',-8,8,0],['wordSpacing','word_spacing',12,60,26],['lineRows','line_grid_rows',1,4,1],['listIndent','list_indent_squares',0,6,1]]) $(id).value = bounded(draft.settings?.[key], min, max, fallback);
     $('gridCheck').checked = draft.grid !== false; $('autoPreview').checked = draft.auto !== false; return true;
   } catch (_) { return false; }
 }
 function controls() {
+  const calibrationBusy=CalibrationUI.isBusy();
   $('charCount').textContent = `${characterCount().toLocaleString('es')} caracteres`;
-  $('exportBtn').disabled = exporting || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision;
-  $('refreshBtn').disabled = exporting; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
+  $('exportBtn').disabled = calibrationBusy || folderBusy || exporting || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision;
+  $('refreshBtn').disabled = exporting || calibrationBusy || folderBusy; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
   $('prevPage').disabled = exporting || composing || !composition || currentPage <= 0;
   $('nextPage').disabled = exporting || composing || currentPage >= ImageEditor.count() - 1;
-  editor.contentEditable = String(!exporting); $('noteTitle').disabled = exporting;
+  editor.contentEditable = String(!exporting && !calibrationBusy); $('noteTitle').disabled = exporting || calibrationBusy;
   document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el => el.disabled = exporting || folderBusy);
   $('undoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex <= 0; $('redoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex >= history.length - 1;
   ImageEditor.updateControls();
   $('chooseFolder').disabled = exporting || ImageEditor.isBusy();
   $('clearFolder').disabled = exporting || ImageEditor.isBusy() || !exportFolderState.configured;
+  if(calibrationBusy || folderBusy)document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el=>el.disabled=true);
+  CalibrationUI.controls();
 }
 function showExportFolder(raw) {
   const data=JSON.parse(raw || '{}');
@@ -322,7 +327,7 @@ function showExportFolder(raw) {
   $('folderHint').textContent=exportFolderState.configured?'Se recuerda al cerrar la app. Si el nombre existe, se guarda otra copia.':'Elige una carpeta para guardar directamente en ella.';
 }
 function changeExportFolder(clear=false) {
-  if(exporting||ImageEditor.isBusy())return;
+  if(exporting||CalibrationUI.isBusy()||ImageEditor.isBusy())return;
   if(!window.AndroidBridge?.requestExportFolder){toast('Configura la carpeta desde la app Android');return;}
   saveDraft();folderBusy=true;controls();
   try{clear?AndroidBridge.clearExportFolder():AndroidBridge.requestExportFolder();}
@@ -338,11 +343,11 @@ function changed() {
   if (window.AndroidBridge) AndroidBridge.invalidateCompose(revision);
   $('status').textContent = 'Vista pendiente…'; controls(); queueDraft();
   const n = characterCount();
-  if (!ime && !exporting && $('autoPreview').checked && n <= 12000) refreshTimer = setTimeout(refreshPreview, n > 3000 ? 1500 : 700);
+  if (!ime && !exporting && !CalibrationUI.isBusy() && $('autoPreview').checked && n <= 12000) refreshTimer = setTimeout(refreshPreview, n > 3000 ? 1500 : 700);
   else $('status').textContent = 'Pulsa Actualizar para ver los cambios';
 }
 function refreshPreview() {
-  clearTimeout(refreshTimer); if (exporting || ime) return; saveDraft();
+  clearTimeout(refreshTimer); if (exporting || CalibrationUI.isBusy() || folderBusy || ime) return; saveDraft();
   if (!window.AndroidBridge) { $('status').textContent = 'El motor está disponible en la app Android'; return; }
   revision++; composing = true; $('status').textContent = 'Preparando páginas…'; controls();
   try { AndroidBridge.requestCompose(JSON.stringify(serializeDocument()), JSON.stringify(settings()), revision); }
@@ -363,11 +368,12 @@ window.onComposeResult = (id, json) => {
 window.onWorkProgress = (kind, id, page) => {
   if (kind === 'compose' && id === revision && composing) $('status').textContent = `Preparando página ${page}…`;
   if (kind === 'export' && exporting) $('status').textContent = `Guardando página ${page}…`;
+  if (kind === 'calibration') window.onCalibrationProgress(id,`Analizando página ${page}…`);
 };
 function drawCurrent() {
   ImageEditor.finishGesture(false);ImageEditor.render();
   $('pageBadge').textContent = `Página ${currentPage + 1}/${ImageEditor.count()}`;
-  if(exporting)return;
+  if(exporting||CalibrationUI.isBusy())return;
   if(!composition || currentPage >= composition.page_count){
     pageRequest++;const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);applyZoom();return;
   }
@@ -390,7 +396,7 @@ function applyZoom() {
   ImageEditor.render();
 }
 function exportNote() {
-  if (exporting || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
+  if (exporting || CalibrationUI.isBusy() || folderBusy || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
   clearTimeout(refreshTimer); saveDraft(); exporting = true; controls(); $('status').textContent = exportFolderState.configured?'Guardando en la carpeta elegida…':'Elige dónde guardar…';
   try { AndroidBridge.requestSave(composition.snapshot, $('noteTitle').value || 'Nueva nota', $('gridCheck').checked,ImageEditor.exportJSON(),ImageEditor.count()); }
   catch (e) { window.onExportComplete(false, e.message); }
@@ -404,12 +410,13 @@ document.querySelector('.toolbar').addEventListener('pointerdown', captureSelect
 $('tabs').addEventListener('click', event => {
   if (event.target.tagName !== 'BUTTON') return;
   [...$('tabs').children].forEach(b => b.classList.toggle('active', b === event.target));
-  ['text','lists','page','images','save'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
+  ['text','lists','page','images','save','calibration'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
   ImageEditor.mode(event.target.dataset.tab==='images');
 });
 $('colorPick').addEventListener('input', () => $('hexInput').value = $('colorPick').value.toUpperCase());
 $('hexInput').addEventListener('change', () => { const v = $('hexInput').value.trim().replace(/^#?/, '#'); if (/^#[\da-f]{6}$/i.test(v)) $('colorPick').value = v; });
 $('sizeSel').addEventListener('change', () => applyStyle({scale: bounded($('sizeSel').value, 35, 200, 100) / 100}));
+$('thicknessSel').addEventListener('change', () => applyStyle({thickness: Math.round(bounded($('thicknessSel').value,0,10,0))}));
 $('applyFormat').onclick = () => {
   const color = $('hexInput').value.trim().replace(/^#?/, '#');
   if (!/^#[\da-f]{6}$/i.test(color)) { toast('Escribe un color hexadecimal de 6 dígitos'); return; }
@@ -454,3 +461,4 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveD
 if (!restoreDraft()) renderLines([[]]);
 try{if(window.AndroidBridge?.getExportFolder)showExportFolder(AndroidBridge.getExportFolder());}catch(e){toast('No se pudo leer la carpeta de guardado');}
 checkpoint(); applyZoom(); changed();
+CalibrationUI.init();

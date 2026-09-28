@@ -37,7 +37,7 @@ class PipelineTests(unittest.TestCase):
             strokes, points = validate_pencilengine(binary)
             self.assertGreater(strokes, 0); self.assertGreater(points, strokes)
         page = json.loads(backend.page_preview(str(self.cache), result['snapshot'], 0))
-        self.assertEqual(len(page['strokes'][0]), 3)
+        self.assertEqual(len(page['strokes'][0]), 4)
         self.assertEqual(len(page['strokes'][0][2][0]), 3)
         with self.assertRaises(ValueError): backend.page_preview(str(self.cache), result['snapshot'], result['page_count'])
 

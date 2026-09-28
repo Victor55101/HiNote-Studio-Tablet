@@ -48,9 +48,9 @@ test('Repeated size, color, opacity and list operations preserve formatting', as
   await page.selectOption('#sizeSel','150'); await page.selectOption('#sizeSel','200');
   await page.fill('#hexInput','#336699'); await page.fill('#opacity','45'); await page.click('#applyFormat');
   await page.selectOption('#sizeSel','100');
-  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45}]);
+  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
   await page.click('[data-tab="lists"]'); await page.click('#applyList'); await page.click('#indentBtn'); await page.click('#outdentBtn'); await page.click('#removeList');
-  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45}]);
+  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
 });
 test('A selection ending at the next line start excludes that line', async page => {
   await setup(page,'uno\ndos'); await select(page,{line:0,offset:0},{line:1,offset:0}); await page.selectOption('#sizeSel','150');
@@ -229,9 +229,70 @@ test('Image metadata is frozen during export and extra image pages are included'
   assert.equal(call[5],4);assert.equal(JSON.parse(call[4])[0].page,3);assert.equal(await page.isDisabled('#rotateImageRight'),true);
 });
 
+test('Native thickness survives selected formatting, lists, undo and draft reload',async page=>{
+  await setup(page,'* Hola');await select(page,{line:0,offset:0},{line:0,offset:1});await page.selectOption('#thicknessSel','3');
+  await select(page,{line:0,offset:2},{line:0,offset:6});await page.selectOption('#thicknessSel','1');
+  const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_thickness,3);assert.equal(doc.paragraphs[0].segments[0].thickness,1);
+  await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].segments[0].thickness),0);
+  await page.click('#redoBtn');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
+  assert.deepEqual(await page.evaluate(()=>serializeDocument()),doc);
+});
+
+async function calibrationBridge(page){
+  await page.addInitScript(()=>{
+    const original={id:'original',name:'Original',revision:'v24',protected:true,found:['a','A','_','•','*'],missing:['!','¡','€'],fallback:[],unavailable:['!','¡','€'],variants:{a:8,A:8,_:8,'•':8,'*':8},incomplete:[],expected:['a','A','_','•','*','!','¡','€']};
+    const other={id:'a'.repeat(32),name:'Mi letra nueva',revision:'r1',protected:false,found:['a','€'],missing:['A','_','!'],fallback:['A','_'],unavailable:['!'],variants:{a:8,'€':4},incomplete:['€'],expected:['a','A','_','!','€']};
+    window.testProfiles=[original,other];
+    const install=()=>{
+      AndroidBridge.requestCalibration=(action,raw,id)=>{bridgeCalls.push(['calibration',action,raw,id]);if(action==='catalog')queueMicrotask(()=>onCalibrationResult(id,JSON.stringify({profiles:testProfiles,groups:{base:{name:'Básico',chars:'aA_!'},math:{name:'Matemáticas',chars:'±'}},problems:[]}),null));};
+      AndroidBridge.requestCalibrationImport=(raw,id)=>bridgeCalls.push(['calibration-import',raw,id]);AndroidBridge.cancelCalibration=()=>bridgeCalls.push(['calibration-cancel']);
+    };
+    // The native bridge mock is installed by the context's earlier init script.
+    install();
+  });
+  await page.reload();await page.waitForFunction(()=>!CalibrationUI.isBusy());await setup(page,'Hola');
+  await page.click('[data-tab="calibration"]');await page.click('#manageCalibration');
+}
+test('Every calibration exposes found, missing, fallback and partial variants',async page=>{
+  await calibrationBridge(page);assert.equal(await page.isDisabled('#deleteProfile'),true);
+  await page.click('#showMissing');assert.match(await page.textContent('#characterGrid'),/!/);assert.match(await page.textContent('#characterGrid'),/Sin muestra/);
+  await page.selectOption('#profileList','a'.repeat(32));await page.click('#showMissing');
+  assert.equal(await page.locator('.characterChip.fallback').count(),2);assert.equal(await page.locator('.characterChip.missing').count(),1);
+  await page.click('#showFound');assert.match(await page.textContent('#characterGrid'),/4\/8/);assert.match(await page.textContent('#profileWarnings'),/€/);
+  await page.fill('#characterSearch','U+20AC');assert.equal(await page.locator('.characterChip').count(),1);
+  await page.fill('#characterSearch','');await page.screenshot({path:path.join(root,'test-results','calibration-found.png')});
+  await page.click('#showMissing');await page.screenshot({path:path.join(root,'test-results','calibration-missing.png')});
+});
+test('Profile choice persists in draft and switching invalidates the old preview',async page=>{
+  await calibrationBridge(page);await page.selectOption('#profileList','a'.repeat(32));await page.click('#useProfile');await page.click('#closeCalibration');
+  assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));assert.equal(await page.isDisabled('#exportBtn'),true);
+  await page.evaluate(()=>saveDraft());await page.reload();await page.waitForFunction(()=>!CalibrationUI.isBusy());
+  assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));
+  await page.click('#refreshBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.equal(JSON.parse(call[2]).profile,'a'.repeat(32));
+});
+test('Calibration imports are reviewed before saving and stale callbacks are ignored',async page=>{
+  await calibrationBridge(page);await page.fill('#importProfileName','Otra');await page.click('#importProfile');
+  assert.equal(await page.getAttribute('#editor','contenteditable'),'false');assert.equal(await page.isDisabled('#exportBtn'),true);
+  await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration-import').at(-1);onCalibrationResult(c[2]-1,null,'Viejo');});
+  assert.equal(await page.evaluate(()=>CalibrationUI.isBusy()),true);
+  await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration-import').at(-1);onCalibrationResult(c[2],JSON.stringify({review:true,replaced:0,detail:testProfiles[1]}),null);});
+  assert.equal(await page.isVisible('#importReview'),true);assert.equal(await page.isDisabled('#profileList'),true);
+  assert.equal(await page.evaluate(()=>activeProfile),'original');await page.click('#showMissing');assert.match(await page.textContent('#characterGrid'),/!/);
+  await page.click('#discardProfile');await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration').at(-1);onCalibrationResult(c[3],'{"discarded":true}',null);});
+  assert.equal(await page.isVisible('#importReview'),false);assert.equal(await page.evaluate(()=>activeProfile),'original');
+});
+test('Supplement template contains only missing characters and cancel unlocks the app',async page=>{
+  await calibrationBridge(page);await page.selectOption('#profileList','a'.repeat(32));await page.click('#templateOptions summary');await page.click('#templateMissing');
+  assert.equal(await page.inputValue('#extraCharacters'),'A_!');assert.equal(await page.isChecked('#extendProfile'),true);
+  await page.click('#createTemplate');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='calibration').at(-1));
+  assert.equal(call[1],'template');assert.deepEqual(JSON.parse(call[2]),{groups:[],custom:'A_!'});
+  await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration').at(-1);onCalibrationResult(c[3],'{"cancelled":true}',null);});
+  assert.equal(await page.evaluate(()=>CalibrationUI.isBusy()),false);assert.equal(await page.isDisabled('#importProfile'),false);
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));

@@ -31,6 +31,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 .draftFooter{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
 .warningPanel{padding:8px 14px;background:#fff8e6;font-size:12px;max-height:130px;overflow:auto}.warningPanel summary{cursor:pointer}.editor:has(> .line:only-child > br:only-child)::before{content:attr(data-placeholder);color:#7a879b;pointer-events:none;position:absolute}.editorCard .editorScroll{position:relative}
 </style>
+<link rel="stylesheet" href="calibration.css">
 </head>
 <body>
 <div class="app">
@@ -43,12 +44,13 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   <div class="toolbar">
     <button class="btn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button><button class="btn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
     <div class="segment" id="tabs">
-      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button><button data-tab="save">Guardado</button>
+      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button><button data-tab="save">Guardado</button><button data-tab="calibration">Calibración</button>
     </div>
     <div class="toolpanel" id="panelText">
       <div class="field"><label>Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected>100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
       <div class="field"><label>Color</label><input type="color" id="colorPick" value="#000000"><input id="hexInput" value="#000000" style="width:82px;border:0;background:transparent;outline:0"></div>
       <div class="field"><label>Opacidad</label><input id="opacity" type="number" min="1" max="100" value="100"><span>%</span></div>
+      <div class="field"><label for="thicknessSel">Grosor</label><select id="thicknessSel"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
       <button class="btn" id="applyFormat">Aplicar</button>
       <select id="caseSel" class="btn"><option value="">Aa</option><option value="sentence">Tipo oración.</option><option value="lower">minúscula</option><option value="upper">MAYÚSCULAS</option><option value="title">Mayúsculas Cada Palabra</option><option value="toggle">tIPO iNVERSO</option></select>
     </div>
@@ -80,6 +82,11 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <button class="btn accent" id="chooseFolder">Elegir carpeta</button>
       <button class="btn" id="clearFolder">Preguntar cada vez</button>
       <div class="saveLocation"><strong id="folderLabel" role="status">Se preguntará dónde guardar</strong><small id="folderHint">Elige una carpeta para guardar directamente en ella.</small></div>
+    </div>
+    <div class="toolpanel hidden" id="panelCalibration">
+      <span class="field">Letra: <strong id="activeProfileLabel">Original</strong></span>
+      <button class="btn accent" id="manageCalibration">Mis calibraciones</button>
+      <button class="btn" id="originalCalibration">Usar Original</button>
     </div>
   </div>
 
@@ -114,6 +121,44 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
     </div><div class="cropActions"><button class="btn" id="resetCrop">Restablecer</button><button class="btn" id="cancelCrop">Cancelar</button><button class="btn primary" id="applyCrop">Aplicar recorte</button></div>
   </div>
 </div>
+<div id="calibrationDialog" class="calibrationDialog hidden" role="dialog" aria-modal="true" aria-labelledby="calibrationTitle">
+  <section class="calibrationCard">
+    <div class="calibrationHeader"><div><h2 id="calibrationTitle">Mis calibraciones</h2><p>Tu escritura, con ocho variantes por carácter.</p></div><button class="btn" id="closeCalibration">Cerrar</button></div>
+    <div id="calibrationStatus" role="status" aria-live="polite">Elige un perfil para ver sus caracteres.</div>
+    <div class="calibrationLayout">
+      <aside class="profileSidebar">
+        <label for="profileList">Perfiles guardados</label><select id="profileList" size="6" aria-label="Perfiles guardados"><option value="original">Original · predeterminada</option></select>
+        <button class="btn primary" id="useProfile">Usar en esta nota</button>
+        <label for="profileName">Nombre del perfil</label><input id="profileName" maxlength="60" value="Mi letra">
+        <div class="profileActions"><button class="btn" id="renameProfile">Renombrar</button><button class="btn" id="duplicateProfile">Duplicar</button><button class="btn" id="backupProfile">Respaldar</button><button class="btn danger" id="deleteProfile">Eliminar</button><button class="btn" id="restoreDeletedProfile">Recuperar última eliminación</button></div>
+        <div id="deleteProfileConfirm" class="notice hidden"><p>¿Eliminar este perfil? Sus archivos exportados se conservan. El borrador activo volverá a Original si lo estaba usando.</p><button class="btn danger" id="confirmDeleteProfile">Sí, eliminar</button><button class="btn" id="cancelDeleteProfile">Cancelar</button></div>
+        <hr><label for="importProfileName">Nombre de nueva calibración</label><input id="importProfileName" maxlength="60" value="Mi letra">
+        <label class="checkLabel"><input type="checkbox" id="extendProfile"> Completar el perfil seleccionado</label>
+        <button class="btn accent" id="importProfile">Importar .hinote / respaldo</button>
+        <small>Elige la nota escrita sobre la plantilla de esta app. Los respaldos .hnprofile se importan como perfiles nuevos.</small>
+      </aside>
+      <div class="profileContent">
+        <h3 id="profileHeading">Original</h3><p id="profileCoverage">Cargando caracteres…</p>
+        <div class="characterTabs"><button class="btn accent" id="showFound">Ver encontrados</button><button class="btn" id="showMissing">Ver faltantes</button></div>
+        <p id="characterLegend">Cada muestra muestra cuántas variantes están disponibles.</p>
+        <label class="characterSearch">Buscar carácter o código <input id="characterSearch" maxlength="20" placeholder="ñ o U+00F1"></label>
+        <div id="characterGrid" class="characterGrid" aria-label="Caracteres del perfil"></div>
+        <p id="profileWarnings"></p>
+        <div id="importReview" class="notice hidden"><strong>Revisa la calibración antes de guardarla</strong><p id="importReviewText"></p><button class="btn primary" id="commitProfile">Guardar perfil</button><button class="btn" id="discardProfile">Descartar</button></div>
+        <details id="templateOptions"><summary>Crear plantilla · agregar o repetir caracteres</summary>
+          <p>Conserva las páginas, su orden y las guías. Usa Rotulador y escribe cada variante dentro de su celda, apoyada en la línea azul. No uses conversión automática a formas.</p>
+          <div class="templateGroups"><label><input type="checkbox" name="calibrationGroup" value="base" checked> Español y signos básicos</label><label><input type="checkbox" name="calibrationGroup" value="math"> Matemáticas</label><label><input type="checkbox" name="calibrationGroup" value="code"> Programación y redes</label><label><input type="checkbox" name="calibrationGroup" value="type"> Monedas y tipografía</label></div>
+          <label for="extraCharacters">Caracteres adicionales o solo los que deseas completar</label><input id="extraCharacters" maxlength="512" placeholder="Ejemplo: ¡!€±→">
+          <p id="templateCount"></p><div class="profileActions"><button class="btn" id="templateMissing">Solo los faltantes de este perfil</button><button class="btn accent" id="createTemplate">Guardar plantilla .hinote</button></div>
+          <small>Una fila por carácter, 8 variantes. Abre la plantilla en Huawei Notes, escribe y exporta de nuevo como .hinote. Si una fila queda vacía, no se sobrescribe una muestra existente.</small>
+        </details>
+        <details id="profilePreviewOptions"><summary>Probar esta escritura</summary><label for="profileSample">Texto de prueba (primera página)</label><textarea id="profileSample" maxlength="600" rows="2">Hola Ñandú 123. _- ¡Hola! • * @</textarea><button class="btn" id="previewProfile">Previsualizar perfil</button><p id="profilePreviewWarnings"></p><img id="profilePreview" class="hidden" alt="Muestra de escritura del perfil seleccionado"></details>
+      </div>
+    </div>
+    <div class="calibrationFooter"><small>Original está protegida. Los faltantes pueden usar sus trazos; los avisos indicarán cuándo ocurre.</small><button class="btn hidden" id="cancelCalibration">Cancelar operación</button></div>
+  </section>
+</div>
+<script src="calibration.js"></script>
 <script src="images.js"></script>
 <script src="editor.js"></script>
 </body>

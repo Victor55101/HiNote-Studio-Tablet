@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 from pencilengine_color import patch_metadata
+from pencilengine_width import patch_width
 
 from pencilengine_reader import (
     MAGIC,
@@ -86,6 +87,7 @@ def _build_stroke(stroke: dict) -> bytes:
     # Color y opacidad por stroke. Estos campos se obtuvieron comparando
     # la calibración de colores exportada directamente por Huawei Notes.
     patch_metadata(metadata, stroke.get("color", "#000000"), float(stroke.get("opacity", 100.0)))
+    patch_width(metadata, stroke)
 
     # El primer u32 del point header identifica el tipo de puntos/herramienta.
     # Lo conservamos del stroke manuscrito original. Actualizamos count/size.

@@ -10,6 +10,8 @@ from handwriting_composer import compose_document
 from mobile_hinote_writer import build_hinote_multi
 from pencilengine_writer import write_pencilengine
 from validate_hinote import validate_hinote
+from pencilengine_width import width_level, native_width
+import calibration
 MAX_CHARACTERS = 200_000
 MAX_PAGES = 500
 MAX_CACHE_BYTES = 512 * 1024 * 1024
@@ -45,12 +47,14 @@ def _document(raw):
             chars += len(seg.get("text", "")); segments += 1
             seg["scale"] = _number(seg.get("scale", 1), .35, 2)
             seg["opacity"] = _number(seg.get("opacity", 100), 1, 100)
+            seg["thickness"] = width_level(seg.get("thickness", 0))
         info = para.get("list")
         if info:
             info["level"] = int(_number(info.get("level", 0), 0, 6))
             info["base_indent_squares"] = int(_number(info.get("base_indent_squares", 1), 0, 6))
             info["marker_scale"] = _number(info.get("marker_scale", 1), .35, 2)
             info["marker_opacity"] = _number(info.get("marker_opacity", 100), 1, 100)
+            info["marker_thickness"] = width_level(info.get("marker_thickness", 0))
             if len(str(info.get("marker", ""))) > 16:
                 raise ValueError("Marcador de lista demasiado largo.")
     if chars + max(0,len(paragraphs)-1) > MAX_CHARACTERS or segments > 20_000:
@@ -76,6 +80,8 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
     _check(token)
     doc, settings = _document(document_json), _settings(settings_json)
     project, cache = Path(project_dir), Path(cache_dir)
+    profile_id = json.loads(settings_json or "{}").get("profile", "original")
+    library, fallback, profile_revision = calibration.resolve(project, profile_id)
     snapshot_id = uuid.uuid4().hex
     work = cache / snapshot_id
     work.mkdir(parents=True)
@@ -93,7 +99,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             write_pencilengine(page, project / "template_1stroke.hinote", binary)
             # Only the preview is rounded; the BIN keeps all original points.
             preview = {"strokes": [[s.get("color", "#000000"), s.get("opacity", 100),
-                [[round(p["x"],3),round(p["y"],3),round(p["pressure"],4)] for p in s["points"]]]
+                [[round(p["x"],3),round(p["y"],3),round(p["pressure"],4)] for p in s["points"]], native_width(s)]
                 for s in page["strokes"]]}
             preview_path = work / f"page-{index}.json"
             preview_path.write_text(_json(preview), encoding="utf-8")
@@ -102,11 +108,19 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
                 raise ValueError("La nota supera el espacio de trabajo de 512 MB; divídela en varias notas.")
             if token is not None: token.onProgress(index + 1)
         result = compose_document(project / "glyphs_v24.json", doc, **settings,
-            page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES)
+            page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library)
+        used = set()
+        for para in doc["paragraphs"]:
+            for seg in para.get("segments", []): used.update(seg["text"])
+            used.update(str((para.get("list") or {}).get("marker", "")))
+        restored = sorted(used & fallback)
+        if restored: result["warnings"].insert(0, "Se usó la letra Original para: " + " ".join(restored))
         _check(token)
         manifest = {"snapshot": snapshot_id, "page_count": result["page_count"],
                     "layout": result["layout"], "warnings": result["warnings"],
                     "stroke_counts": stroke_counts}
+        manifest["profile"] = profile_id
+        manifest["profile_revision"] = profile_revision
         (work / "manifest.json").write_text(_json(manifest), encoding="utf-8")
         return _json(manifest)
     except BaseException:
