@@ -391,7 +391,11 @@ def extract(project, work, guides_json, title, target="", token=None):
                 if not strokes: continue
                 points = [p for s in strokes for p in s["points"]]
                 xs, ys = [p["x"] for p in points], [p["y"] for p in points]
-                bounds = [min(xs), min(ys), max(xs), max(ys)]
+                # Cell position must not indent the glyph or move it outside the
+                # page at large text sizes. Only y retains the guide baseline.
+                left = min(xs)
+                for point in points: point["x"] -= left
+                bounds = [0., min(ys), max(xs)-left, max(ys)]
                 variants.append({"source_page": i+1, "source_row": row, "source_col": col,
                                  "bbox": bounds, "advance": max(12., max(xs)-min(xs)+4.8),
                                  "baseline_method": "template-v1-baseline", "strokes": strokes})

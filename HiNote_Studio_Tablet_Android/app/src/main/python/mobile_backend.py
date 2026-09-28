@@ -4,6 +4,7 @@ import json
 import math
 import re
 import shutil
+import unicodedata
 import uuid
 from pathlib import Path
 from handwriting_composer import compose_document
@@ -111,7 +112,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library)
         used = set()
         for para in doc["paragraphs"]:
-            for seg in para.get("segments", []): used.update(seg["text"])
+            for seg in para.get("segments", []): used.update(unicodedata.normalize("NFC", seg["text"]))
             used.update(str((para.get("list") or {}).get("marker", "")))
         restored = sorted(used & fallback)
         if restored: result["warnings"].insert(0, "Se usó la letra Original para: " + " ".join(restored))

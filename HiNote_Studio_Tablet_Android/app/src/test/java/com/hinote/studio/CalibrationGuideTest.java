@@ -42,14 +42,21 @@ public class CalibrationGuideTest {
         assertThrows(IOException.class,()->CalibrationGuide.read(wrong));
     }
     @Test public void widthChangesPreviewWithoutMovingItsCenter()throws Exception{
-        int[] areas=new int[3];
+        long[] coverage=new long[3];
         for(int level=1;level<=3;level++){
             File image=new File(dir,"ink-"+level+".png");
             PageRenderer.render("{\"strokes\":[[\"#000000\",100,[[100,100,1],[300,100,1]],"+(level/3.0)+"]]}",image,false,58.8,new JSONArray(),true,()->{});
-            Bitmap b=BitmapFactory.decodeFile(image.getPath());int top=1080,bottom=0;
-            for(int y=0;y<b.getHeight();y++)for(int x=60;x<220;x++)if(Color.alpha(b.getPixel(x,y))>80){areas[level-1]++;top=Math.min(top,y);bottom=Math.max(bottom,y);}
-            assertEquals(67.5,(top+bottom)/2.0,1.0);b.recycle();
+            Bitmap b=BitmapFactory.decodeFile(image.getPath());double weightedY=0;
+            // Thin subpixel lines may cover the same number of pixels while
+            // differing in alpha. Measure ink coverage, not a binary threshold.
+            for(int y=0;y<b.getHeight();y++)for(int x=60;x<220;x++){
+                int alpha=Color.alpha(b.getPixel(x,y));coverage[level-1]+=alpha;weightedY+=(y+.5)*alpha;
+            }
+            assertTrue(coverage[level-1]>0);assertEquals(67.5,weightedY/coverage[level-1],.6);b.recycle();
+            File diagnostic=new File("build/reports/tests/ink-"+level+".png");diagnostic.getParentFile().mkdirs();
+            Files.copy(image.toPath(),diagnostic.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
-        assertTrue(areas[0]<areas[1]);assertTrue(areas[1]<areas[2]);
+        assertTrue("1 < 2: "+coverage[0]+" / "+coverage[1],coverage[0]<coverage[1]);
+        assertTrue("2 < 3: "+coverage[1]+" / "+coverage[2],coverage[1]<coverage[2]);
     }
 }

@@ -43,7 +43,7 @@ class CalibrationTests(unittest.TestCase):
                     glyph=self.original['glyphs']['_' if ch=='_' else 'a'][col]
                     for s in copy.deepcopy(glyph['strokes']):
                         for p in s['points']:
-                            p['x']+=cal.LEFT+col*cal.CELL_W+cal.CELL_W/2
+                            p['x']+=cal.LEFT+col*cal.CELL_W+20
                             p['y']+=cal.TOP+row*cal.CELL_H+cal.BASELINE+(4 if ch=='_' else 0)
                         strokes.append(s)
             binary=self.work/f'ink-{i}.bin'
@@ -70,6 +70,15 @@ class CalibrationTests(unittest.TestCase):
         self.assertEqual(len(profile['glyphs']['a']),8)
         self.assertGreater(min(p['y'] for s in profile['glyphs']['_'][0]['strokes'] for p in s['points']),2)
         self.assertEqual(profile['placement_y_offsets']['_'],0)
+        for variants in profile['glyphs'].values():
+            for g in variants:
+                self.assertEqual(g['bbox'][0],0)
+                self.assertEqual(min(p['x'] for s in g['strokes'] for p in s['points']),0)
+        doc={'paragraphs':[{'segments':[{'text':'a_'*40,'scale':2}]}]}
+        out=json.loads(backend.compose(str(self.project),str(self.root/'cache'),json.dumps(doc),json.dumps({'profile':identity})))
+        ink=read_pencilengine(self.root/'cache'/out['snapshot']/'page-0.bin')
+        self.assertGreater(min(p.x for s in ink.strokes for p in s.points),0)
+        self.assertLess(max(p.x for s in ink.strokes for p in s.points),1000)
         self.assertEqual(before,(self.project/'glyphs_v24.json').read_bytes())
         for action in ('delete','rename'):
             with self.assertRaisesRegex(ValueError,'protegida'):cal.action(self.project,action,'{"id":"original"}')
@@ -84,6 +93,8 @@ class CalibrationTests(unittest.TestCase):
         self.assertIn('Original',out['warnings'][0]);self.assertIn('b',out['warnings'][0])
         self.assertTrue(any('!' in w and 'espacio' in w for w in out['warnings']))
         self.assertEqual(out['profile'],identity)
+        accent=json.loads(backend.compose(str(self.project),str(self.root/'cache'),json.dumps(document_from_plain_text('a\u0301')),json.dumps({'profile':identity})))
+        self.assertIn('Original',accent['warnings'][0]);self.assertIn('á',accent['warnings'][0])
 
     def test_supplement_extends_original_copy_and_preserves_blank_rows(self):
         identity,review=self.import_profile('a!',filled={('!',i) for i in range(8)},target='original')
