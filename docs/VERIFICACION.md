@@ -1,4 +1,30 @@
-# Verificación de V25
+# Verificación de V26
+
+Corrección del 28 de septiembre de 2026, basada en la plantilla completada y reexportada desde Huawei Notes que aportó el usuario. El usuario confirmó que el ajuste de grosor V25 funciona en su tablet.
+
+## Reproducción y corrección
+
+La nota real contiene una página, cinco caracteres (`! ¡ & $ °`), ocho variantes de cada uno, 68 trazos y 2131 puntos. Todos los trazos son de Rotulador (herramienta 12). Huawei guardó 66 como tipo 0 y dos como segmentos nativos de tipo 2: `!`, variante 5, e `¡`, variante 4. El código visual y la geometría de la plantilla pasaron la validación. Se reprodujo el error V25 al exigir exclusivamente tipo 0 al importar notas, pese a que los respaldos y el banco Original ya admitían tipo 2.
+
+V26 comparte la validación de tipos 0/2 entre importación y respaldos, conservando los campos nativos de los segmentos. No convierte los trazos ni modifica su presión. Los tipos y herramientas desconocidos siguen rechazándose con mensajes distintos, indicando la página y el trazo. Se mantienen las comprobaciones de celdas, páginas, tamaños y límites.
+
+Con el archivo real se comprobó:
+
+- Completar Original crea **Original ampliada**, con **110 encontrados**, **0 faltantes** y ocho variantes para cada signo añadido. El banco Original permanece idéntico.
+- Conservación de los 68 trazos y 2131 puntos de las 40 muestras: metadatos, tipos de punto, presión y datos auxiliares; las coordenadas solo se trasladan para el origen del glifo y la línea base.
+- Guardar, respaldar y reimportar conserva el banco completo. Componer y exportar los ocho juegos de signos conserva los dos segmentos de tipo 2 y genera un `.hinote` estructuralmente válido.
+
+La nota personal se analizó localmente. Las nuevas pruebas de regresión del repositorio usan coordenadas sintéticas con la misma combinación de trazos, incluidos los segmentos con ambos extremos en estado 4. Cubren completar Original, respaldo, composición/exportación y rechazo de tipos, herramientas o cruces de celda no admitidos.
+
+## Pruebas y APK V26
+
+[GitHub Actions 36466459733](https://github.com/Victor55101/HiNote-Studio-Tablet/actions/runs/36466459733), fuente `971de775ec2366e8cbdf4e3b4b588cbf726c4aaf` en `v23-images-touch`: **36 pruebas Python, 30 Chromium/Playwright y 19 Android/Robolectric aprobadas; 85 en total**. Las pruebas Android y la construcción del APK finalizaron correctamente. También se corrigió la altura del botón de importación cuando su texto ocupa dos líneas.
+
+APK `HiNote-Studio-Tablet-V26.apk`: versión `2.6-tablet`/código 26, paquete `com.hinote.studio`, arm64-v8a, **22094970 bytes**. SHA-256: `1ab0ded334ac52582603aa540403431a1da45209031686b584a497bea78ffbbf`. Verificadas integridad ZIP, coincidencia de los recursos con la fuente probada e inclusión del importador corregido. No se incluyen perfiles personales en el APK.
+
+Queda confirmar la importación con el APK V26 en la tablet y abrir allí una nota exportada con los nuevos signos. Se reutiliza exactamente el `.hinote` ya escrito; no hace falta rehacer la plantilla. Procedimiento en `PRUEBA_TABLET.md`. No se repitió la medición histórica de carga V25 porque esta corrección se limita al importador.
+
+## Histórico: V25
 
 Comprobaciones del 28 de septiembre de 2026. Compilación aprobada: [GitHub Actions 36399350735](https://github.com/Victor55101/HiNote-Studio-Tablet/actions/runs/36399350735), fuente `4c323b81471c75cb3f63658181e64fba4f40a647` en `v23-images-touch`.
 
