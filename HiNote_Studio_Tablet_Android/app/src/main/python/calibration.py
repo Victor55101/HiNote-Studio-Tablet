@@ -36,6 +36,9 @@ MAX_POINTS = 180_000
 ROWS, COLS = 12, 8
 LEFT, TOP, CELL_W, CELL_H, BASELINE = 152.0, 120.0, 104.0, 108.0, 72.0
 FORMAT = "hinote-profile-v1"
+# Type 2 is used by Notes for native straight segments, including handwriting
+# in the original bank and the user's completed ! / ¡ template. Keep it intact.
+SUPPORTED_POINT_TYPES = (0, 2)
 _ID = re.compile(r"[a-f0-9]{32}\Z")
 
 
@@ -329,6 +332,14 @@ def _finite(value, low, high):
     return value
 
 
+def _validate_ink_format(metadata, point_type, context=""):
+    tool = struct.unpack_from(">I", metadata, 68)[0]
+    if tool != 12:
+        raise ValueError(f"{context}herramienta no compatible (código {tool}). Usa Rotulador para esta muestra.")
+    if point_type not in SUPPORTED_POINT_TYPES:
+        raise ValueError(f"{context}formato de trazo todavía no compatible (tipo {point_type}). Conserva el .hinote para revisar esta muestra.")
+
+
 def extract(project, work, guides_json, title, target="", token=None):
     work = Path(work)
     pages = json.loads((work / "prepared.json").read_text(encoding="utf-8"))
@@ -357,8 +368,7 @@ def extract(project, work, guides_json, title, target="", token=None):
             if total_points > MAX_POINTS:
                 raise ValueError("Demasiados puntos de escritura en la calibración")
             metadata = bytes.fromhex(stroke.metadata_hex)
-            if struct.unpack_from(">I", metadata, 68)[0] != 12 or stroke.point_type != 0:
-                raise ValueError("Escribe a mano con Rotulador. No uses formas automáticas, otros lápices ni texto convertido")
+            _validate_ink_format(metadata, stroke.point_type, f"Página {i+1}, trazo {stroke.number+1}: ")
             _finite(struct.unpack_from(">f", metadata, 96)[0], .03, 10)
             if not any(p.state == 4 for p in stroke.points) and stroke.points[0].state != 6:
                 raise ValueError("Trazo no reconocido")
@@ -453,10 +463,8 @@ def validate_profile(profile):
                 for key, length in (("header_hex", 48), ("metadata_hex", 116), ("point_header_hex", 20)):
                     if len(bytes.fromhex(s.get(key, ""))) != length: raise ValueError("Metadatos de trazo inválidos")
                 metadata = bytes.fromhex(s["metadata_hex"])
-                if struct.unpack_from(">I", metadata, 68)[0] != 12: raise ValueError("Herramienta no admitida")
-                # The original bank contains native type-2 strokes in V, [ and ].
-                # Backups preserve them; fresh templates still require freehand.
-                if struct.unpack_from(">I", bytes.fromhex(s["point_header_hex"]), 0)[0] not in (0, 2): raise ValueError("Tipo de puntos no admitido")
+                point_type = struct.unpack_from(">I", bytes.fromhex(s["point_header_hex"]), 0)[0]
+                _validate_ink_format(metadata, point_type, "Respaldo: ")
                 _finite(struct.unpack_from(">f", metadata, 96)[0], .03, 10)
                 pts = s.get("points")
                 if not isinstance(pts, list) or not 1 <= len(pts) <= 5000: raise ValueError("Puntos inválidos")

@@ -1,6 +1,12 @@
-# HiNote Studio Tablet — V25
+# HiNote Studio Tablet — V26
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+## V26: corrección de importación de calibraciones
+
+Huawei Notes guardó dos segmentos rectos de una plantilla completada como trazos nativos de tipo 2. V25 los rechazaba aunque todos los trazos fueran de Rotulador. V26 admite esos segmentos conservando su tipo, geometría y presión; utiliza los mismos formatos admitidos al importar una nota y al recuperar un respaldo. Se mantienen las comprobaciones de herramienta, celdas, páginas y límites, con mensajes separados para una herramienta distinta o un formato aún no compatible.
+
+Las plantillas ya escritas se pueden reutilizar. En la muestra real recibida, completar Original añade `! ¡ & $ °` con ocho variantes cada uno: **110 encontrados, cero faltantes**. Guarda el perfil **Original ampliada** y pulsa **Usar en esta nota**. Original permanece protegida. El botón de importación también conserva su altura cuando la etiqueta ocupa dos líneas.
 
 ## V25: grosor y mis calibraciones
 
@@ -14,7 +20,7 @@ App Android para convertir texto a trazos manuscritos, guardar varias calibracio
 ### Crear y completar una calibración
 
 1. Abre **Calibración → Mis calibraciones → Crear plantilla**. Elige grupos o escribe los caracteres que necesitas; guarda la plantilla `.hinote` y ábrela en Huawei Notes.
-2. Escribe con **Rotulador**, preferiblemente grosor 1–3. Cada fila indica el carácter: escribe ocho versiones, una dentro de cada celda, apoyadas en la línea azul. Los descendentes y `_` deben quedar debajo de esa línea. Conserva todas las páginas, su orden, dimensiones y las imágenes de guía. No muevas, gires, recortes ni escribas sobre la etiqueta o el código inferior; no actives conversión automática a formas.
+2. Escribe con **Rotulador**, preferiblemente grosor 1–3. Cada fila indica el carácter: escribe ocho versiones, una dentro de cada celda, apoyadas en la línea azul. Los descendentes y `_` deben quedar debajo de esa línea. Conserva todas las páginas, su orden, dimensiones y las imágenes de guía. No muevas, gires, recortes ni escribas sobre la etiqueta o el código inferior. Las líneas rectas nativas de Rotulador también se admiten.
 3. Exporta la nota escrita como `.hinote`. En Studio, pon un nombre y pulsa **Importar .hinote / respaldo**. Revisa encontrados, faltantes y variantes; pulsa **Guardar perfil**, luego **Usar en esta nota** cuando quieras activarlo.
 4. Para completar una letra guardada, selecciónala, crea una plantilla de los faltantes (o de caracteres concretos que quieras repetir) y escribe esas filas. Al importar, marca **Completar el perfil seleccionado**. Los caracteres con muestras se añaden o sustituyen; los demás se conservan. Si el seleccionado es Original, se crea una copia ampliada.
 5. **Respaldar** exporta un `.hnprofile`. Reimportarlo siempre crea un perfil nuevo, sin reemplazar los existentes. Haz respaldos antes de desinstalar la app. Los archivos `.hinote` ya exportados son independientes de sus perfiles.

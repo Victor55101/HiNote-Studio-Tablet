@@ -20,6 +20,7 @@ from pencilengine_reader import read_pencilengine
 from pencilengine_writer import write_pencilengine
 from mobile_hinote_writer import build_hinote_multi, _gzip_json, _gunzip_json
 from pencilengine_width import native_width
+from validate_hinote import validate_hinote
 
 
 class CalibrationTests(unittest.TestCase):
@@ -61,6 +62,76 @@ class CalibrationTests(unittest.TestCase):
         review=json.loads(cal.extract(self.project,self.work,json.dumps(guides),'Mi prueba',target))
         saved=json.loads(cal.commit(self.project,self.work))
         return saved['saved'],review
+
+    def native_symbols(self, point_type=2, tool=12, cross_cell=False):
+        """Reproduce the observed mix: ! variant 5 and ¡ variant 4 are type 2.
+
+        Uses synthetic coordinates, not the user's uploaded handwriting.
+        """
+        guides,_=self.template('!¡')
+        prototype=self.original['glyphs']['_'][0]['strokes'][0]
+        strokes=[]
+        for row in range(2):
+            for col in range(8):
+                native=(row,col) in ((0,4),(1,3))
+                x=cal.LEFT+col*cal.CELL_W+35
+                baseline=cal.TOP+row*cal.CELL_H+cal.BASELINE
+                line=copy.deepcopy(prototype)
+                line['point_header_hex']=struct.pack('>IIIII',point_type if native else 0,2,36,0,0).hex()
+                metadata=bytearray.fromhex(line['metadata_hex']);struct.pack_into('>I',metadata,68,tool)
+                line['metadata_hex']=metadata.hex()
+                line['points']=[{**prototype['points'][0],'x':x,'y':baseline+y,'pressure':.8464974164962769}
+                                for y in ((-40,-10) if row==0 else (-30,0))]
+                if cross_cell and native:line['points'][-1]['x']=cal.LEFT+(col+1)*cal.CELL_W+5
+                dot=copy.deepcopy(line);dot['point_header_hex']=struct.pack('>IIIII',0,1,36,0,0).hex()
+                dot['points']=[{**line['points'][0],'x':x,'y':baseline+(0 if row==0 else -40)}]
+                strokes.extend((line,dot))
+        binary=self.work/'input-0.bin'
+        write_pencilengine({'strokes':strokes},self.assets/'template_1stroke.hinote',binary)
+        # Native Notes segments have state 4 at both endpoints in the report.
+        data=bytearray(binary.read_bytes())
+        for stroke in read_pencilengine(binary).strokes:
+            if stroke.point_type==2:struct.pack_into('>i',data,stroke.offset+48+116+20+36+28,4)
+        binary.write_bytes(data)
+        return guides
+
+    def test_native_straight_segments_survive_completion_backup_and_export(self):
+        original_bytes=(self.project/'glyphs_v24.json').read_bytes()
+        guides=self.native_symbols()
+        review=json.loads(cal.extract(self.project,self.work,json.dumps(guides),'Completada','original'))
+        self.assertTrue(review['copiesOriginal']);self.assertEqual(review['replaced'],0)
+        identity=json.loads(cal.commit(self.project,self.work))['saved']
+        profile=cal.load_profile(self.project,identity)
+        self.assertEqual(len(profile['glyphs']),107)
+        for ch in '!¡':self.assertEqual(review['detail']['variants'][ch],8)
+        self.assertEqual(set(review['detail']['missing']),set('&$°'))
+        backup=self.work/'completed.hnprofile';cal.export_profile(self.project,identity,backup)
+        cal.import_backup(self.project,backup,self.work)
+        restored=cal.load_profile(self.project,json.loads(cal.commit(self.project,self.work))['saved'])
+        self.assertEqual(restored['glyphs'],profile['glyphs'])
+        self.assertEqual((self.project/'glyphs_v24.json').read_bytes(),original_bytes)
+        sample={**restored,'glyphs':{'!':[restored['glyphs']['!'][4]],'¡':[restored['glyphs']['¡'][3]]}}
+        page=compose_document(self.project/'glyphs_v24.json',document_from_plain_text('!¡'),library_data=sample)['pages'][0]
+        binary=self.work/'export.bin';write_pencilengine(page,self.assets/'template_1stroke.hinote',binary)
+        output=read_pencilengine(binary)
+        self.assertEqual([s.point_type for s in output.strokes],[2,0,2,0])
+        for source,written in zip(page['strokes'],output.strokes):
+            self.assertEqual(written.point_type,struct.unpack_from('>I',bytes.fromhex(source['point_header_hex']))[0])
+            for a,b in zip(source['points'],written.points):
+                self.assertAlmostEqual(a['x'],b.x,places=4);self.assertAlmostEqual(a['y'],b.y,places=4)
+                self.assertAlmostEqual(a['pressure'],b.pressure,places=6)
+        note=self.work/'export.hinote'
+        build_hinote_multi(self.assets/'template_1stroke.hinote',[binary],note,thumbnails=[ROOT/'tests/thumbnail.jpg'])
+        self.assertTrue(validate_hinote(note,quiet=True))
+
+    def test_native_segment_support_keeps_tool_type_and_cell_validation(self):
+        for point_type,tool,cross,reason in ((99,12,False,'formato.*99'),(2,13,False,'herramienta.*13'),(2,12,True,'cruza dos celdas')):
+            with self.subTest(point_type=point_type,tool=tool,cross=cross):
+                guides=self.native_symbols(point_type,tool,cross)
+                with self.assertRaisesRegex(ValueError,reason):
+                    cal.extract(self.project,self.work,json.dumps(guides),'Inválida','original')
+                self.assertFalse((self.work/'candidate.hnprofile').exists())
+                self.assertFalse(list(cal.profile_dir(self.project).glob('*.hnprofile')))
 
     def test_eight_variants_baseline_and_original_protection(self):
         before=(self.project/'glyphs_v24.json').read_bytes()

@@ -1,5 +1,17 @@
 # Comprobación en la tablet
 
+## V26: reimportar la plantilla completada
+
+El usuario confirmó que el grosor V25 funciona. Su nota real de cinco signos permite reproducir el rechazo de dos líneas nativas, corregido en V26.
+
+1. Actualiza a V26 conservando los datos de la app. En **Calibración → Mis calibraciones**, selecciona Original y marca **Completar el perfil seleccionado**.
+2. Importa el mismo `.hinote` de los signos `! ¡ & $ °` que falló en V25. No hace falta generar ni escribir otra plantilla.
+3. La revisión debe indicar **Original ampliada**, **110 encontrados**, **0 faltantes** y **8/8** para cada signo. Pulsa **Guardar perfil**, luego **Usar en esta nota**.
+4. Comprueba `¡Hola! & $ °` en la previsualización y en una nota exportada a Huawei Notes. Comprueba varias apariciones de `!` y `¡` para cubrir las diferentes variantes.
+5. Respalda y reimporta el perfil. Vuelve a Original: debe conservar sus 105 caracteres y cinco pendientes. Reabre la app y comprueba que los dos perfiles siguen disponibles.
+
+La nota recibida contiene 68 trazos y 2131 puntos: todos de Rotulador, con 66 trazos de tipo 0 y dos segmentos de tipo 2. En desarrollo se comprobaron importación, todas las variantes, conservación del banco original, respaldo y exportación de los ocho juegos de muestras. Queda la confirmación en la tablet con el APK corregido.
+
 ## V25: grosor, plantillas y perfiles
 
 El usuario confirmó el funcionamiento en su tablet del guion bajo, la carpeta recordada y el fondo exportado V24. Para V25:

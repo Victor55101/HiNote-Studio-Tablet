@@ -8,6 +8,7 @@
 .calibrationCard input:not([type=checkbox]),.calibrationCard select,.calibrationCard textarea{border:1px solid #ccd7e7;border-radius:9px;padding:10px;font:inherit;width:100%;box-sizing:border-box;background:#fff;color:#17263f}
 .calibrationCard label{font-size:13px}.calibrationCard button{min-height:44px}.calibrationCard input[type=checkbox]{width:22px;height:22px;vertical-align:middle;accent-color:#5667ed}
 #profileList{min-height:150px;flex-shrink:0}#profileList option{padding:8px}.profileSidebar small,.profileContent small,.calibrationFooter small{font-size:12px;color:#53637b;line-height:1.5}
+.profileSidebar>.btn{flex-shrink:0}
 .profileActions{display:flex;gap:8px;flex-wrap:wrap}.profileActions button{flex:1}.profileContent h3{margin:0 0 7px;font-size:20px}.profileContent p{font-size:13px;line-height:1.5}.characterTabs{display:flex;gap:9px;flex-wrap:wrap}
 .characterGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:7px;margin:12px 0;max-height:260px;overflow:auto;padding:2px}
 .characterChip{display:flex;align-items:center;flex-direction:column;border:1px solid #dce4ef;border-radius:10px;background:#fafcff;padding:8px 3px;min-height:73px}.characterChip strong{font-size:23px;font-weight:500}.characterChip small{font-size:10px}.characterChip.missing{background:#fff6e8;border-color:#eddbb4}.characterChip.fallback{background:#eef5ff;border-color:#c5d9f6}
