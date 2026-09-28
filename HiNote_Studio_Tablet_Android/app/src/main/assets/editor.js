@@ -23,6 +23,7 @@ function sameStyle(a, b) { return a.scale === b.scale && a.color === b.color && 
 function mergeSegments(segments) {
   const out = [];
   for (const seg of segments) {
+    if (seg.tableId) { out.push({text:'\uFFFC',tableId:seg.tableId}); continue; }
     if (!seg.text) continue;
     const s = {text: String(seg.text), ...cleanStyle(seg)}, last = out[out.length - 1];
     if (last && sameStyle(last, s)) last.text += s.text; else out.push(s);
@@ -54,6 +55,10 @@ function readLines() {
     for (const child of node.childNodes) walk(child, st, out);
   }
   for (const node of editor.childNodes) {
+    if (node.nodeType === 1 && node.dataset.tableId) {
+      if(loose.length){lines.push(mergeSegments(loose));loose=[];}
+      lines.push([{text:'\uFFFC',tableId:node.dataset.tableId}]);continue;
+    }
     if (node.nodeType === Node.ELEMENT_NODE && /^(DIV|P)$/.test(node.tagName)) {
       if (loose.length) { lines.push(mergeSegments(loose)); loose = []; }
       const segments = []; walk(node, DEFAULT_STYLE, segments); lines.push(mergeSegments(segments));
@@ -69,6 +74,7 @@ function rgba(hex, opacity) {
 function renderLines(lines) {
   const fragment = document.createDocumentFragment();
   for (const line of lines) {
+    if(TableEditor.isLine(line)){fragment.append(TableEditor.block(line));continue;}
     const div = document.createElement('div'); div.className = 'line';
     for (const s of mergeSegments(line)) {
       if (sameStyle(s, DEFAULT_STYLE)) div.append(document.createTextNode(s.text));
@@ -83,7 +89,7 @@ function renderLines(lines) {
   }
   editor.replaceChildren(fragment);
 }
-function characterCount() { return editor.textContent.length + Math.max(0, editor.childElementCount - 1); }
+function characterCount() { return readLines().reduce((n,l)=>n+(TableEditor.isLine(l)?0:lineText(l).length),0)+Math.max(0,editor.childElementCount-1)+TableEditor.count(); }
 function rangeInside(range) { return range && (range.commonAncestorContainer === editor || editor.contains(range.commonAncestorContainer)); }
 function modelPoint(node, offset) {
   if (node === editor) {
@@ -93,6 +99,7 @@ function modelPoint(node, offset) {
   let root = node;
   while (root.parentNode && root.parentNode !== editor) root = root.parentNode;
   const line = Math.max(0, Array.prototype.indexOf.call(editor.childNodes, root));
+  if(root.dataset?.tableId)return {line,offset:0};
   const range = document.createRange(); range.setStart(root, 0); range.setEnd(node, offset);
   return {line, offset: range.toString().length};
 }
@@ -110,6 +117,7 @@ function captureSelection() {
 }
 function domPoint(point) {
   const line = editor.childNodes[Math.min(point.line, editor.childNodes.length - 1)] || editor;
+  if(line.dataset?.tableId)return [editor,Math.max(0,[...editor.childNodes].indexOf(line))];
   const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
   let remaining = point.offset, node, last;
   while ((node = walker.nextNode())) {
@@ -130,7 +138,7 @@ function normalizeRoots() {
 }
 function checkpoint() {
   clearTimeout(historyTimer);
-  const data = JSON.stringify({lines:readLines(),...ImageEditor.state()}), selection = bookmark();
+  const data = JSON.stringify({lines:readLines(),...ImageEditor.state(),...TableEditor.state()}), selection = bookmark();
   const imageSelection=ImageEditor.selected()?.id||null;
   if (history[historyIndex]?.data === data) { history[historyIndex].selection = selection; history[historyIndex].imageSelection=imageSelection; return; }
   history = history.slice(0, historyIndex + 1); history.push({data, selection,imageSelection});
@@ -139,25 +147,27 @@ function checkpoint() {
   historyIndex = history.length - 1; controls();
 }
 function edit(operation) {
-  if (exporting || CalibrationUI.isBusy() || ime) return;
+  if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || ime) return;
   normalizeRoots(); checkpoint();
   const mark = bookmark() || {start: {line: 0, offset: 0}, end: {line: 0, offset: 0}};
   const result = operation(readLines(), mark); if (!result) return;
   const n = result.lines.reduce((sum, line) => sum + lineText(line).length, 0) + result.lines.length - 1;
-  if (n > MAX_CHARS) { toast('El documento admite hasta 200000 caracteres'); return; }
+  if (n + TableEditor.count() > MAX_CHARS) { toast('El documento admite hasta 200000 caracteres'); return; }
   if (result.lines.length > 10000) { toast('El documento admite hasta 10000 párrafos'); return; }
   renderLines(result.lines); restoreSelection(result.selection || mark); checkpoint(); changed();
 }
 function undoRedo(direction) {
-  if (exporting || CalibrationUI.isBusy() || ime || ImageEditor.isBusy()) return;
+  if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || ime || ImageEditor.isBusy()) return;
   ImageEditor.finishGesture(false);
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
-  historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines);
-  renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
+  historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines)&&JSON.stringify(TableEditor.state().tables)===JSON.stringify(data.tables||{});
+  TableEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
   if(sameText){ImageEditor.modified();drawCurrent();}else changed();
 }
 function replaceText(lines, mark, text) {
+  if(TableEditor.isLine(lines[mark.start.line]))mark={...mark,start:{...mark.start,offset:0}};
+  if(TableEditor.isLine(lines[mark.end.line]))mark={...mark,end:{...mark.end,offset:1}};
   const {start, end} = mark, before = sliceSegments(lines[start.line], 0, start.offset);
   const after = sliceSegments(lines[end.line], end.offset), st = styleAt(lines[start.line], start.offset);
   const pieces = text.replace(/\r\n?/g, '\n').split('\n');
@@ -180,6 +190,7 @@ function applyStyle(patch) {
   const mark = bookmark(); if (!mark || collapsed(mark)) { toast('Selecciona texto primero'); return; }
   edit((lines, selection) => {
     for (const i of selectedLineIndexes(selection)) {
+      if(TableEditor.isLine(lines[i]))continue;
       const a = i === selection.start.line ? selection.start.offset : 0;
       const b = i === selection.end.line ? selection.end.offset : Infinity;
       lines[i] = mergeSegments([...sliceSegments(lines[i], 0, a), ...sliceSegments(lines[i], a, b).map(s => ({...s, ...patch})), ...sliceSegments(lines[i], b)]);
@@ -206,6 +217,7 @@ function markerFor(type, i) {
 function modifyLists(action) {
   edit((lines, selection) => {
     selectedLineIndexes(selection).forEach((i, index) => {
+      if(TableEditor.isLine(lines[i]))return;
       const text = lineText(lines[i]), match = text.match(listRegex);
       let oldLength = match ? text.length - match[4].length : (text.match(/^[ \t]*/)[0].length);
       let prefix = match ? text.slice(0, oldLength) : text.slice(0, oldLength);
@@ -225,6 +237,7 @@ function modifyLists(action) {
 }
 function enter() {
   edit((lines, mark) => {
+    if(TableEditor.isLine(lines[mark.start.line])){const at=mark.start.line+1;lines.splice(at,0,[]);return {lines,selection:{start:{line:at,offset:0},end:{line:at,offset:0}}};}
     const text = lineText(lines[mark.start.line]), match = text.match(listRegex);
     if (match && !match[4].trim() && collapsed(mark)) {
       lines[mark.start.line] = []; const point = {line: mark.start.line, offset: 0};
@@ -239,6 +252,7 @@ function changeCase(mode) {
   edit((lines, selection) => {
     let wordStart = true, sentenceStart = true;
     for (const i of selectedLineIndexes(selection)) {
+      if(TableEditor.isLine(lines[i]))continue;
       const a = i === selection.start.line ? selection.start.offset : 0;
       const b = i === selection.end.line ? selection.end.offset : lineText(lines[i]).length;
       const selected = sliceSegments(lines[i], a, b).map(s => ({...s, text: [...s.text].map(c => {
@@ -267,6 +281,7 @@ function settings() {
 function serializeDocument() {
   const config = settings();
   return {paragraphs: readLines().map(line => {
+    if(TableEditor.isLine(line))return {type:'table',table:TableEditor.get(line[0].tableId)};
     const text = lineText(line), match = text.match(listRegex);
     if (!match) return {segments: line};
     const prefix = text.length - match[4].length, style = styleAt(line, match[1].length);
@@ -279,7 +294,7 @@ function saveDraft() {
   ImageEditor.finishGesture(false);
   clearTimeout(draftTimer);
   try {
-    const raw=JSON.stringify({version:25,lines:readLines(),...ImageEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
+    const raw=JSON.stringify({version:27,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
     const nativeSaved=window.AndroidBridge?.saveDraft ? AndroidBridge.saveDraft(raw) : false;
     try{localStorage.setItem(DRAFT_KEY,raw);}catch(e){if(!nativeSaved)throw e;}
     $('draftStatus').textContent = 'Borrador guardado';
@@ -290,7 +305,7 @@ function restoreDraft() {
   try {
     const native=window.AndroidBridge?.getDraft?AndroidBridge.getDraft():'';
     const draft = JSON.parse(native||localStorage.getItem(DRAFT_KEY)||localStorage.getItem('hinote-draft-v21'));
-    if (!draft || ![21,23,25].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
+    if (!draft || ![21,23,25,27].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
     let count = draft.lines.length - 1, segments = 0;
     for (const line of draft.lines) {
       if (!Array.isArray(line)) return false;
@@ -298,6 +313,7 @@ function restoreDraft() {
     }
     if (count > MAX_CHARS || segments > 20000) return false;
     ImageEditor.restore(draft);
+    TableEditor.restore(draft);
     activeProfile = /^(original|[a-f0-9]{32})$/.test(draft.settings?.profile||'')?draft.settings.profile:'original';
     renderLines(draft.lines); $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
     for (const [id, key, min, max, fallback] of [['letterSpacing','letter_spacing',-8,8,0],['wordSpacing','word_spacing',12,60,26],['lineRows','line_grid_rows',1,4,1],['listIndent','list_indent_squares',0,6,1]]) $(id).value = bounded(draft.settings?.[key], min, max, fallback);
@@ -372,6 +388,7 @@ window.onWorkProgress = (kind, id, page) => {
 };
 function drawCurrent() {
   ImageEditor.finishGesture(false);ImageEditor.render();
+  TableEditor.render();
   $('pageBadge').textContent = `Página ${currentPage + 1}/${ImageEditor.count()}`;
   if(exporting||CalibrationUI.isBusy())return;
   if(!composition || currentPage >= composition.page_count){
@@ -394,6 +411,7 @@ function applyZoom() {
   canvas.style.width = `${675 * zoom}px`; canvas.style.height = `${1080 * zoom}px`;
   shell.style.width = `${675 * zoom}px`; shell.style.height = `${1080 * zoom}px`; shell.style.flexShrink = '0'; $('zoomLabel').textContent = `${Math.round(zoom * 100)}%`;
   ImageEditor.render();
+  TableEditor.render();
 }
 function exportNote() {
   if (exporting || CalibrationUI.isBusy() || folderBusy || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
@@ -410,8 +428,9 @@ document.querySelector('.toolbar').addEventListener('pointerdown', captureSelect
 $('tabs').addEventListener('click', event => {
   if (event.target.tagName !== 'BUTTON') return;
   [...$('tabs').children].forEach(b => b.classList.toggle('active', b === event.target));
-  ['text','lists','page','images','save','calibration'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
+  ['text','lists','page','images','tables','save','calibration'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
   ImageEditor.mode(event.target.dataset.tab==='images');
+  TableEditor.mode(event.target.dataset.tab==='tables');
 });
 $('colorPick').addEventListener('input', () => $('hexInput').value = $('colorPick').value.toUpperCase());
 $('hexInput').addEventListener('change', () => { const v = $('hexInput').value.trim().replace(/^#?/, '#'); if (/^#[\da-f]{6}$/i.test(v)) $('colorPick').value = v; });
@@ -458,7 +477,9 @@ $('zoomIn').onclick = () => { zoom = Math.min(2, zoom + .1); applyZoom(); };
 $('zoomFit').onclick = () => { zoom = Math.max(.25, Math.min(2, ($('previewWrap').clientWidth - 32) / 675)); applyZoom(); };
 window.addEventListener('resize', applyZoom); window.addEventListener('pagehide', saveDraft);
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveDraft(); });
+const tableOverlay=document.createElement('div');tableOverlay.id='tableOverlay';$('canvasShell').append(tableOverlay);
 if (!restoreDraft()) renderLines([[]]);
 try{if(window.AndroidBridge?.getExportFolder)showExportFolder(AndroidBridge.getExportFolder());}catch(e){toast('No se pudo leer la carpeta de guardado');}
 checkpoint(); applyZoom(); changed();
 CalibrationUI.init();
+TableEditor.init();

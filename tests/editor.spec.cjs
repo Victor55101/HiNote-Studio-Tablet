@@ -290,9 +290,69 @@ test('Supplement template contains only missing characters and cancel unlocks th
   assert.equal(await page.evaluate(()=>CalibrationUI.isBusy()),false);assert.equal(await page.isDisabled('#importProfile'),false);
 });
 
+async function openTable(page){await page.click('[data-tab="tables"]');await page.click('#insertTable');await page.waitForSelector('#tableDialog:not(.hidden)');}
+async function fillCell(page,r,c,text){await page.locator(`.cellEditor[data-row="${r}"][data-col="${c}"]`).fill(text);}
+test('Tables preserve anchors, text, rich color, sizes and draft reload',async page=>{
+  await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openTable(page);
+  await fillCell(page,0,0,'Título');await fillCell(page,1,1,'Rojo negro');
+  await page.evaluate(()=>{const n=document.querySelector('.cellEditor[data-row="1"][data-col="1"]').firstChild;const r=document.createRange();r.setStart(n,0);r.setEnd(n,4);getSelection().removeAllRanges();getSelection().addRange(r);});
+  await page.fill('#tableInkColor','#ff0000');await page.click('#tableApplyInk');
+  await page.selectOption('#tableMode','compact');await page.selectOption('#tableAlign','center');await page.selectOption('#tableValign','middle');await page.selectOption('#tableCellSize','0.55');
+  await page.click('#tableDone');
+  let doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[1].type,'table');
+  assert.equal(doc.paragraphs[1].table.mode,'compact');const cell=doc.paragraphs[1].table.rows[1].cells[1];
+  assert.equal(cell.size,.55);assert.equal(cell.align,'center');assert.equal(cell.valign,'middle');assert.equal(cell.segments[0].color,'#FF0000');assert.equal(cell.segments[0].text,'Rojo');assert.equal(cell.segments[1].color,'#000000');
+  assert.equal(doc.paragraphs.at(-1).segments[0].text,'Después');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('.tableBlock');
+  assert.deepEqual(await page.evaluate(()=>serializeDocument()),doc);
+});
+test('Tables undo insertion, edits and deletion without altering other paragraphs',async page=>{
+  await setup(page,'Texto');await openTable(page);await fillCell(page,0,0,'Uno');await page.click('#tableDone');
+  await page.click('#undoBtn');assert.equal(await page.locator('.tableBlock').count(),0);await page.click('#redoBtn');assert.equal(await page.locator('.tableBlock').count(),1);
+  await page.click('.tableBlock button');await fillCell(page,0,0,'Dos');await page.click('#tableDone');await page.click('#undoBtn');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs.find(p=>p.type==='table').table.rows[0].cells[0].segments[0].text),'Uno');
+  await page.click('.tableBlock button');page.once('dialog',d=>d.accept());await page.click('#tableRemove');assert.equal(await page.locator('.tableBlock').count(),0);await page.click('#undoBtn');assert.equal(await page.locator('.tableBlock').count(),1);
+  assert.equal((await lines(page))[0],'Texto');
+});
+test('TSV paste populates cells; row and column operations preserve content',async page=>{
+  await setup(page);await openTable(page);await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();
+  await page.evaluate(()=>{const data=new DataTransfer();data.setData('text/plain','A\tB\tC\nD\tE\tF');document.activeElement.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));});
+  assert.equal(await page.locator('.cellEditor[data-row="1"][data-col="2"]').textContent(),'F');await page.click('#tableAddCol');await page.click('#tableAddRow');
+  await page.click('#tableDone');const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);
+  assert.equal(t.widths.length,4);assert.equal(t.rows.length,5);assert(t.widths.reduce((a,b)=>a+b,0)+t.left<=16);assert.equal(t.rows[0].cells[2].segments[0].text,'B');
+});
+test('Touch handles resize columns and rows in half-square steps',async page=>{
+  await setup(page);await openTable(page);
+  const handle=page.locator('.tableGrip.column[data-col="0"]'),b=await handle.boundingBox();
+  await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2-20,b.y+b.height/2);await page.mouse.up();
+  await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();assert.equal(await page.inputValue('#tableColWidth'),'3.5');
+  const row=page.locator('.tableGrip.row[data-row="0"]'),br=await row.boundingBox();
+  const session=await page.context().newCDPSession(page);await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:br.x+br.width/2,y:br.y+br.height/2}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:br.x+br.width/2,y:br.y+br.height/2+20}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await page.inputValue('#tableRowHeight'),'1.5');await page.click('#tableDone');
+  const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);assert.equal(t.widths[0],3.5);assert.equal(t.rows[0].height,1.5);
+});
+test('Table editor preserves explicit newlines and recovers unfinished changes',async page=>{
+  await setup(page);await openTable(page);await fillCell(page,1,0,'uno');await page.keyboard.press('End');await page.keyboard.press('Enter');await page.keyboard.type('dos');
+  await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#tableDialog:not(.hidden)');
+  assert.equal(await page.locator('.cellEditor[data-row="1"][data-col="0"]').textContent(),'uno\ndos');await page.click('#tableDone');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.rows[1].cells[0].segments.map(s=>s.text).join('')),'uno\ndos');
+});
+test('Table block survives text formatting and Enter inserts text after it',async page=>{
+  await setup(page);await openTable(page);await page.click('#tableDone');
+  await select(page,{line:0,offset:0},{line:1,offset:0});await page.click('[data-tab="text"]');await page.selectOption('#sizeSel','150');
+  assert.equal(await page.locator('.tableBlock').count(),1);await select(page,{line:0,offset:0});await page.keyboard.press('Enter');await page.keyboard.type('Después');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].type),'table');assert((await lines(page)).includes('Después'));
+});
+test('Preview table controls move and resize without changing text or images',async page=>{
+  await setup(page);await openTable(page);await fillCell(page,0,0,'Tabla');await page.click('#tableDone');
+  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);});
+  const b=await page.locator('.tableMove').boundingBox();await page.mouse.move(b.x+20,b.y+20);await page.mouse.down();await page.mouse.move(b.x+20,b.y+50);await page.mouse.up();
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),1.5);
+  await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),0);
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
@@ -311,6 +371,7 @@ test('Supplement template contains only missing characters and cancel unlocks th
         await page.goto(`http://127.0.0.1:${server.address().port}`); await page.waitForSelector('#editor .line'); await fn(page);
         assert.deepEqual(errors,[],'Uncaught browser errors'); console.log('PASS '+name);
         if(name.startsWith('Import, rotate')){fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/images-editor.png')});}
+        if(name.startsWith('Tables preserve anchors')){await page.click('.tableBlock button');fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/tables-editor.png')});}
       } catch (error) {
         failed++; console.error('FAIL '+name+'\n'+error.stack); fs.mkdirSync(path.join(root,'test-results'),{recursive:true});
         await page.screenshot({path:path.join(root,'test-results',name.replace(/[^a-z0-9]+/gi,'-')+'.png'),fullPage:true});

@@ -13,6 +13,7 @@ from pencilengine_writer import write_pencilengine
 from validate_hinote import validate_hinote
 from pencilengine_width import width_level, native_width
 import calibration
+from table_composer import validate_table, cell_segments
 MAX_CHARACTERS = 200_000
 MAX_PAGES = 500
 MAX_CACHE_BYTES = 512 * 1024 * 1024
@@ -40,9 +41,19 @@ def _document(raw):
     paragraphs = doc.get("paragraphs", [])
     if not isinstance(paragraphs, list) or len(paragraphs) > 10_000:
         raise ValueError("El documento supera 10 000 párrafos.")
-    chars = segments = 0
+    chars = segments = cells = 0
+    table_ids = set()
     for para in paragraphs:
-        for seg in para.get("segments", []):
+        if para.get("type") == "table":
+            table = validate_table(para["table"])
+            if table["id"] in table_ids: raise ValueError("Tabla duplicada en el documento")
+            table_ids.add(table["id"])
+            cells += len(table["rows"]) * len(table["widths"])
+            if cells > 2000 or len(table_ids) > 50: raise ValueError("La nota admite hasta 50 tablas y 2000 celdas")
+            current_segments = cell_segments(table)
+        else:
+            current_segments = para.get("segments", [])
+        for seg in current_segments:
             if not isinstance(seg.get("text", ""), str):
                 raise ValueError("El texto de un segmento no es válido.")
             chars += len(seg.get("text", "")); segments += 1
@@ -88,12 +99,14 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
     work.mkdir(parents=True)
     cache_bytes = 0
     stroke_counts = []
+    table_pages = []
     try:
         def sink(page):
             nonlocal cache_bytes
             _check(token)
             index = page["page_number"] - 1
             stroke_counts.append(len(page["strokes"]))
+            table_pages.append(page.get("tables", []))
             if shutil.disk_usage(cache).free < 20 * 1024 * 1024:
                 raise ValueError("No queda suficiente espacio para generar la nota.")
             binary = work / f"page-{index}.bin"
@@ -112,7 +125,8 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library)
         used = set()
         for para in doc["paragraphs"]:
-            for seg in para.get("segments", []): used.update(unicodedata.normalize("NFC", seg["text"]))
+            for seg in (cell_segments(para["table"]) if para.get("type") == "table" else para.get("segments", [])):
+                used.update(unicodedata.normalize("NFC", seg["text"]))
             used.update(str((para.get("list") or {}).get("marker", "")))
         restored = sorted(used & fallback)
         if restored: result["warnings"].insert(0, "Se usó la letra Original para: " + " ".join(restored))
@@ -120,6 +134,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
         manifest = {"snapshot": snapshot_id, "page_count": result["page_count"],
                     "layout": result["layout"], "warnings": result["warnings"],
                     "stroke_counts": stroke_counts}
+        manifest["table_pages"] = table_pages
         manifest["profile"] = profile_id
         manifest["profile_revision"] = profile_revision
         (work / "manifest.json").write_text(_json(manifest), encoding="utf-8")

@@ -436,7 +436,7 @@ def _place_glyph_sequence(
         glyph = item["glyph"]
         dx = rng.uniform(-jitter_x, jitter_x) * scale if jitter_x else 0.0
         dy = rng.uniform(-jitter_y, jitter_y) * scale if jitter_y else 0.0
-        glyph_x = origin_x + dx
+        glyph_x = origin_x + dx + float(item.get("origin_shift", 0))
         y_offset = float(placement_y_offsets.get(ch, 0.0)) * scale
         glyph_baseline = baseline_y + dy + y_offset
 
@@ -475,6 +475,7 @@ def _place_glyph_sequence(
                 "color": item.get("color", "#000000"),
                 "opacity": float(item.get("opacity", 100.0)),
                 "thickness": item.get("thickness", 0),
+                "width_scale": item.get("width_scale", 1),
                 "points": points,
             })
 
@@ -500,6 +501,8 @@ def _canonicalize_pencilengine_strokes(page: dict) -> None:
     Geometry, pressure, tilt/extras, color and opacity are untouched.
     """
     for stroke in page.get("strokes", []):
+        if stroke.get("native_segment"):
+            continue
         pts = stroke.get("points", [])
         n = len(pts)
         if not n:
@@ -590,6 +593,43 @@ def compose_document(
 
     for para in paragraphs:
         check()
+        if para.get("type") == "table":
+            from table_composer import GRID, HALF, validate_table, plan_row, draw_row, draw_borders
+            table = validate_table(para["table"])
+            top = GRID if not current_page["strokes"] else math.ceil(baseline_y / HALF) * HALF
+            top += table.get("gap", 0) * GRID
+            limit = math.floor(bottom_limit / HALF) * HALF
+            repeated = bool(table.get("repeat_header", True)) and len(table["rows"]) > 1
+            def prepare_row(i):
+                return plan_row(table, table["rows"][i], lib, i, seed, float(word_spacing), float(letter_spacing), warnings, check)
+            header = prepare_row(0)
+            first_body = prepare_row(1) if repeated else None
+            first_height = header["height"] + (first_body["height"] if first_body else 0)
+            if first_height > limit - GRID + .001:
+                raise ValueError("Tabla: una fila completa y su encabezado no caben en una hoja. Usa Compacta, amplía columnas, divide el contenido en filas o desactiva Repetir encabezado.")
+            if top + first_height > limit + .001:
+                if current_page["strokes"]: new_page()
+                top = GRID
+            y, boundaries, indexes = top, [], []
+            for i in range(len(table["rows"])):
+                check()
+                row = header if i == 0 else first_body if i == 1 and first_body else prepare_row(i)
+                required = row["height"] + (header["height"] if repeated and i else 0)
+                if required > limit - GRID + .001:
+                    raise ValueError(f"Tabla, fila {i+1}: no cabe completa en una hoja. Usa Compacta, amplía las columnas o reparte su contenido en más filas.")
+                if y + row["height"] > limit + .001:
+                    draw_borders(table, top, boundaries, page(), indexes)
+                    new_page()
+                    top = y = GRID
+                    boundaries, indexes = [], []
+                    if repeated:
+                        draw_row(table, header, y, page(), lib, float(letter_spacing), rng)
+                        y += header["height"]; boundaries.append(y); indexes.append(0)
+                draw_row(table, row, y, page(), lib, float(letter_spacing), rng)
+                y += row["height"]; boundaries.append(y); indexes.append(i)
+            draw_borders(table, top, boundaries, page(), indexes)
+            baseline_y = y + GRID
+            continue
         list_info = para.get("list") or None
         chars = _flatten_segments(para.get("segments", []), base_scale)
         items = _choose_char_items(chars, glyphs, glyph_rng, float(word_spacing), warnings)

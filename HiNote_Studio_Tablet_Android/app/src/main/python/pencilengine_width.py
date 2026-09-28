@@ -20,10 +20,15 @@ def native_width(stroke):
     if level:
         if struct.unpack_from(">I", metadata, 68)[0] != 12:
             raise ValueError("El ajuste de grosor admite el rotulador de la calibración")
-        return level / 3.0
-    return struct.unpack_from(">f", metadata, 96)[0]
+        width = level / 3.0
+    else:
+        width = struct.unpack_from(">f", metadata, 96)[0]
+    scale = float(stroke.get("width_scale", 1))
+    if not math.isfinite(scale) or not .35 <= scale <= 2:
+        raise ValueError("Escala de grosor inválida")
+    return width * scale
 
 
 def patch_width(metadata, stroke):
-    if width_level(stroke.get("thickness", 0)):
+    if width_level(stroke.get("thickness", 0)) or stroke.get("width_scale", 1) != 1:
         struct.pack_into(">f", metadata, 96, native_width(stroke))

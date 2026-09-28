@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V26
+# HiNote Studio Tablet — V27
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V27 añade **Tablas** con escritura Estándar/Compacta, celdas editables y saltos por filas completas. Consulta la sección [Tablas manuscritas](#v27--tablas-manuscritas).
 
 ## V26: corrección de importación de calibraciones
 
@@ -87,3 +89,16 @@ gradle testDebugUnitTest assembleDebug
 Consultar `docs/PRUEBA_TABLET.md` para verificar el resultado en Huawei Notes. Las pruebas del motor en Linux y del editor en Chromium no sustituyen la prueba en una tablet física ni garantizan compatibilidad con todas las versiones de Huawei Notes.
 
 Los APK de depuración pueden tener una firma distinta de la instalación anterior. Conserva tus notas, una copia del texto y respaldos de tus perfiles antes de desinstalar una versión: desinstalar borra el borrador, las imágenes privadas y las calibraciones añadidas.
+## V27 · Tablas manuscritas
+
+La pestaña **Tablas** inserta un bloque después del párrafo seleccionado (o en el párrafo vacío). Toca el bloque para editar las celdas. Admite hasta 12 columnas, 200 filas por tabla y 2000 celdas por nota, dentro del límite compartido de 200 000 caracteres.
+
+- **Estándar** conserva el 73 % del tamaño calibrado. **Compacta** comienza en 65 % y ajusta cada celda hasta 50 % para intentar respetar su altura mínima. También se puede fijar un tamaño específico por celda.
+- Anchos, sangría y alturas mínimas en medios cuadros. Arrastra los controles de filas/columnas o escribe una medida. El contenido puede aumentar la altura; nunca se recorta para forzar una medida.
+- Alineación horizontal y vertical, color parcial y grosor de texto/bordes. El grosor de la escritura se escala junto con sus coordenadas, sin cambiar la presión original.
+- Pegar texto con tabulaciones reparte columnas; los saltos separan filas. Los saltos introducidos dentro de una celda se conservan como renglones.
+- La fila **completa, con todas sus columnas**, salta a la siguiente hoja cuando no cabe. El encabezado se puede repetir. Si una sola fila no cabe en una hoja entera, se muestra un error con alternativas, sin truncar ni descartar texto.
+- Botones Antes/Después para cambiar la posición del bloque; en la pestaña Tablas los controles de la previsualización ajustan sangría, separación anterior y dimensiones de manera táctil.
+- Borrador, recuperación de edición pendiente y deshacer/rehacer. Las calibraciones originales y personalizadas se conservan.
+
+La tabla sigue siendo estructurada dentro de HiNote Studio. En Huawei Notes se exporta como escritura vectorial, rectángulo nativo y separadores independientes, no como tabla de Word ni como imagen. No hay celdas combinadas en esta primera versión. La extensión del rectángulo se basa en la muestra del usuario; el comportamiento editable del contorno debe confirmarse en la tablet tras instalar V27.

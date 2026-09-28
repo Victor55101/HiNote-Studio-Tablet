@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://hinote.local">
 <link rel="stylesheet" href="images.css">
+<link rel="stylesheet" href="tables.css">
 <title>HiNote Studio Tablet</title>
 <style>
 :root{
@@ -44,7 +45,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   <div class="toolbar">
     <button class="btn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button><button class="btn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
     <div class="segment" id="tabs">
-      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button><button data-tab="save">Guardado</button><button data-tab="calibration">Calibración</button>
+      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button><button data-tab="tables">Tablas</button><button data-tab="save">Guardado</button><button data-tab="calibration">Calibración</button>
     </div>
     <div class="toolpanel" id="panelText">
       <div class="field"><label>Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected>100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
@@ -83,6 +84,9 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <button class="btn" id="clearFolder">Preguntar cada vez</button>
       <div class="saveLocation"><strong id="folderLabel" role="status">Se preguntará dónde guardar</strong><small id="folderHint">Elige una carpeta para guardar directamente en ella.</small></div>
     </div>
+    <div class="toolpanel hidden" id="panelTables">
+      <button class="btn accent" id="insertTable">＋ Insertar tabla</button><span class="field">Toca una tabla para editar. Arrastra ↔ o ↘ en la vista.</span>
+    </div>
     <div class="toolpanel hidden" id="panelCalibration">
       <span class="field">Letra: <strong id="activeProfileLabel">Original</strong></span>
       <button class="btn accent" id="manageCalibration">Mis calibraciones</button>
@@ -112,6 +116,33 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div id="tableDialog" class="tableDialog hidden" role="dialog" aria-modal="true" aria-labelledby="tableTitle">
+  <section class="tableCard">
+    <div class="tableHeading"><div><h2 id="tableTitle">Editar tabla</h2><p>Tu escritura · Dos renglones por cuadro cuando la altura de los trazos lo permite</p></div><button class="btn" id="tableCancel">Cancelar</button></div>
+    <div class="tableTools">
+      <label>Escritura <select id="tableMode"><option value="standard">Estándar · 73 %</option><option value="compact">Compacta · ajuste 65–50 %</option></select></label>
+      <label>Izquierda <input id="tableLeft" type="number" min="0.5" max="15" step="0.5" value="1"> cuadros</label>
+      <label>Espacio anterior <input id="tableGap" type="number" min="0" max="10" step="0.5" value="0"></label>
+      <label>Borde <input id="tableBorder" type="number" min="1" max="10" value="2"><input id="tableBorderColor" type="color" value="#000000" aria-label="Color del borde"></label>
+      <label><input id="tableRepeat" type="checkbox" checked> Repetir encabezado</label>
+      <button class="btn" id="tableAddRow">＋ Fila</button><button class="btn" id="tableDelRow">− Fila</button><button class="btn" id="tableAddCol">＋ Columna</button><button class="btn" id="tableDelCol">− Columna</button>
+    </div>
+    <div class="tableTools">
+      <strong id="tableCellLabel">Celda 1, 1</strong>
+      <label>Ancho columna <input id="tableColWidth" type="number" min="1" max="15.5" step="0.5"></label>
+      <label>Alto mínimo fila <input id="tableRowHeight" type="number" min="0.5" max="25" step="0.5"></label>
+      <label>Alinear <select id="tableAlign"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
+      <label>Vertical <select id="tableValign"><option value="top">Arriba</option><option value="middle">Centro</option><option value="bottom">Abajo</option></select></label>
+      <label>Letra de celda <select id="tableCellSize"><option value="0">Según tabla</option><option value="0.73">Estándar · 73 %</option><option value="0.65">Compacta · 65 %</option><option value="0.60">Compacta · 60 %</option><option value="0.55">Compacta · 55 %</option><option value="0.50">Compacta · 50 %</option></select></label>
+      <input id="tableInkColor" type="color" value="#000000" aria-label="Color del texto seleccionado">
+      <label>Grosor <select id="tableInkWidth"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
+      <button class="btn" id="tableApplyInk">Aplicar al texto</button>
+    </div>
+    <p id="tableMessage" role="status"></p>
+    <div id="tableGridWrap"><table id="tableGrid" aria-label="Celdas de la tabla"></table></div>
+    <div class="tableActions"><button class="btn" id="tableMoveUp">↑ Antes</button><button class="btn" id="tableMoveDown">↓ Después</button><button class="btn danger" id="tableRemove">Eliminar tabla</button><small>Filas indivisibles. Pega columnas separadas por tabulaciones. Arrastra ⋮ y ⋯ para ajustar por medios cuadros.</small><button class="btn primary" id="tableDone">Aplicar tabla</button></div>
+  </section>
+</div>
 <div id="cropDialog" class="cropDialog hidden" role="dialog" aria-modal="true" aria-labelledby="cropTitle">
   <div class="cropCard"><h2 id="cropTitle">Recortar imagen</h2><p>Arrastra dentro de la imagen para seleccionar el recorte. También puedes ajustar sus bordes con los controles.</p>
     <div id="cropStage"><img id="cropSource" alt="Imagen original para recortar" draggable="false"><div id="cropBox"></div></div>
@@ -160,6 +191,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 </div>
 <script src="calibration.js"></script>
 <script src="images.js"></script>
+<script src="tables.js"></script>
 <script src="editor.js"></script>
 </body>
 </html>

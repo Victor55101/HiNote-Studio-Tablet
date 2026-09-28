@@ -70,7 +70,7 @@ def _build_stroke(stroke: dict) -> bytes:
     # original y actualizamos únicamente los campos estructurales confirmados.
     struct.pack_into(">I", header, 0, STROKE_HEADER_SIZE)
     struct.pack_into(">I", header, 12, payload_size)
-    header[16:32] = uuid.uuid4().bytes
+    header[16:32] = bytes.fromhex(stroke["id"]) if stroke.get("native_segment") else uuid.uuid4().bytes
     struct.pack_into(">I", header, 32, 68)
     struct.pack_into(">I", header, 36, STROKE_HEADER_SIZE)
     struct.pack_into(">I", header, 40, STROKE_METADATA_SIZE)
@@ -99,7 +99,7 @@ def _build_stroke(stroke: dict) -> bytes:
         # Defensive canonicalization. compose_document() already emits these
         # values, but doing it again here also protects callers that feed an
         # older .strokes.json directly to the writer.
-        if n == 1:
+        if stroke.get("native_segment") or n == 1:
             state = 4
         elif i == 0:
             state = 4
@@ -130,6 +130,12 @@ def write_pencilengine(composition: dict, template: str | Path, output: str | Pa
 
     global_header = bytearray(template_bin[:GLOBAL_HEADER_SIZE])
     footer = bytearray(template_bin[-FOOTER_SIZE:])
+    shapes = [bytes.fromhex(s["id"]) for s in composition.get("strokes", []) if s.get("shape") == "rectangle"]
+    # Native rectangle-editing references, matching the user's 96-byte footer.
+    struct.pack_into(">I", footer, 12, 56 * len(shapes))
+    struct.pack_into(">I", footer, 36, len(shapes))
+    for identity in shapes:
+        footer.extend(struct.pack(">IIII", 2, 20, 0, 0) + identity + struct.pack(">I", 1) + identity + struct.pack(">I", 0))
 
     output = Path(output)
     stroke_count = 0
