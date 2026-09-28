@@ -48,7 +48,7 @@ def js(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
 
-def chars(value):
+def chars(value, limit=MAX_CHARS):
     if not isinstance(value, str) or len(value) > 2048:
         raise ValueError("Lista de caracteres inválida")
     result = []
@@ -59,7 +59,7 @@ def chars(value):
             raise ValueError("Escribe caracteres completos; no marcas combinantes, controles ni emoji compuestos")
         if ch not in result:
             result.append(ch)
-    if len(result) > MAX_CHARS:
+    if len(result) > limit:
         raise ValueError("Cada perfil o plantilla admite hasta 256 caracteres")
     return result
 
@@ -125,7 +125,10 @@ def atomic_gzip(path, value, token=None):
                         payload = "".join(chunks).encode("utf-8");total += len(payload)
                         if total > MAX_BANK: raise ValueError("El perfil supera el tamaño máximo")
                         stream.write(payload);chunks=[];length=0
-                stream.write("".join(chunks).encode("utf-8"))
+                payload = "".join(chunks).encode("utf-8")
+                if total + len(payload) > MAX_BANK: raise ValueError("El perfil supera el tamaño máximo")
+                check(token)
+                stream.write(payload)
             raw.flush()
             os.fsync(raw.fileno())
         check(token)
@@ -144,7 +147,7 @@ def summary(project, profile):
     own = profile["glyphs"]
     requested = chars("".join(profile.get("expected", [])) + "".join(own))
     # Basic coverage is always visible, even for supplementary or custom-only notes.
-    scope = chars(BASE + "".join(requested))
+    scope = chars(BASE + "".join(requested), MAX_CHARS + len(BASE))
     missing = [c for c in scope if not own.get(c)]
     base = original(project)["glyphs"]
     fallback = [c for c in missing if base.get(c)] if profile["id"] != "original" else []
@@ -447,7 +450,9 @@ def validate_profile(profile):
                     if len(bytes.fromhex(s.get(key, ""))) != length: raise ValueError("Metadatos de trazo inválidos")
                 metadata = bytes.fromhex(s["metadata_hex"])
                 if struct.unpack_from(">I", metadata, 68)[0] != 12: raise ValueError("Herramienta no admitida")
-                if struct.unpack_from(">I", bytes.fromhex(s["point_header_hex"]), 0)[0] != 0: raise ValueError("Tipo de puntos no admitido")
+                # The original bank contains native type-2 strokes in V, [ and ].
+                # Backups preserve them; fresh templates still require freehand.
+                if struct.unpack_from(">I", bytes.fromhex(s["point_header_hex"]), 0)[0] not in (0, 2): raise ValueError("Tipo de puntos no admitido")
                 _finite(struct.unpack_from(">f", metadata, 96)[0], .03, 10)
                 pts = s.get("points")
                 if not isinstance(pts, list) or not 1 <= len(pts) <= 5000: raise ValueError("Puntos inválidos")

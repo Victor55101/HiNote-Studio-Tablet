@@ -1,5 +1,25 @@
 # Comprobación en la tablet
 
+## V25: grosor, plantillas y perfiles
+
+El usuario confirmó el funcionamiento en su tablet del guion bajo, la carpeta recordada y el fondo exportado V24. Para V25:
+
+1. Abre el borrador anterior: texto, estilos, imágenes, carpeta y letra Original deben conservarse. **Calibrado** conserva el grosor de antes.
+2. Escribe `Hola _- • * V[]`. Aplica por selección grosor 1, 2 y 3, y prueba también 10. Cambia tamaño por separado; deshaz/rehaz y reinicia. Exporta e importa en Huawei Notes: compara los niveles, posiciones y presión con la muestra de grosor aportada.
+3. Abre **Calibración → Mis calibraciones**. Original debe estar activa y no permitir renombrar/eliminar. Revisa **Ver encontrados** y **Ver faltantes**, busca `_` o `U+005F` y comprueba las ocho variantes y los signos pendientes.
+4. Para una primera prueba breve, desmarca los grupos y escribe `a_!` en caracteres adicionales. Guarda la plantilla `.hinote`, ábrela en Notes y escribe ocho versiones de cada uno dentro de las celdas, con Rotulador y sin conversión a formas. Conserva la guía y su código.
+5. Exporta esa nota de Notes y usa **Importar .hinote / respaldo**, sin marcar Completar. Antes de guardar debe mostrar tres encontrados; el resto aparece como disponible en Original o sin muestra. **Guardar perfil** no debe activar la letra por sí solo. Ponle nombre, úsala y comprueba `a_! Hola` en previsualización y exportación.
+6. Prueba una fila con cuatro variantes y otra vacía: debe indicar `4/8` y el faltante. Selecciona **Solo los faltantes de este perfil**, crea otra plantilla y complétala. Importa marcando **Completar el perfil seleccionado**: conserva caracteres no escritos en la nueva nota. Completar Original debe crear Original ampliada sin tocar Original.
+7. Crea la plantilla básica completa y repite el circuito con todas sus páginas: etiqueta, orden, ocho columnas, acentos, signos y línea base. No omitas las páginas aunque alguna fila quede vacía. La app no verifica por OCR si se escribió el carácter correcto.
+8. Cambia entre perfiles, prueba la muestra sin alterar tu documento, cierra y abre la app. Deben conservarse los perfiles y la elección del borrador. Al cambiar de letra se necesita actualizar la previsualización antes de exportar.
+9. Respalda un perfil `.hnprofile`, impórtalo y confirma que crea otro perfil. Duplica, renombra y elimina la copia; usa **Recuperar última eliminación**. Prueba también respaldar e importar Original.
+10. Cancela los selectores y la importación. Importa una plantilla vacía, otra con un trazo cruzando celdas y otra cuya guía moviste: debe rechazarla con explicación, sin modificar perfiles. Prueba cancelar la creación de una plantilla extensa.
+11. Repite una nota larga con varias páginas, imágenes y perfil propio; confirma que se puede cancelar y que las notas ya exportadas no cambian al modificar la calibración.
+
+La importación admite hasta 32 MiB comprimidos, 64 MiB expandidos, 24 páginas y 180000 puntos en total (40000 por página). Cada perfil/plantilla admite 256 caracteres y cada carácter ocho variantes. Una guía recortada, desordenada, movida o dañada se rechaza. Los códigos toleran recomprimir la imagen en las pruebas automatizadas; la conservación real de las guías y trazos al exportar desde Huawei Notes se debe comprobar con los pasos 4–7.
+
+## Comprobaciones generales
+
 1. Conserva una copia del texto de la instalación anterior y de tus notas antes de cambiar de APK.
 2. Confirma que el nuevo logo aparezca tanto en el lanzador de Android como en el encabezado del editor.
 3. Escribe `_-Hola`: `_` debe quedar debajo de `-`, usando dos trazos de calibración distintos. Crea además una lista `• Viñeta`, otra `* Asterisco` y otra `- Guion`; comprueba que se vean respectivamente como círculo, asterisco y guion manuscritos.

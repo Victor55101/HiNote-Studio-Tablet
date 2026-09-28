@@ -1,8 +1,29 @@
-# HiNote Studio Tablet — V24
+# HiNote Studio Tablet — V25
 
-App Android para convertir texto a los trazos de la calibración personal incluida y exportarlo a Huawei Notes como `.hinote`.
+App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
 
-## Cambios
+## V25: grosor y mis calibraciones
+
+- **Texto → Grosor**: niveles 1–10 independientes del tamaño de letra, aplicables a una selección y a marcadores de lista. **Calibrado** conserva el grosor original de cada trazo y es el valor inicial, también para borradores anteriores. Los cambios admiten deshacer/rehacer y se conservan al cerrar la app.
+- **Calibración → Mis calibraciones**: Original sigue siendo la letra predeterminada y está protegida. Se pueden guardar hasta 20 perfiles adicionales, nombrarlos, duplicarlos, alternar entre ellos y respaldarlos como `.hnprofile`. Una importación no activa ni reemplaza automáticamente la letra de la nota.
+- **Ver encontrados / Ver faltantes** en cada perfil: caracteres identificados, código Unicode, variantes disponibles de ocho, variantes incompletas y búsqueda. Los faltantes se distinguen entre disponibles en Original y sin muestra. Los avisos al componer indican cuándo se usa Original o se deja espacio.
+- Plantillas `.hinote` identificadas y versionadas, con una fila por carácter, ocho celdas y línea base azul. Selección por grupos (español, matemáticas, programación, tipografía) o caracteres adicionales; hasta 256 por plantilla/perfil. También se puede generar una plantilla **solo de los faltantes**.
+- Importación con revisión previa, comprobación de páginas, guías, celdas y límites. Las filas vacías no borran muestras anteriores. Completar Original crea **Original ampliada** y deja intacta la calibración incluida. Eliminar un perfil permite recuperar la última eliminación.
+- El proceso usa el hilo de trabajo existente, permite cancelar y guarda perfiles de forma atómica. El lector acota el tamaño de archivos, páginas, trazos y puntos. No se cargan todos los bancos personalizados simultáneamente.
+
+### Crear y completar una calibración
+
+1. Abre **Calibración → Mis calibraciones → Crear plantilla**. Elige grupos o escribe los caracteres que necesitas; guarda la plantilla `.hinote` y ábrela en Huawei Notes.
+2. Escribe con **Rotulador**, preferiblemente grosor 1–3. Cada fila indica el carácter: escribe ocho versiones, una dentro de cada celda, apoyadas en la línea azul. Los descendentes y `_` deben quedar debajo de esa línea. Conserva todas las páginas, su orden, dimensiones y las imágenes de guía. No muevas, gires, recortes ni escribas sobre la etiqueta o el código inferior; no actives conversión automática a formas.
+3. Exporta la nota escrita como `.hinote`. En Studio, pon un nombre y pulsa **Importar .hinote / respaldo**. Revisa encontrados, faltantes y variantes; pulsa **Guardar perfil**, luego **Usar en esta nota** cuando quieras activarlo.
+4. Para completar una letra guardada, selecciónala, crea una plantilla de los faltantes (o de caracteres concretos que quieras repetir) y escribe esas filas. Al importar, marca **Completar el perfil seleccionado**. Los caracteres con muestras se añaden o sustituyen; los demás se conservan. Si el seleccionado es Original, se crea una copia ampliada.
+5. **Respaldar** exporta un `.hnprofile`. Reimportarlo siempre crea un perfil nuevo, sin reemplazar los existentes. Haz respaldos antes de desinstalar la app. Los archivos `.hinote` ya exportados son independientes de sus perfiles.
+
+El estándar pide ocho variantes; se aceptan de una a siete con aviso para poder completar después. Una plantilla totalmente vacía se rechaza. La asociación se basa en la celda, **no en OCR**: una `b` escrita en la fila de `a` se interpretará como `a`; revisa la muestra de escritura antes de usarla. Las notas arbitrarias y plantillas antiguas sin identificador no se importan automáticamente: el banco Original ya está incluido. El PDF no contiene la información nativa necesaria y no se usa como calibración.
+
+La equivalencia 1–10 se basa en los archivos de grosor aportados por el usuario: en Rotulador, el ancho nativo es el nivel dividido entre tres. Se mantienen geometría y presión. La previsualización aproxima la pincelada; la apariencia definitiva depende del renderizador de Huawei Notes. Las nuevas plantillas requieren comprobar su ida y vuelta real en la tablet.
+
+## Funciones conservadas
 
 - Las miniaturas exportadas usan el papel nativo `base3` de la plantilla Huawei, independientemente del interruptor de cuadrícula de la previsualización. Así se evita alternar entre hoja blanca/cuadrícula tenue y el papel nativo mientras carga una página.
 - **Guardado → Elegir carpeta** recuerda la carpeta y el permiso de Android entre sesiones. **Guardar .hinote** guarda allí directamente y crea otra copia numerada si ya existe el nombre. **Preguntar cada vez** restablece el selector anterior. Si la carpeta se mueve, elimina o pierde su permiso, se solicita volver a elegirla.
@@ -11,7 +32,7 @@ App Android para convertir texto a los trazos de la calibración personal inclui
 - Imágenes JPG, PNG y WebP estático desde el selector de Android. Transparencia conservada y orientación EXIF aplicada.
 - Modo Imágenes: mover con un dedo, pellizcar/girar con dos, controles de esquinas, ángulo numérico, giros de 90°, recorte, reemplazar, duplicar y eliminar. Deshacer/rehacer incluye las imágenes.
 - Páginas con imágenes nativas editables en Huawei Notes. Orden entre imágenes; la escritura permanece siempre encima. Las imágenes se anclan a una página, no al párrafo: no hay ajuste automático del texto alrededor de ellas.
-- Borrador V23 con copia nativa atómica. Migra el texto de V21/V22; los archivos de imagen se guardan fuera de `localStorage` y sobreviven al cierre normal y a la recuperación del WebView.
+- Borrador V25 con copia nativa atómica y migración de V21/V22/V23/V24. Conserva el almacén anterior: los archivos de imagen se guardan fuera de `localStorage` y sobreviven al cierre normal y a la recuperación del WebView.
 - Importación y exportación en el hilo de trabajo; miniaturas de imagen de hasta 512 px, máximo 20 imágenes visibles por página y 200 por documento. Original normalizado de hasta 2560 px; entrada máxima 32 MiB/100 MP, almacén de 256 MiB. WebP se convierte a JPG o PNG; las animaciones no se conservan.
 - Logo de HiNote Studio integrado en el editor y como icono normal/adaptativo de Android.
 - Asociaciones de calibración reconstruidas desde la nota original para `+`, `=`, `%`, `#`, `@`, `•`, `*` y `<`. Las listas de viñetas y asteriscos usan ahora sus trazos manuscritos correctos.
@@ -23,7 +44,7 @@ App Android para convertir texto a los trazos de la calibración personal inclui
 - Editor con pegado multilínea, selección persistente, formato absoluto, listas que conservan el formato, deshacer/rehacer y borrador local.
 - Notas largas: actualizar manualmente; el modo automático funciona hasta 12000 caracteres. Límites de protección: 200000 caracteres, 10000 párrafos, 20000 segmentos, 500 páginas y 512 MiB de archivos de composición.
 
-La compilación genera `glyphs_v24.json` combinando el banco original archivado con las asociaciones corregidas de la nota de calibración. Conserva el borrador y almacén de imágenes V23. Este repositorio no contiene una pantalla para importar una nueva calibración. La fidelidad depende de los caracteres y variantes de ese banco.
+La compilación genera `glyphs_v24.json` combinando el banco original archivado con las asociaciones corregidas de la nota de calibración. V25 conserva ese banco y sus posiciones corregidas sin alterarlos; los perfiles adicionales se guardan por separado en el almacenamiento privado de la app. Se mantienen las claves y rutas del borrador V23 para migrar sin perder texto ni imágenes.
 
 ## Imágenes en la tablet
 
@@ -59,4 +80,4 @@ gradle testDebugUnitTest assembleDebug
 
 Consultar `docs/PRUEBA_TABLET.md` para verificar el resultado en Huawei Notes. Las pruebas del motor en Linux y del editor en Chromium no sustituyen la prueba en una tablet física ni garantizan compatibilidad con todas las versiones de Huawei Notes.
 
-Los APK de depuración pueden tener una firma distinta de la instalación anterior. Conserva tus notas y una copia del texto antes de desinstalar una versión: desinstalar borra el borrador local.
+Los APK de depuración pueden tener una firma distinta de la instalación anterior. Conserva tus notas, una copia del texto y respaldos de tus perfiles antes de desinstalar una versión: desinstalar borra el borrador, las imágenes privadas y las calibraciones añadidas.

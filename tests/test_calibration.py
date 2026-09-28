@@ -112,6 +112,25 @@ class CalibrationTests(unittest.TestCase):
         dup=json.loads(cal.action(self.project,'duplicate',json.dumps({'id':identity})))['saved']
         self.assertNotIn(dup,(identity,second))
 
+    def test_original_backup_preserves_all_glyphs_and_native_point_types(self):
+        path=self.work/'original.hnprofile'
+        cal.export_profile(self.project,'original',path)
+        cal.import_backup(self.project,path,self.work)
+        identity=json.loads(cal.commit(self.project,self.work))['saved']
+        restored=cal.load_profile(self.project,identity)
+        self.assertNotEqual(identity,'original')
+        self.assertEqual(restored['glyphs'],self.original['glyphs'])
+        self.assertEqual(restored['placement_y_offsets'],self.original['placement_y_offsets'])
+
+    def test_full_custom_character_set_still_reports_missing_basic_characters(self):
+        custom=''.join(chr(0x4e00+i) for i in range(256))
+        plan=cal.template_plan({'groups':[],'custom':custom})
+        self.assertEqual(len(plan),22)
+        profile=cal.new_profile({c:[self.original['glyphs']['a'][0]] for c in custom},custom,'Personalizado')
+        detail=cal.summary(self.project,profile)
+        self.assertEqual(len(detail['found']),256)
+        self.assertEqual(set(detail['missing']),set(cal.BASE))
+
     def test_blank_template_rejected_and_cancel_does_not_save(self):
         guides,_=self.template('a',filled=set())
         with self.assertRaisesRegex(ValueError,'vacía'):cal.extract(self.project,self.work,json.dumps(guides),'Vacía')

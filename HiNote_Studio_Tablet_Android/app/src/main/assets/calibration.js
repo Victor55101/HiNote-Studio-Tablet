@@ -67,7 +67,7 @@ const CalibrationUI = (() => {
     if(error){status(error);toast(error);return;}
     try{
       const data=JSON.parse(raw||'{}');
-      if(data.profiles){updateCatalog(data);status('Elige un perfil para ver sus caracteres.');}
+      if(data.profiles){updateCatalog(data);status(data.problems?.length?data.problems.join('\n'):'Elige un perfil para ver sus caracteres.');}
       else if(data.review){review=data;view='found';draw();status('Calibración analizada. Revisa encontrados y faltantes antes de guardar.');}
       else if(data.preview){el('profilePreview').src=data.preview;el('profilePreview').classList.remove('hidden');el('profilePreviewWarnings').textContent=(data.warnings||[]).join(' · ');status('Vista de la primera página de prueba.');}
       else if(data.saved||data.deleted){
