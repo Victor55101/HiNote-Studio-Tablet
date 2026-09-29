@@ -8,7 +8,13 @@ El segundo fallo se debía a calcular la línea del texto normal sumando un cuad
 
 Se añadieron cuatro regresiones: acentos/descendentes con ajuste automático y saltos explícitos en ambos modos; líneas vacías intencionales; texto y listas tras alturas enteras y medias; y vuelta al margen superior al cambiar de página. Se inspeccionó una comparación vectorial antes/después del ejemplo recibido. La muestra personal no se incluye en el repositorio.
 
-Pendiente registrar la compilación final y las comprobaciones del APK V28. Las instrucciones de comprobación física están en `PRUEBA_TABLET.md`.
+La ejecución [36536133716](https://github.com/Victor55101/HiNote-Studio-Tablet/actions/runs/36536133716), fuente `d0cda4adadef93f12675f86413d34a7b73256d33`, aprobó **53 pruebas Python, 38 Chromium/Playwright y 19 Android/Robolectric: 110 en total**, y compiló el APK V28.
+
+APK `HiNote-Studio-Tablet-V28.apk`: paquete `com.hinote.studio`, versión `2.8-tablet`/código 28, arm64-v8a, **22122651 bytes**. SHA-256: `95992bab07aa59fe41b7b3f63f47cb7e9ae9f59002983ed9ae3016420fc893c1`. Se verificaron integridad ZIP, manifiesto, coincidencia de los diez recursos del editor/banco con la fuente, presencia de los diez módulos Python y del ajuste `table_bottom` en el módulo compilado. No se empaquetan perfiles personales ni bancos antiguos.
+
+El certificado de depuración V28 (`921179a3…a2c6430`) difiere del V27 entregado (`914fdc70…850cabe`), por lo que no se puede instalar encima de aquel APK. Antes de desinstalar, respaldar las calibraciones `.hnprofile`, exportar notas y conservar el texto; desinstalar elimina borrador, imágenes privadas y calibraciones añadidas. Todavía no se configura una clave de firma estable.
+
+La corrección se comprobó mediante composición local e inspección visual; queda confirmar su apariencia con el APK en la MatePad y al importar el `.hinote` en Huawei Notes. Hay que pulsar Actualizar y volver a exportar las notas anteriores para aplicar la nueva distribución. Las instrucciones de comprobación física están en `PRUEBA_TABLET.md`.
 
 ## Histórico: V27
 
