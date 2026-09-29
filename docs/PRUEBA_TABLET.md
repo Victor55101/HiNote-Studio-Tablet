@@ -2,7 +2,7 @@
 
 ## V27: tablas manuscritas
 
-El usuario confirmó la importación V26 y la creación de Original ampliada. V27 conserva los perfiles, las imágenes, el borrador y la carpeta configurada.
+El usuario confirmó la importación V26 y la creación de Original ampliada. El formato V27 es compatible con los perfiles, imágenes, borrador y carpeta anterior. Sin embargo, el APK de depuración tiene una firma distinta al V26 entregado: respalda los perfiles `.hnprofile`, exporta las notas y conserva el texto **antes de desinstalar**, porque la reinstalación borra los datos privados. Tras instalar, importa los respaldos y vuelve a elegir la carpeta.
 
 1. Abre **Tablas → Insertar tabla** entre dos párrafos. Reproduce la muestra de tres columnas: anchos 4, 5 y 6 cuadros, sangría 1, y alturas mínimas 1, 2, 2, 3, 2 y 6. Añade dos filas para obtener las seis de la muestra.
 2. Escribe en las celdas y prueba **Estándar · 73 %** y **Compacta · ajuste 65–50 %**. La primera mantiene la letra y deja crecer las filas; la segunda intenta ajustar la letra al espacio. También hay tamaño fijo por celda. Comprueba dos renglones por cuadro y letras con tildes/descendentes.

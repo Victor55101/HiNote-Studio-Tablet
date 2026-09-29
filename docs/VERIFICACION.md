@@ -12,7 +12,13 @@ El editor incluye entrada por celda, formato parcial, alineación horizontal/ver
 
 ## Verificación automatizada
 
-La primera ejecución completa [36486085844](https://github.com/Victor55101/HiNote-Studio-Tablet/actions/runs/36486085844) aprobó 48 pruebas Python, 37 del editor y 19 de Android y compiló el APK. Después se corrigió el tamaño del bloque nativo y se añadieron pruebas de celda enorme y gesto táctil de tabla. Las **49 pruebas Python** posteriores pasan localmente; queda registrar la ejecución final del editor, Android y APK.
+La ejecución final [36512156894](https://github.com/Victor55101/HiNote-Studio-Tablet/actions/runs/36512156894), fuente `e12e18dfa9ad20073ceb59840919b56f94766d15`, aprobó **49 pruebas Python, 38 del editor Chromium/Playwright y 19 Android/Robolectric: 106 en total**, y compiló el APK. Se cubren límites de tinta, media cuadrícula, Compacta, presión y variantes, color, filas completas, encabezados, filas demasiado altas, planificación acotada, varias tablas/formas nativas, cancelación, exportación, borrador, formato parcial, pegado y gestos táctiles. Los selectores y el puente Android se simulan en las pruebas web.
+
+La prueba táctil descubrió que, tras arrastrar, Chromium podía emitir el toque completo sin el clic de compatibilidad. El botón de edición reconoce ahora la liberación de un toque corto y conserva la activación por teclado. Esa regresión pasa en la ejecución final.
+
+APK `HiNote-Studio-Tablet-V27.apk`: paquete `com.hinote.studio`, versión `2.7-tablet`/código 27, arm64-v8a, **22122651 bytes**. SHA-256: `ec9dce73c3a0c8724cf9c459c5f12ba9e957b88f3b3626544254222a76318c30`. Verificadas integridad ZIP, versión en el manifiesto binario, coincidencia de los diez recursos HTML/JS/CSS/SVG/JSON con la fuente y presencia de los diez módulos Python, incluido `table_composer`. No se empaquetan perfiles personales ni bancos antiguos.
+
+El certificado de depuración V27 (`914fdc70…850cabe`) es distinto al del APK V26 entregado (`6feb0421…9089f`). No permite actualizar directamente aquella instalación. Antes de desinstalar, respaldar perfiles `.hnprofile`, exportar notas y conservar una copia del texto: desinstalar elimina borrador, imágenes privadas y calibraciones añadidas. Esta compilación todavía no configura una clave de firma estable para futuras actualizaciones.
 
 Ensayo de carga en Linux/Python 3.12: una tabla de **73320 caracteres**, 130 filas y tres columnas produjo **26 páginas** en **31,41 s**, con **111,9 MiB de pico RSS** y un resumen de **4303 bytes**. Sin avisos de glifos. Se mantiene composición por páginas, caché acotada y cancelación. Esta medida no representa la memoria total Android/WebView ni el rendimiento físico de la MatePad.
 
