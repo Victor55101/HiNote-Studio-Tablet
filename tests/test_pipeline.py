@@ -16,7 +16,7 @@ from pencilengine_reader import read_pencilengine, validate_pencilengine
 from validate_hinote import validate_hinote, loadj
 
 ASSETS = APP / 'assets'
-GLYPHS = ASSETS / 'glyphs_v22.json'
+GLYPHS = ASSETS / 'glyphs_v24.json'
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
@@ -37,7 +37,7 @@ class PipelineTests(unittest.TestCase):
             strokes, points = validate_pencilengine(binary)
             self.assertGreater(strokes, 0); self.assertGreater(points, strokes)
         page = json.loads(backend.page_preview(str(self.cache), result['snapshot'], 0))
-        self.assertEqual(len(page['strokes'][0]), 3)
+        self.assertEqual(len(page['strokes'][0]), 4)
         self.assertEqual(len(page['strokes'][0][2][0]), 3)
         with self.assertRaises(ValueError): backend.page_preview(str(self.cache), result['snapshot'], result['page_count'])
 
@@ -65,7 +65,7 @@ class PipelineTests(unittest.TestCase):
         work = self.cache / result['snapshot']
         # Valid image fixture; the native renderer is covered by device checks.
         jpeg = (ROOT / 'tests/thumbnail.jpg').read_bytes()
-        for i in range(result['page_count']): (work / f'page-{i}-grid.jpg').write_bytes(jpeg)
+        for i in range(result['page_count']): (work / f'page-{i}-native.jpg').write_bytes(jpeg)
         output = self.cache / 'result.hinote'
         backend.export_snapshot(str(ASSETS), str(self.cache), result['snapshot'], 'Mi nota ñ', True, str(output))
         self.assertTrue(validate_hinote(output, quiet=True))
@@ -108,6 +108,44 @@ class PipelineTests(unittest.TestCase):
         result = self.compose('🙂' * 1000)
         self.assertEqual(len(result['warnings']), 1)
 
+    def test_leading_spaces_tabs_and_manual_lines_keep_their_position(self):
+        for prefix, width in [(' '*9,234), ('\t\t',208), ('\u00a0'*3,78)]:
+            with self.subTest(prefix=repr(prefix)):
+                plain=compose_document(GLYPHS,document_from_plain_text('O --- O\nI\nO'),jitter_x=0,jitter_y=0)
+                indented=compose_document(GLYPHS,document_from_plain_text(prefix+'O --- O\n'+prefix+'I\n'+prefix+'O'),jitter_x=0,jitter_y=0)
+                before=plain['pages'][0]['placements'];after=indented['pages'][0]['placements']
+                self.assertEqual([p['char'] for p in before],[p['char'] for p in after])
+                for a,b in zip(before,after):
+                    self.assertAlmostEqual(b['x']-a['x'],width)
+                    self.assertAlmostEqual(b['baseline_y'],a['baseline_y'])
+
+    def test_leading_spaces_respect_style_and_soft_wrapping_does_not_repeat_indent(self):
+        doc={'paragraphs':[{'segments':[{'text':'  ','scale':2},{'text':'  '+'Hola '*60,'scale':1}],'list':None}]}
+        composed=compose_document(GLYPHS,doc,jitter_x=0,jitter_y=0)
+        placements=composed['pages'][0]['placements']
+        self.assertAlmostEqual(placements[0]['x'],composed['layout']['margin_left']+156)
+        next_line=next(p for p in placements if p['baseline_y']!=placements[0]['baseline_y'])
+        self.assertAlmostEqual(next_line['x'],composed['layout']['margin_left'])
+
+    def test_excessive_indent_and_long_words_wrap_without_losing_ink(self):
+        composed=compose_document(GLYPHS,document_from_plain_text(' '*200+'W'*180),jitter_x=0,jitter_y=0)
+        self.assertEqual(sum(len(p['placements']) for p in composed['pages']),180)
+        for page in composed['pages']:
+            for stroke in page['strokes']:
+                for point in stroke['points']:self.assertLessEqual(point['x'],925.01)
+
+    def test_export_thumbnail_does_not_depend_on_preview_grid_toggle(self):
+        result=self.compose('Hola');work=self.cache/result['snapshot'];jpeg=(ROOT/'tests/thumbnail.jpg').read_bytes()
+        (work/'page-0-native.jpg').write_bytes(jpeg)
+        for grid in (False,True):
+            output=self.cache/f'grid-{grid}.hinote'
+            backend.export_snapshot(str(ASSETS),str(self.cache),result['snapshot'],'Papel nativo',grid,str(output))
+            with zipfile.ZipFile(output) as z:
+                name=next(n for n in z.namelist() if n.startswith('pages/') and n.endswith('.jhinote'))
+                page=loadj(z.read(name))['customNotePageContent']
+                self.assertEqual(page['background'],'base3')
+                self.assertEqual(z.read('files/'+Path(page['thumbnail']).name),jpeg)
+
     def test_corrected_symbols_lists_and_underscore_height(self):
         library = json.loads(GLYPHS.read_text(encoding='utf-8'))
         expected_rows = {'+': 5, '=': 6, '%': 7, '#': 8, '@': 9, '•': 10, '*': 11, '<': 12}
@@ -126,14 +164,17 @@ class PipelineTests(unittest.TestCase):
             [[177 + column, 185 + column, 193 + 2 * column, 194 + 2 * column] for column in range(8)],
         )
         self.assertEqual(library['placement_y_offsets']['-'], -16.0)
-        self.assertEqual(library['placement_y_offsets']['_'], -7.25)
+        self.assertEqual(library['placement_y_offsets']['_'], 3.0)
         self.assertTrue(all(variant['source_row'] == 10 for variant in library['glyphs']['-']))
         self.assertTrue(all(variant['source_row'] == 11 for variant in library['glyphs']['_']))
 
         plain = compose_document(GLYPHS, document_from_plain_text('_-Hola'), jitter_x=0)
         underscore, dash = plain['pages'][0]['placements'][:2]
         self.assertEqual((underscore['char'], dash['char']), ('_', '-'))
-        self.assertAlmostEqual(underscore['baseline_y'] - dash['baseline_y'], 8.75)
+        self.assertAlmostEqual(underscore['baseline_y'] - dash['baseline_y'], 19.0)
+        self.assertTrue(all(point['y'] > plain['pages'][0]['placements'][2]['baseline_y']
+                            for stroke in plain['pages'][0]['strokes'] if stroke['char']=='_'
+                            for point in stroke['points']))
 
         listed = compose_document(GLYPHS, document_from_plain_text('• Viñeta\n* Asterisco'), jitter_x=0)
         page = listed['pages'][0]

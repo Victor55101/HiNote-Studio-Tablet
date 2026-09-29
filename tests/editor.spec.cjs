@@ -48,9 +48,9 @@ test('Repeated size, color, opacity and list operations preserve formatting', as
   await page.selectOption('#sizeSel','150'); await page.selectOption('#sizeSel','200');
   await page.fill('#hexInput','#336699'); await page.fill('#opacity','45'); await page.click('#applyFormat');
   await page.selectOption('#sizeSel','100');
-  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45}]);
+  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
   await page.click('[data-tab="lists"]'); await page.click('#applyList'); await page.click('#indentBtn'); await page.click('#outdentBtn'); await page.click('#removeList');
-  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45}]);
+  assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
 });
 test('A selection ending at the next line start excludes that line', async page => {
   await setup(page,'uno\ndos'); await select(page,{line:0,offset:0},{line:1,offset:0}); await page.selectOption('#sizeSel','150');
@@ -91,7 +91,7 @@ test('Stale composition cannot export; a fresh snapshot is immutable during expo
   assert.equal(await page.isDisabled('#exportBtn'),true);
   await page.click('#refreshBtn'); await page.evaluate(() => { const id=bridgeCalls.filter(c=>c[0]==='compose').at(-1)[3]; onComposeResult(id,JSON.stringify({snapshot:'current',page_count:2,warnings:[]})); });
   assert.equal(await page.isDisabled('#exportBtn'),false); await page.click('#exportBtn');
-  assert.deepEqual(await page.evaluate(() => bridgeCalls.filter(c=>c[0]==='save').at(-1)),['save','current','Nueva nota',true]);
+  assert.deepEqual(await page.evaluate(() => bridgeCalls.filter(c=>c[0]==='save').at(-1)),['save','current','Nueva nota',true,'[]',2]);
   assert.equal(await page.getAttribute('#editor','contenteditable'),'false');
   await page.evaluate(() => onExportComplete(false,'Guardado cancelado')); assert.equal(await page.getAttribute('#editor','contenteditable'),'true');
 });
@@ -123,24 +123,273 @@ test('Page controls use the backend setting names', async page => {
   await page.click('#refreshBtn'); const s = await page.evaluate(() => JSON.parse(bridgeCalls.filter(c=>c[0]==='compose').at(-1)[2]));
   assert.equal(s.line_grid_rows,3); assert.equal(s.word_spacing,35); assert.equal(s.letter_spacing,2); assert.equal(s.auto_line_spacing,true);
 });
+test('Leading spaces typed or pasted survive serialization, formatting and draft reload',async page=>{
+  await setup(page);await paste(page,'         O --- O\n            I\n            O');
+  const before=await lines(page);assert.equal(before[0],'         O --- O');
+  await select(page,{line:0,offset:0},{line:0,offset:9});await page.selectOption('#sizeSel','150');
+  await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
+  assert.deepEqual(await lines(page),before);
+  assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs.map(p=>p.segments.map(s=>s.text).join(''))),before);
+});
+test('Save folder persists, cancellation retains it, and manual mode can be restored',async page=>{
+  await setup(page,'Hola');await page.click('[data-tab="save"]');await page.click('#chooseFolder');
+  assert.equal(await page.isDisabled('#exportBtn'),true);
+  await page.evaluate(()=>{localStorage.setItem('test-export-folder',JSON.stringify({configured:true,label:'Documentos / HiNote'}));onExportFolder(AndroidBridge.getExportFolder(),null);});
+  assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');
+  await page.reload();await page.waitForSelector('#editor .line');await page.click('[data-tab="save"]');
+  assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');
+  assert.ok(await page.evaluate(()=>['chooseFolder','clearFolder'].every(id=>$(id).scrollWidth<=$(id).clientWidth)),'Folder button labels must fit their controls');
+  await page.screenshot({path:path.join(root,'test-results','save-folder.png')});
+  await page.click('#chooseFolder');await page.evaluate(()=>onExportFolder(AndroidBridge.getExportFolder(),null));
+  assert.equal(await page.textContent('#folderLabel'),'Documentos / HiNote');assert.equal(await page.isDisabled('#chooseFolder'),false);
+  await page.click('#clearFolder');await page.evaluate(()=>{localStorage.removeItem('test-export-folder');onExportFolder(AndroidBridge.getExportFolder(),null);});
+  assert.equal(await page.textContent('#folderLabel'),'Se preguntará dónde guardar');assert.equal(await page.isDisabled('#clearFolder'),true);
+});
+test('Saved-folder export is immediate in the UI and errors allow retry',async page=>{
+  await setup(page,'Hola');await page.evaluate(()=>onExportFolder(JSON.stringify({configured:true,label:'HiNote'}),null));
+  await page.click('#refreshBtn');await page.evaluate(()=>onComposeResult(revision,JSON.stringify({snapshot:'folder-note',page_count:1,warnings:[]})));
+  await page.click('#exportBtn');assert.equal(await page.textContent('#status'),'Guardando en la carpeta elegida…');
+  assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='save').length),1);
+  assert.equal(await page.isDisabled('#chooseFolder'),true);
+  await page.evaluate(()=>onExportComplete(false,'La carpeta ya no está disponible'));
+  assert.equal(await page.isDisabled('#exportBtn'),false);assert.equal(await page.isDisabled('#chooseFolder'),false);
+});
+
+// Image editing is tested with real pointer/touch events and a mocked file picker.
+async function importImage(page,asset='a',size=[640,480]){
+  await page.click('[data-tab="images"]');await page.click('#insertImage');
+  await page.evaluate(({asset,size})=>{
+    const id=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];
+    onImageImported(id,JSON.stringify({asset:asset.repeat(64),pixelWidth:size[0],pixelHeight:size[1]}),null);
+    const call=bridgeCalls.filter(c=>c[0]==='compose').at(-1);
+    if(call&&composing)onComposeResult(call[3],JSON.stringify({snapshot:'test-snapshot',page_count:1,warnings:[],layout:{grid_step:58.8}}));
+  },{asset,size});
+}
+async function imageState(page){return page.evaluate(()=>ImageEditor.state());}
+test('Import, rotate, crop, duplicate, order and undo preserve image metadata',async page=>{
+  await setup(page,'Hola');await importImage(page);
+  assert.equal((await imageState(page)).images.length,1);
+  const original=(await imageState(page)).images[0];
+  await page.click('#rotateImageRight');assert.equal((await imageState(page)).images[0].angle,90);
+  await page.fill('#imageAngle','320');await page.press('#imageAngle','Tab');assert.equal((await imageState(page)).images[0].angle,320);
+  await page.click('#cropImage');await page.evaluate(()=>{$('cropLeft').value='25';$('cropLeft').dispatchEvent(new Event('input'));});await page.click('#applyCrop');
+  assert.equal((await imageState(page)).images[0].crop.left,.25);
+  assert.equal((await imageState(page)).images[0].width,original.width*.75);
+  await page.click('#undoBtn');assert.equal((await imageState(page)).images[0].crop.left,0);
+  await page.click('#redoBtn');assert.equal((await imageState(page)).images[0].crop.left,.25);
+  await page.click('#duplicateImage');assert.equal((await imageState(page)).images.length,2);
+  const id=await page.evaluate(()=>ImageEditor.selected().id);await page.click('#imageBack');assert.equal((await imageState(page)).images[0].id,id);
+  await page.click('#deleteImage');assert.equal((await imageState(page)).images.length,1);
+  await page.click('#undoBtn');assert.equal((await imageState(page)).images.length,2);
+});
+test('Image moves do not recompose text, and only current page images are mounted',async page=>{
+  await setup(page,'Hola');await importImage(page);await page.evaluate(()=>{zoom=.65;applyZoom();window.bridgeCalls=[];});
+  const box=await page.locator('.pageImage').boundingBox();const before=(await imageState(page)).images[0];
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+35,box.y+box.height/2+40,{steps:6});await page.mouse.up();
+  const after=(await imageState(page)).images[0];assert.ok(after.x>before.x+50);assert.ok(after.y>before.y+50);
+  assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').length),0);
+  await page.fill('#imagePage','3');await page.press('#imagePage','Tab');assert.equal(await page.textContent('#pageBadge'),'Página 3/3');
+  await page.click('#prevPage');assert.equal(await page.locator('.pageImage').count(),0);
+  await page.click('#nextPage');assert.equal(await page.locator('.pageImage').count(),1);
+});
+test('Reload preserves images, crops and empty pages without putting binary data in draft',async page=>{
+  await setup(page,'Con imagen');await importImage(page);await page.click('#rotateImageRight');
+  await page.click('#imageNewPage');await importImage(page,'b',[480,640]);
+  const before=await imageState(page);await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
+  assert.deepEqual(await imageState(page),before);assert.deepEqual(await lines(page),['Con imagen']);
+  assert.ok(await page.evaluate(()=>localStorage.getItem(DRAFT_KEY).length)<2500);
+  assert.equal(await page.evaluate(()=>ImageEditor.count()),2);
+});
+test('Cancelled import unlocks controls and stale import result is ignored',async page=>{
+  await setup(page);await page.click('[data-tab="images"]');await page.click('#insertImage');
+  assert.equal(await page.isDisabled('#insertImage'),true);
+  await page.evaluate(()=>{const t=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];onImageImported(t-1,'{}',null);});assert.equal(await page.isDisabled('#insertImage'),true);
+  await page.evaluate(()=>{const t=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];onImageImported(t,null,null);});assert.equal(await page.isDisabled('#insertImage'),false);
+  assert.equal((await imageState(page)).images.length,0);
+});
+test('Two finger touch scales and rotates an image and undo restores it',async page=>{
+  await setup(page);await importImage(page);await page.evaluate(()=>{zoom=.55;applyZoom();});
+  const before=(await imageState(page)).images[0],box=await page.locator('.pageImage').boundingBox();
+  const x=box.x+box.width/2,y=box.y+box.height/2,client=await page.context().newCDPSession(page);
+  await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:x-35,y,id:1},{x:x+35,y,id:2}]});
+  await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-50,y:y-20,id:1},{x:x+50,y:y+20,id:2}]});
+  await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  const after=(await imageState(page)).images[0];assert.ok(after.width>before.width);assert.ok(after.angle>10);
+  await page.click('#undoBtn');assert.deepEqual((await imageState(page)).images[0],before);
+});
+test('Old V21 text draft migrates without losing formatting',async page=>{
+  await page.addInitScript(()=>{localStorage.removeItem('hinote-draft-v23');localStorage.removeItem('native-draft');localStorage.setItem('hinote-draft-v21',JSON.stringify({version:21,lines:[[{text:'Anterior',scale:1.5,color:'#336699',opacity:60}]],title:'V22',settings:{},grid:false}));});
+  await page.reload();await page.waitForSelector('#editor .line');assert.deepEqual(await lines(page),['Anterior']);
+  assert.equal(await page.evaluate(()=>readLines()[0][0].scale),1.5);assert.equal((await imageState(page)).images.length,0);
+});
+test('Image metadata is frozen during export and extra image pages are included',async page=>{
+  await setup(page,'Hola');await importImage(page);await page.fill('#imagePage','4');await page.press('#imagePage','Tab');
+  await page.click('#refreshBtn');await page.evaluate(()=>{const id=bridgeCalls.filter(c=>c[0]==='compose').at(-1)[3];onComposeResult(id,JSON.stringify({snapshot:'with-images',page_count:1,warnings:[]}));});
+  await page.click('#exportBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='save').at(-1));
+  assert.equal(call[5],4);assert.equal(JSON.parse(call[4])[0].page,3);assert.equal(await page.isDisabled('#rotateImageRight'),true);
+});
+
+test('Native thickness survives selected formatting, lists, undo and draft reload',async page=>{
+  await setup(page,'* Hola');await select(page,{line:0,offset:0},{line:0,offset:1});await page.selectOption('#thicknessSel','3');
+  await select(page,{line:0,offset:2},{line:0,offset:6});await page.selectOption('#thicknessSel','1');
+  const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_thickness,3);assert.equal(doc.paragraphs[0].segments[0].thickness,1);
+  await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].segments[0].thickness),0);
+  await page.click('#redoBtn');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
+  assert.deepEqual(await page.evaluate(()=>serializeDocument()),doc);
+});
+
+async function calibrationBridge(page){
+  await page.addInitScript(()=>{
+    const original={id:'original',name:'Original',revision:'v24',protected:true,found:['a','A','_','•','*'],missing:['!','¡','€'],fallback:[],unavailable:['!','¡','€'],variants:{a:8,A:8,_:8,'•':8,'*':8},incomplete:[],expected:['a','A','_','•','*','!','¡','€']};
+    const other={id:'a'.repeat(32),name:'Mi letra nueva',revision:'r1',protected:false,found:['a','€'],missing:['A','_','!'],fallback:['A','_'],unavailable:['!'],variants:{a:8,'€':4},incomplete:['€'],expected:['a','A','_','!','€']};
+    window.testProfiles=[original,other];
+    const install=()=>{
+      AndroidBridge.requestCalibration=(action,raw,id)=>{bridgeCalls.push(['calibration',action,raw,id]);if(action==='catalog')queueMicrotask(()=>onCalibrationResult(id,JSON.stringify({profiles:testProfiles,groups:{base:{name:'Básico',chars:'aA_!'},math:{name:'Matemáticas',chars:'±'}},problems:[]}),null));};
+      AndroidBridge.requestCalibrationImport=(raw,id)=>bridgeCalls.push(['calibration-import',raw,id]);AndroidBridge.cancelCalibration=()=>bridgeCalls.push(['calibration-cancel']);
+    };
+    // The native bridge mock is installed by the context's earlier init script.
+    install();
+  });
+  await page.reload();await page.waitForFunction(()=>!CalibrationUI.isBusy());await setup(page,'Hola');
+  await page.click('[data-tab="calibration"]');await page.click('#manageCalibration');
+}
+test('Every calibration exposes found, missing, fallback and partial variants',async page=>{
+  await calibrationBridge(page);assert.equal(await page.isDisabled('#deleteProfile'),true);
+  await page.click('#showMissing');assert.match(await page.textContent('#characterGrid'),/!/);assert.match(await page.textContent('#characterGrid'),/Sin muestra/);
+  await page.selectOption('#profileList','a'.repeat(32));await page.click('#showMissing');
+  assert.equal(await page.locator('.characterChip.fallback').count(),2);assert.equal(await page.locator('.characterChip.missing').count(),1);
+  await page.click('#showFound');assert.match(await page.textContent('#characterGrid'),/4\/8/);assert.match(await page.textContent('#profileWarnings'),/€/);
+  await page.fill('#characterSearch','U+20AC');assert.equal(await page.locator('.characterChip').count(),1);
+  await page.fill('#characterSearch','');await page.screenshot({path:path.join(root,'test-results','calibration-found.png')});
+  await page.click('#showMissing');await page.screenshot({path:path.join(root,'test-results','calibration-missing.png')});
+});
+test('Profile choice persists in draft and switching invalidates the old preview',async page=>{
+  await calibrationBridge(page);await page.selectOption('#profileList','a'.repeat(32));await page.click('#useProfile');await page.click('#closeCalibration');
+  assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));assert.equal(await page.isDisabled('#exportBtn'),true);
+  await page.evaluate(()=>saveDraft());await page.reload();await page.waitForFunction(()=>!CalibrationUI.isBusy());
+  assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));
+  await page.click('#refreshBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.equal(JSON.parse(call[2]).profile,'a'.repeat(32));
+});
+test('Calibration imports are reviewed before saving and stale callbacks are ignored',async page=>{
+  await calibrationBridge(page);await page.fill('#importProfileName','Otra');await page.click('#importProfile');
+  assert.equal(await page.getAttribute('#editor','contenteditable'),'false');assert.equal(await page.isDisabled('#exportBtn'),true);
+  await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration-import').at(-1);onCalibrationResult(c[2]-1,null,'Viejo');});
+  assert.equal(await page.evaluate(()=>CalibrationUI.isBusy()),true);
+  await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration-import').at(-1);onCalibrationResult(c[2],JSON.stringify({review:true,replaced:0,detail:testProfiles[1]}),null);});
+  assert.equal(await page.isVisible('#importReview'),true);assert.equal(await page.isDisabled('#profileList'),true);
+  assert.equal(await page.evaluate(()=>activeProfile),'original');await page.click('#showMissing');assert.match(await page.textContent('#characterGrid'),/!/);
+  await page.click('#discardProfile');await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration').at(-1);onCalibrationResult(c[3],'{"discarded":true}',null);});
+  assert.equal(await page.isVisible('#importReview'),false);assert.equal(await page.evaluate(()=>activeProfile),'original');
+});
+test('Supplement template contains only missing characters and cancel unlocks the app',async page=>{
+  await calibrationBridge(page);await page.selectOption('#profileList','a'.repeat(32));await page.click('#templateOptions summary');await page.click('#templateMissing');
+  assert.equal(await page.inputValue('#extraCharacters'),'A_!');assert.equal(await page.isChecked('#extendProfile'),true);
+  await page.click('#createTemplate');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='calibration').at(-1));
+  assert.equal(call[1],'template');assert.deepEqual(JSON.parse(call[2]),{groups:[],custom:'A_!'});
+  await page.evaluate(()=>{const c=bridgeCalls.filter(c=>c[0]==='calibration').at(-1);onCalibrationResult(c[3],'{"cancelled":true}',null);});
+  assert.equal(await page.evaluate(()=>CalibrationUI.isBusy()),false);assert.equal(await page.isDisabled('#importProfile'),false);
+});
+
+async function openTable(page){await page.click('[data-tab="tables"]');await page.click('#insertTable');await page.waitForSelector('#tableDialog:not(.hidden)');}
+async function fillCell(page,r,c,text){await page.locator(`.cellEditor[data-row="${r}"][data-col="${c}"]`).fill(text);}
+test('Tables preserve anchors, text, rich color, sizes and draft reload',async page=>{
+  await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openTable(page);
+  await fillCell(page,0,0,'Título');await fillCell(page,1,1,'Rojo negro');
+  await page.evaluate(()=>{const n=document.querySelector('.cellEditor[data-row="1"][data-col="1"]').firstChild;const r=document.createRange();r.setStart(n,0);r.setEnd(n,4);getSelection().removeAllRanges();getSelection().addRange(r);});
+  await page.fill('#tableInkColor','#ff0000');await page.click('#tableApplyInk');
+  await page.selectOption('#tableMode','compact');await page.selectOption('#tableAlign','center');await page.selectOption('#tableValign','middle');await page.selectOption('#tableCellSize','0.55');
+  await page.click('#tableDone');
+  let doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[1].type,'table');
+  assert.equal(doc.paragraphs[1].table.mode,'compact');const cell=doc.paragraphs[1].table.rows[1].cells[1];
+  assert.equal(cell.size,.55);assert.equal(cell.align,'center');assert.equal(cell.valign,'middle');assert.equal(cell.segments[0].color,'#FF0000');assert.equal(cell.segments[0].text,'Rojo');assert.equal(cell.segments[1].color,'#000000');
+  assert.equal(doc.paragraphs.at(-1).segments[0].text,'Después');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('.tableBlock');
+  assert.deepEqual(await page.evaluate(()=>serializeDocument()),doc);
+});
+test('Tables undo insertion, edits and deletion without altering other paragraphs',async page=>{
+  await setup(page,'Texto');await openTable(page);await fillCell(page,0,0,'Uno');await page.click('#tableDone');
+  await page.click('#undoBtn');assert.equal(await page.locator('.tableBlock').count(),0);await page.click('#redoBtn');assert.equal(await page.locator('.tableBlock').count(),1);
+  await page.click('.tableBlock button');await fillCell(page,0,0,'Dos');await page.click('#tableDone');await page.click('#undoBtn');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs.find(p=>p.type==='table').table.rows[0].cells[0].segments[0].text),'Uno');
+  await page.click('.tableBlock button');page.once('dialog',d=>d.accept());await page.click('#tableRemove');assert.equal(await page.locator('.tableBlock').count(),0);await page.click('#undoBtn');assert.equal(await page.locator('.tableBlock').count(),1);
+  assert.equal((await lines(page))[0],'Texto');
+});
+test('TSV paste populates cells; row and column operations preserve content',async page=>{
+  await setup(page);await openTable(page);await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();
+  await page.evaluate(()=>{const data=new DataTransfer();data.setData('text/plain','A\tB\tC\nD\tE\tF');document.activeElement.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));});
+  assert.equal(await page.locator('.cellEditor[data-row="1"][data-col="2"]').textContent(),'F');await page.click('#tableAddCol');await page.click('#tableAddRow');
+  await page.click('#tableDone');const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);
+  assert.equal(t.widths.length,4);assert.equal(t.rows.length,5);assert(t.widths.reduce((a,b)=>a+b,0)+t.left<=16);assert.equal(t.rows[0].cells[2].segments[0].text,'B');
+});
+test('Touch handles resize columns and rows in half-square steps',async page=>{
+  await setup(page);await openTable(page);
+  const handle=page.locator('.tableGrip.column[data-col="0"]'),b=await handle.boundingBox();
+  await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2-20,b.y+b.height/2);await page.mouse.up();
+  await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();assert.equal(await page.inputValue('#tableColWidth'),'3.5');
+  const row=page.locator('.tableGrip.row[data-row="0"]'),br=await row.boundingBox();
+  const session=await page.context().newCDPSession(page);await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:br.x+br.width/2,y:br.y+br.height/2}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:br.x+br.width/2,y:br.y+br.height/2+20}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await page.inputValue('#tableRowHeight'),'1.5');await page.click('#tableDone');
+  const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);assert.equal(t.widths[0],3.5);assert.equal(t.rows[0].height,1.5);
+});
+test('Table editor preserves explicit newlines and recovers unfinished changes',async page=>{
+  await setup(page);await openTable(page);await fillCell(page,1,0,'uno');await page.keyboard.press('End');await page.keyboard.press('Enter');await page.keyboard.type('dos');
+  await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#tableDialog:not(.hidden)');
+  assert.equal(await page.locator('.cellEditor[data-row="1"][data-col="0"]').textContent(),'uno\ndos');await page.click('#tableDone');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.rows[1].cells[0].segments.map(s=>s.text).join('')),'uno\ndos');
+});
+test('Table block survives text formatting and Enter inserts text after it',async page=>{
+  await setup(page);await openTable(page);await page.click('#tableDone');
+  await select(page,{line:0,offset:0},{line:1,offset:0});await page.click('[data-tab="text"]');await page.selectOption('#sizeSel','150');
+  assert.equal(await page.locator('.tableBlock').count(),1);await select(page,{line:0,offset:0});await page.keyboard.press('Enter');await page.keyboard.type('Después');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].type),'table');assert((await lines(page)).includes('Después'));
+});
+test('Preview table controls move and resize without changing text or images',async page=>{
+  await setup(page);await openTable(page);await fillCell(page,0,0,'Tabla');await page.click('#tableDone');
+  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);});
+  const b=await page.locator('.tableMove').boundingBox();await page.mouse.move(b.x+20,b.y+20);await page.mouse.down();await page.mouse.move(b.x+20,b.y+50);await page.mouse.up();
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),1.5);
+  await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),0);
+});
+
+test('Touch table handles keep pointer capture and allow opening the editor',async page=>{
+  await setup(page);await openTable(page);await fillCell(page,0,0,'Táctil');await page.click('#tableDone');
+  const preview=()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);};
+  await page.evaluate(preview);
+  const b=await page.locator('.tableMove').boundingBox(),session=await page.context().newCDPSession(page);
+  const scroll=await page.locator('#previewWrap').evaluate(e=>[e.scrollLeft,e.scrollTop]);
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:b.x+20,y:b.y+20}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:b.x+20,y:b.y+50}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),1.5);
+  assert.deepEqual(await page.locator('#previewWrap').evaluate(e=>[e.scrollLeft,e.scrollTop]),scroll);
+  await page.evaluate(preview);
+  await page.evaluate(()=>{window.tableTouchEvents=[];for(const type of ['pointerdown','pointerup','pointercancel','touchstart','touchend','click'])document.addEventListener(type,e=>tableTouchEvents.push({type,target:e.target.className,defaultPrevented:e.defaultPrevented}),true);});
+  const button=await page.locator('.tableOpen').boundingBox();await page.touchscreen.tap(button.x+button.width/2,button.y+button.height/2);
+  try{await page.waitForSelector('#tableDialog:not(.hidden)');}catch(e){console.error('Table touch events: '+JSON.stringify(await page.evaluate(()=>({events:tableTouchEvents,ime,exporting,inert:document.querySelector('.app').inert,calibration:CalibrationUI.isBusy(),image:ImageEditor.isBusy()}))));throw e;}
+  assert.equal(await page.locator('.cellEditor[data-row="0"][data-col="0"]').innerText(),'Táctil');
+});
 
 (async () => {
   const server = http.createServer((request,response) => {
-    const file = request.url.split('?')[0] === '/editor.js' ? 'editor.js' : 'index.html';
-    response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
+    response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
-  const browser = await chromium.launch({headless:true}); let failed = 0;
+  let browser;try{browser=await chromium.launch({headless:true});}catch(e){server.close();throw e;} let failed = 0;
   try {
     for (const {name,fn} of tests) {
-      const context = await browser.newContext({viewport:{width:1280,height:850}});
+      const context = await browser.newContext({viewport:{width:1280,height:850},hasTouch:true});
+      await context.route('https://hinote.local/images/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect x="10" y="10" width="620" height="460" fill="#21bca8"/><circle cx="320" cy="240" r="140" fill="#273c75"/></svg>'}));
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
-        requestPage:(...a)=>bridgeCalls.push(['page',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel'])}; });
-      const page = await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
+        requestPage:(...a)=>bridgeCalls.push(['page',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
+        requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
+        getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder'])}; });
+      const page = await context.newPage(); page.setDefaultTimeout(10000); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       try {
         await page.goto(`http://127.0.0.1:${server.address().port}`); await page.waitForSelector('#editor .line'); await fn(page);
         assert.deepEqual(errors,[],'Uncaught browser errors'); console.log('PASS '+name);
+        if(name.startsWith('Import, rotate')){fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/images-editor.png')});}
+        if(name.startsWith('Tables preserve anchors')){await page.click('.tableBlock button');fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/tables-editor.png')});}
       } catch (error) {
         failed++; console.error('FAIL '+name+'\n'+error.stack); fs.mkdirSync(path.join(root,'test-results'),{recursive:true});
         await page.screenshot({path:path.join(root,'test-results',name.replace(/[^a-z0-9]+/gi,'-')+'.png'),fullPage:true});

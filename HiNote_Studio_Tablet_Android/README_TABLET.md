@@ -1,4 +1,4 @@
-# HiNote Studio Tablet V22
+# HiNote Studio Tablet V24
 
 Este directorio es el proyecto Android editable. Instrucciones completas, cambios y pruebas en `../README.md` y `../docs/PRUEBA_TABLET.md`.
 
