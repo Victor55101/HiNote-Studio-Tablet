@@ -362,8 +362,10 @@ test('Touch table handles keep pointer capture and allow opening the editor',asy
   assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),1.5);
   assert.deepEqual(await page.locator('#previewWrap').evaluate(e=>[e.scrollLeft,e.scrollTop]),scroll);
   await page.evaluate(preview);
+  await page.evaluate(()=>{window.tableTouchEvents=[];for(const type of ['pointerdown','pointerup','pointercancel','touchstart','touchend','click'])document.addEventListener(type,e=>tableTouchEvents.push({type,target:e.target.className,defaultPrevented:e.defaultPrevented}),true);});
   const button=await page.locator('.tableOpen').boundingBox();await page.touchscreen.tap(button.x+button.width/2,button.y+button.height/2);
-  await page.waitForSelector('#tableDialog:not(.hidden)');assert.equal(await page.locator('.cellEditor[data-row="0"][data-col="0"]').innerText(),'Táctil');
+  try{await page.waitForSelector('#tableDialog:not(.hidden)');}catch(e){console.error('Table touch events: '+JSON.stringify(await page.evaluate(()=>({events:tableTouchEvents,ime,exporting,inert:document.querySelector('.app').inert,calibration:CalibrationUI.isBusy(),image:ImageEditor.isBusy()}))));throw e;}
+  assert.equal(await page.locator('.cellEditor[data-row="0"][data-col="0"]').innerText(),'Táctil');
 });
 
 (async () => {
