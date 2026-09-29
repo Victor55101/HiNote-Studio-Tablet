@@ -350,6 +350,22 @@ test('Preview table controls move and resize without changing text or images',as
   await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),0);
 });
 
+test('Touch table handles keep pointer capture and allow opening the editor',async page=>{
+  await setup(page);await openTable(page);await fillCell(page,0,0,'Táctil');await page.click('#tableDone');
+  const preview=()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);};
+  await page.evaluate(preview);
+  const b=await page.locator('.tableMove').boundingBox(),session=await page.context().newCDPSession(page);
+  const scroll=await page.locator('#previewWrap').evaluate(e=>[e.scrollLeft,e.scrollTop]);
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:b.x+20,y:b.y+20}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:b.x+20,y:b.y+50}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),1.5);
+  assert.deepEqual(await page.locator('#previewWrap').evaluate(e=>[e.scrollLeft,e.scrollTop]),scroll);
+  await page.evaluate(preview);
+  const button=await page.locator('.tableOpen').boundingBox();await page.touchscreen.tap(button.x+button.width/2,button.y+button.height/2);
+  await page.waitForSelector('#tableDialog:not(.hidden)');assert.equal(await page.locator('.cellEditor[data-row="0"][data-col="0"]').innerText(),'Táctil');
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
     const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';

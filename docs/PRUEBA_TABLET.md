@@ -1,5 +1,20 @@
 # Comprobación en la tablet
 
+## V27: tablas manuscritas
+
+El usuario confirmó la importación V26 y la creación de Original ampliada. V27 conserva los perfiles, las imágenes, el borrador y la carpeta configurada.
+
+1. Abre **Tablas → Insertar tabla** entre dos párrafos. Reproduce la muestra de tres columnas: anchos 4, 5 y 6 cuadros, sangría 1, y alturas mínimas 1, 2, 2, 3, 2 y 6. Añade dos filas para obtener las seis de la muestra.
+2. Escribe en las celdas y prueba **Estándar · 73 %** y **Compacta · ajuste 65–50 %**. La primera mantiene la letra y deja crecer las filas; la segunda intenta ajustar la letra al espacio. También hay tamaño fijo por celda. Comprueba dos renglones por cuadro y letras con tildes/descendentes.
+3. Centra el encabezado y deja el cuerpo a la izquierda. Cambia la alineación vertical. Selecciona unas palabras dentro de una celda y aplica rojo o grosor; las demás deben conservar su estilo.
+4. Arrastra los controles de anchura/altura con un dedo y prueba valores de medio cuadro. Toca **Aplicar tabla**, luego **Actualizar**. En la previsualización, los controles de Tablas permiten moverla y redimensionarla; el botón **Editar tabla** debe abrir sus celdas sin desplazar la página.
+5. Llena suficientes filas para ocupar varias páginas. Cada fila debe saltar completa, con todas sus columnas, sin perder texto. Prueba repetir y no repetir el encabezado. Una fila más alta que una página debe explicar el problema; usa Compacta, amplía la columna o divide su contenido en varias filas.
+6. Pega texto separado por tabulaciones en varias celdas y usa Enter dentro de una celda. Prueba Antes/Después, añadir/eliminar filas y columnas, deshacer/rehacer, cancelar y cerrar la app mientras editas. La edición pendiente debe poder recuperarse.
+7. Exporta e importa el `.hinote` en Huawei Notes. Comprueba letra, grosor, color, cuadrícula y saltos. Selecciona el contorno rectangular y los separadores: se exportan como formas nativas independientes, y la escritura conserva sus trazos. Studio conserva las celdas estructuradas; Notes recibe formas y escritura, no una tabla de procesador de textos.
+8. Revisa una nota mixta con texto, tablas e imágenes. Comprueba también una nota anterior sin tablas y el perfil Original ampliada.
+
+Límites: 50 tablas, 12 columnas y 200 filas por tabla, 2000 celdas y 200000 caracteres compartidos por nota; hasta 500 páginas y 512 MiB de composición. No se combinan celdas en V27. Una celda excesivamente larga se detecta sin planificar todos sus trazos. Las imágenes siguen posicionadas por página y no reservan espacio automáticamente.
+
 ## V26: reimportar la plantilla completada
 
 El usuario confirmó que el grosor V25 funciona. Su nota real de cinco signos permite reproducir el rechazo de dos líneas nativas, corregido en V26.

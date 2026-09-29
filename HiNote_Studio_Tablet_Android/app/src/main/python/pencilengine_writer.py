@@ -153,7 +153,8 @@ def write_pencilengine(composition: dict, template: str | Path, output: str | Pa
     struct.pack_into(">I", global_header, 88, total_len - 124)
     global_header[92:108] = uuid.uuid4().bytes
     struct.pack_into(">I", global_header, 112, stroke_count)
-    struct.pack_into(">I", global_header, 116, total_len - 164)
+    # Unlike +88, +116 excludes the shape extension (confirmed in native table).
+    struct.pack_into(">I", global_header, 116, total_len - 124 - len(footer))
 
     with output.open("r+b") as stream:
         stream.write(global_header)

@@ -128,6 +128,10 @@ def _scaled_lines(cell, size, width, lib, seed, word_spacing, letter_spacing, wa
                 # Very tall accents/descenders can require an extra half-square.
                 while baseline + top < result[-1]["baseline"] + result[-1]["bottom"] + 1.2:
                     baseline += HALF
+            if baseline + max(0, bottom) > 25 * GRID:
+                # The entire row must fit a page. Stop planning huge cells early;
+                # Compacta can retry smaller sizes before composition reports it.
+                return {"lines": [], "height": 26 * GRID, "size": size}
             result.append({**line, "baseline": baseline, "top": top, "bottom": bottom,
                            "left": left, "right": right, "size": size})
     return {"lines": result, "height": max((l["baseline"] + max(0, l["bottom"]) for l in result), default=0), "size": size}

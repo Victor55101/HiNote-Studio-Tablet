@@ -1,4 +1,24 @@
-# Verificación de V26
+# Verificación de V27
+
+## Tablas y muestra nativa
+
+Implementación basada en la tabla que aportó el usuario: tres columnas de 4/5/6 cuadros y filas de 1/2/2/3/2/6 cuadros. La nota contiene 1098 trazos y 35096 puntos; incluye un rectángulo nativo cerrado y siete separadores independientes. El texto conserva los glifos de calibración con escala y grosor proporcionados.
+
+Se reproduce el formato de los segmentos tipo 2 y la extensión del pie que referencia el rectángulo por UUID. Se contrastaron los dos tamaños globales con el binario real: el tamaño del bloque de trazos excluye la extensión de formas. El lector valida ambas longitudes y las referencias, incluyendo varias tablas en una página. La muestra personal solo se analiza localmente; los tests usan contenido sintético y el banco incluido.
+
+Estándar usa 73 %. Compacta intenta 65/60/55/50 % por celda y permite crecer la fila si hace falta. La anchura se calcula a partir de los trazos reales, normalizando su origen, y las líneas se separan medio cuadro. La paginación mantiene cada fila entera, evita encabezados huérfanos y permite repetirlos. Una fila que no cabe en una página genera un error; las celdas enormes dejan de planificarse al superar la altura posible.
+
+El editor incluye entrada por celda, formato parcial, alineación horizontal/vertical, medidas por medios cuadros, controles táctiles, pegado TSV, anclajes entre párrafos, deshacer y borrador con recuperación de edición pendiente. Se separaron los gestos de tabla de los de desplazamiento e imágenes. La cuadrícula de la previsualización con tablas utiliza el paso nativo de 40 px a escala de miniatura.
+
+## Verificación automatizada
+
+La primera ejecución completa [36486085844](https://github.com/Victor55101/HiNote-Studio-Tablet/actions/runs/36486085844) aprobó 48 pruebas Python, 37 del editor y 19 de Android y compiló el APK. Después se corrigió el tamaño del bloque nativo y se añadieron pruebas de celda enorme y gesto táctil de tabla. Las **49 pruebas Python** posteriores pasan localmente; queda registrar la ejecución final del editor, Android y APK.
+
+Ensayo de carga en Linux/Python 3.12: una tabla de **73320 caracteres**, 130 filas y tres columnas produjo **26 páginas** en **31,41 s**, con **111,9 MiB de pico RSS** y un resumen de **4303 bytes**. Sin avisos de glifos. Se mantiene composición por páginas, caché acotada y cancelación. Esta medida no representa la memoria total Android/WebView ni el rendimiento físico de la MatePad.
+
+La edición nativa del rectángulo y la apariencia final de V27 todavía requieren abrir el archivo exportado en la tablet. No hay celdas combinadas. Procedimiento en `PRUEBA_TABLET.md`.
+
+## Histórico: V26
 
 Corrección del 28 de septiembre de 2026, basada en la plantilla completada y reexportada desde Huawei Notes que aportó el usuario. El usuario confirmó que el ajuste de grosor V25 funciona en su tablet.
 

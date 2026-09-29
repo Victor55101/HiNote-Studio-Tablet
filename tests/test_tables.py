@@ -99,6 +99,15 @@ class TableTests(unittest.TestCase):
         t=table(1,'a\n'*100,widths=[15]);t['mode']='compact'
         with self.assertRaisesRegex(ValueError,'no caben|no cabe'):self.compose(t)
 
+    def test_huge_cell_stops_planning_as_soon_as_it_exceeds_a_page(self):
+        t=validate_table(table(1,'a\n'*50000,widths=[15]));t['mode']='compact'
+        lib=load_library(ASSETS/'glyphs_v24.json')
+        calls=[]
+        plan=plan_row(t,t['rows'][0],lib,0,12345,26,0,_Warnings(),lambda:calls.append(1))
+        self.assertGreater(plan['height'],25*GRID)
+        self.assertEqual(plan['cells'][0]['lines'],[])
+        self.assertLess(len(calls),1000)
+
     def test_half_square_heights_and_line_breaks(self):
         t=validate_table(table(1,'a\nb',widths=[3]));t['rows'][0]['height']=1.5
         lib=load_library(ASSETS/'glyphs_v24.json')
@@ -121,6 +130,9 @@ class TableTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as path:
             binary=Path(path)/'page.bin';write_pencilengine(p,ASSETS/'template_1stroke.hinote',binary)
             out=read_pencilengine(binary);self.assertEqual(out.trailing_bytes,152)
+            raw=binary.read_bytes()
+            self.assertEqual(struct.unpack_from('>I',raw,88)[0],len(raw)-124)
+            self.assertEqual(struct.unpack_from('>I',raw,116)[0],len(raw)-124-152)
             self.assertEqual(validate_pencilengine(binary)[0],len(p['strokes']))
             rectangles=[]
             for s in out.strokes:

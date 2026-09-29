@@ -102,7 +102,7 @@ def validate_pencilengine(path, check_cancelled=None):
         header = stream.read(GLOBAL_HEADER_SIZE)
         if len(header) != GLOBAL_HEADER_SIZE or not header.startswith(MAGIC):
             raise ValueError("Cabecera PENCILENGINE inválida")
-        if _u32(header, 88) != size - 124 or _u32(header, 116) != size - 164:
+        if _u32(header, 88) != size - 124:
             raise ValueError("Tamaños globales PENCILENGINE inconsistentes")
         count, points = _u32(header, 112), 0
         stroke_ids = set()
@@ -124,6 +124,8 @@ def validate_pencilengine(path, check_cancelled=None):
                 raise ValueError("Puntos truncados")
             stream.seek(n * POINT_SIZE, 1)
             points += n
+        if _u32(header, 116) != stream.tell() - 124:
+            raise ValueError("Tamaño del bloque de trazos PENCILENGINE inconsistente")
         validate_footer(stream.read(FOOTER_SIZE + 56 * 2000 + 1), stroke_ids)
     return count, points
 

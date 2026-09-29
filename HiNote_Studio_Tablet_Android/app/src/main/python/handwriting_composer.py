@@ -736,6 +736,9 @@ def compose_document(
         "pages": pages,
         "warnings": warnings,
     }
+    if any(p.get("type") == "table" for p in paragraphs):
+        from table_composer import GRID
+        composition["layout"]["table_grid_step"] = GRID
     if page_sink is None and len(pages) == 1:
         composition["placements"] = pages[0]["placements"]
         composition["strokes"] = pages[0]["strokes"]

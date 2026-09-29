@@ -46,7 +46,7 @@ const ImageEditor = (() => {
     const c=el('gridCanvas'), ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);
     ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
     if(el('gridCheck').checked){
-      const step=(composition?.layout?.grid_step || 58.8)*.675;
+      const step=(composition?.layout?.table_grid_step || composition?.layout?.grid_step || 58.8)*.675;
       ctx.strokeStyle='rgba(115,160,180,.18)';ctx.lineWidth=.405;ctx.beginPath();
       for(let x=0;x<=675;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,1080);}
       for(let y=0;y<=1080;y+=step){ctx.moveTo(0,y);ctx.lineTo(675,y);}
@@ -136,6 +136,7 @@ const ImageEditor = (() => {
       scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function pointerDown(e){
+    if(e.target.closest('.tableTarget'))return;
     if(exporting||CalibrationUI.isBusy()||busy||e.button>0||!el('cropDialog').classList.contains('hidden'))return;
     if(pointers.size>=2){e.preventDefault();return;}
     e.preventDefault();pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);
