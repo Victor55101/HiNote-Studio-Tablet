@@ -1,5 +1,13 @@
 # Comprobación en la tablet
 
+## V28: continuidad de renglones y texto después de una tabla
+
+1. Abre la tabla de V27 que mostraba el salto antes del tercer renglón y pulsa **Actualizar**. Debe mantener dos renglones por cuadro, sin el hueco adicional. Comprueba tanto texto ajustado automáticamente como saltos introducidos con Enter.
+2. Prueba Estándar y Compacta con letras acentuadas y descendentes (`g`, `p`, `q`, `y`). Una línea vacía que hayas escrito expresamente debe conservarse.
+3. Escribe `Hola` al 100 % después de una tabla de altura entera y después de otra que termine a medio cuadro. Debe recuperar la alineación inferior habitual del texto normal. Comprueba también una lista después de la tabla y texto antes de ella.
+4. Repite cerca del final de una hoja: si el texto normal debe pasar a la siguiente, debe comenzar en su margen habitual. La tabla sigue paginándose por filas completas.
+5. Guarda un nuevo `.hinote` y ábrelo en Huawei Notes para comprobar ambas correcciones. Los archivos exportados anteriormente no cambian por instalar el APK.
+
 ## V27: tablas manuscritas
 
 El usuario confirmó la importación V26 y la creación de Original ampliada. El formato V27 es compatible con los perfiles, imágenes, borrador y carpeta anterior. Sin embargo, el APK de depuración tiene una firma distinta al V26 entregado: respalda los perfiles `.hnprofile`, exporta las notas y conserva el texto **antes de desinstalar**, porque la reinstalación borra los datos privados. Tras instalar, importa los respaldos y vuelve a elegir la carpeta.

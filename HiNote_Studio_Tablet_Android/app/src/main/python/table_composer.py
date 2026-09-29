@@ -124,10 +124,9 @@ def _scaled_lines(cell, size, width, lib, seed, word_spacing, letter_spacing, wa
             if right - min(0, left) > width + .01:
                 return None
             baseline = max(0, -top) if not result else result[-1]["baseline"] + HALF
-            if result:
-                # Very tall accents/descenders can require an extra half-square.
-                while baseline + top < result[-1]["baseline"] + result[-1]["bottom"] + 1.2:
-                    baseline += HALF
+            # Keep two baseline slots per square. Whole-line bounding boxes can
+            # overlap for a descender and an accent at different x coordinates;
+            # that is not a reason to insert a blank half-square between lines.
             if baseline + max(0, bottom) > 25 * GRID:
                 # The entire row must fit a page. Stop planning huge cells early;
                 # Compacta can retry smaller sizes before composition reports it.

@@ -1,8 +1,10 @@
-# HiNote Studio Tablet — V27
+# HiNote Studio Tablet — V28
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
 
 V27 añade **Tablas** con escritura Estándar/Compacta, celdas editables y saltos por filas completas. Consulta la sección [Tablas manuscritas](#v27--tablas-manuscritas).
+
+V28 corrige la alineación: los renglones de las celdas avanzan medio cuadro sin saltos adicionales por acentos o descendentes. El texto normal y las listas posteriores vuelven a su línea habitual, aunque la tabla termine a medio cuadro. Los saltos de línea que escribas expresamente se conservan. Pulsa **Actualizar** y vuelve a exportar para aplicar el cambio a una nota anterior.
 
 ## V26: corrección de importación de calibraciones
 

@@ -569,6 +569,7 @@ def compose_document(
     check = check_cancelled or (lambda: None)
     baseline_y = float(margin_top)
     bottom_limit = float(page_height) - float(margin_bottom)
+    table_bottom = None
 
     def page():
         return current_page
@@ -580,12 +581,13 @@ def compose_document(
         else:
             page_sink(current_page)
     def new_page():
-        nonlocal baseline_y, current_page
+        nonlocal baseline_y, current_page, table_bottom
         if current_page["page_number"] >= max_pages:
             raise ValueError(f"El documento supera {max_pages} páginas; divídelo en notas más pequeñas.")
         finish_page()
         current_page = _new_page(current_page["page_number"] + 1)
         baseline_y = float(margin_top)
+        table_bottom = None
 
     paragraphs = document.get("paragraphs", [])
     if not paragraphs:
@@ -629,6 +631,7 @@ def compose_document(
                 y += row["height"]; boundaries.append(y); indexes.append(i)
             draw_borders(table, top, boundaries, page(), indexes)
             baseline_y = y + GRID
+            table_bottom = y
             continue
         list_info = para.get("list") or None
         chars = _flatten_segments(para.get("segments", []), base_scale)
@@ -666,6 +669,24 @@ def compose_document(
             check()
             max_scale = _line_max_scale(line["items"], marker_scale if list_info and line_idx == 0 else None)
             rows = _rows_for_scale(max_scale, line_grid_rows, auto_line_spacing)
+
+            if table_bottom is not None:
+                # Tables can end halfway through a square. Resume ordinary text
+                # in a complete square, on the same baseline lattice used before
+                # the table, rather than inheriting its half-square position.
+                phase = float(margin_top) % grid_step
+                if phase < .000001: phase = grid_step
+                baseline_y = math.ceil(table_bottom / grid_step - .000001) * grid_step + phase
+                top_ink = min((
+                    ((i["glyph"].get("bbox") or i["glyph"].get("raw_bbox") or [0, 0, 0, 0])[1]
+                     + float(placement_y_offsets.get(i["ch"], 0))) * i["scale"]
+                    for i in line["items"] + (marker_items if line_idx == 0 else [])
+                    if i["kind"] == "glyph"
+                ), default=0.0)
+                # Large body text also needs room above its baseline.
+                extra = max(0, table_bottom + 2 - baseline_y - top_ink)
+                baseline_y += math.ceil(extra / grid_step) * grid_step
+                table_bottom = None
 
             descender = max((
                 ((i["glyph"].get("bbox") or i["glyph"].get("raw_bbox") or [0, 0, 0, 0])[3]

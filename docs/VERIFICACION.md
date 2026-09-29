@@ -1,4 +1,16 @@
-# Verificación de V27
+# Verificación de V28
+
+## Corrección de alineación
+
+Se reprodujo la captura del usuario con el banco Original. V27 insertaba medio cuadro vacío antes del tercer renglón porque comparaba las cajas verticales de dos líneas completas: un descendente y un acento en posiciones horizontales distintas provocaban una falsa colisión. V28 conserva el paso fijo de medio cuadro dentro de las celdas. Los saltos explícitos, incluida una línea vacía, se mantienen.
+
+El segundo fallo se debía a calcular la línea del texto normal sumando un cuadro al borde inferior de la tabla. Cuando ese borde acababa a medio cuadro, el texto siguiente heredaba el mismo desplazamiento. V28 retoma la secuencia normal de líneas, con su margen y separación originales, y reserva espacio adicional para texto grande cuando hace falta. El tamaño de los caracteres no cambia. La transición entre tablas consecutivas y la paginación por filas siguen usando la geometría de tabla.
+
+Se añadieron cuatro regresiones: acentos/descendentes con ajuste automático y saltos explícitos en ambos modos; líneas vacías intencionales; texto y listas tras alturas enteras y medias; y vuelta al margen superior al cambiar de página. Se inspeccionó una comparación vectorial antes/después del ejemplo recibido. La muestra personal no se incluye en el repositorio.
+
+Pendiente registrar la compilación final y las comprobaciones del APK V28. Las instrucciones de comprobación física están en `PRUEBA_TABLET.md`.
+
+## Histórico: V27
 
 ## Tablas y muestra nativa
 

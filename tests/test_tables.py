@@ -117,6 +117,56 @@ class TableTests(unittest.TestCase):
         self.assertAlmostEqual(lines[1]['baseline']-lines[0]['baseline'],HALF)
         self.assertAlmostEqual(plan['height']/HALF,round(plan['height']/HALF))
 
+    def test_accents_and_descenders_do_not_skip_half_square_lines(self):
+        lib=load_library(ASSETS/'glyphs_v24.json')
+        for separator in (' ', '\n'):
+            text=separator.join(('Hola mi Nombre es','Algo José Islas','Álvarez'))
+            for mode in ('standard','compact'):
+                t=validate_table(table(1,text,widths=[5]));t['mode']=mode
+                with self.subTest(separator=separator,mode=mode):
+                    plan=plan_row(t,t['rows'][0],lib,0,12345,26,0,_Warnings(),lambda:None)
+                    lines=plan['cells'][0]['lines']
+                    self.assertGreaterEqual(len(lines),2)
+                    for a,b in zip(lines,lines[1:]):
+                        self.assertAlmostEqual(b['baseline']-a['baseline'],HALF)
+
+    def test_intentional_blank_cell_line_is_preserved(self):
+        t=validate_table(table(1,'a\n\nb',widths=[5]))
+        lib=load_library(ASSETS/'glyphs_v24.json')
+        plan=plan_row(t,t['rows'][0],lib,0,12345,26,0,_Warnings(),lambda:None)
+        lines=plan['cells'][0]['lines']
+        self.assertEqual(len(lines),3)
+        self.assertEqual(lines[1]['items'],[])
+        self.assertAlmostEqual(lines[2]['baseline']-lines[0]['baseline'],GRID)
+
+    def test_body_and_lists_resume_their_grid_after_fractional_tables(self):
+        lib=load_library(ASSETS/'glyphs_v24.json')
+        for height in (1,1.5,2,2.5):
+            with self.subTest(height=height):
+                t=table(1,'abc',widths=[5]);t['rows'][0]['height']=height
+                before=[{'segments':[{'text':'Antes'}]}]
+                after=[{'segments':[{'text':'Hola'}]}, {'segments':[{'text':'Otra línea'}], 'list':{'marker':'•'}}, {'segments':[{'text':'Final'}]}]
+                result=self.compose(t,before=before,after=after)
+                layout=result['layout'];pg=result['pages'][0]
+                normal=[p for p in pg['placements'] if p['scale']==1]
+                self.assertTrue(normal)
+                for p in normal:
+                    base=p['baseline_y']-lib.get('placement_y_offsets',{}).get(p['char'],0)
+                    row=(base-layout['margin_top'])/layout['grid_step']
+                    self.assertAlmostEqual(row,round(row))
+                # The normal first line after the table occupies a whole square,
+                # retaining the same lower-edge position as the text before it.
+                bottom=pg['tables'][0]['y']+pg['tables'][0]['height']
+                hello=normal[len('Antes')]
+                self.assertGreaterEqual(hello['baseline_y']-bottom,HALF)
+                self.assertLess(hello['baseline_y']-bottom,GRID*1.6)
+
+    def test_body_after_table_page_break_restores_top_baseline(self):
+        t=table(1,'abc',widths=[15]);t['rows'][0]['height']=24.5
+        result=self.compose(t,after=[{'segments':[{'text':'Hola'}]}])
+        self.assertEqual(result['page_count'],2)
+        self.assertEqual(result['pages'][1]['placements'][0]['baseline_y'],result['layout']['margin_top'])
+
     def test_centering_uses_ink_bounds_and_padding(self):
         t=table(1,'a',widths=[4]);t['rows'][0]['cells'][0]['align']='center'
         p=self.compose(t)['pages'][0]
