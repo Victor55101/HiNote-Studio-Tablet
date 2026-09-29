@@ -149,7 +149,14 @@ const TableEditor = (() => {
     for(const t of composition.table_pages?.[currentPage]||[]){
       const box=document.createElement('div'),k=.675*zoom;box.className='tableTarget';box.dataset.id=t.id;Object.assign(box.style,{left:`${t.x*k}px`,top:`${t.y*k}px`,width:`${t.width*k}px`,height:`${t.height*k}px`});
       for(const [action,label] of [['tableMove','↔'],['tableOpen','Editar tabla'],['tableResize','↘']]){const b=document.createElement('button');b.className=action;b.textContent=label;b.setAttribute('aria-label',action==='tableMove'?'Mover tabla por medios cuadros':action==='tableResize'?'Redimensionar tabla':'Editar tabla');box.append(b);}
-      box.querySelector('.tableOpen').onclick=()=>open(t.id);layer.append(box);
+      const edit=box.querySelector('.tableOpen');let tap=null;
+      edit.onclick=()=>{if(!working)open(t.id);};
+      // Touch browsers can omit the compatibility click immediately after a drag.
+      // Recognize a stationary release directly, while retaining keyboard clicks.
+      edit.onpointerdown=e=>{if(e.pointerType!=='mouse')tap={id:e.pointerId,x:e.clientX,y:e.clientY};};
+      edit.onpointercancel=()=>tap=null;
+      edit.onpointerup=e=>{const start=tap;tap=null;if(start?.id===e.pointerId&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<12){e.preventDefault();e.stopPropagation();if(!working)open(t.id);}};
+      layer.append(box);
     }
   }
   function previewStart(e){
