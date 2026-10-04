@@ -122,7 +122,15 @@ public class ImageStoreTest {
             assertEquals(675*scale,b.getWidth());assertEquals(1080*scale,b.getHeight());
             assertTrue(b.getAllocationByteCount()<=1350*2160*4);
             assertEquals(0,Color.alpha(b.getPixel(0,0)));
-            assertTrue(Color.alpha(b.getPixel(135*scale,162*scale))>200);
+            // A thin stroke can straddle two pixel rows. Measure its coverage
+            // and center instead of requiring one fully opaque edge pixel.
+            double coverage=0,weightedY=0;
+            for(int y=158*scale;y<=166*scale;y++){
+                int alpha=Color.alpha(b.getPixel(135*scale,y));
+                coverage+=alpha;weightedY+=(y+.5)*alpha;
+            }
+            assertEquals(1.35,coverage/255.0/scale,.08);
+            assertEquals(162.0,weightedY/coverage/scale,.08);
             assertEquals(0,Color.alpha(b.getPixel(135*scale,180*scale)));b.recycle();
         }
     }
