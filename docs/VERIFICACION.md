@@ -1,4 +1,16 @@
-# Verificación de V28
+# Verificación de V29
+
+## Tablas y previsualización
+
+Estándar pasa a 60 %; el ajuste automático intenta 60/55/50 %. Los tamaños fijos anteriores se conservan y prevalecen sobre el modo general. Se corrige la diferencia entre valores de opción «0.60»/«0.50» y números recuperados «0.6»/«0.5», que dejaba el selector vacío sin cambiar los trazos.
+
+La selección de celdas admite toques, fila, columna, tabla completa y rango con Mayús + clic. Alineación, posición vertical, tamaño, color y grosor actúan sobre la selección; se mantienen edición parcial de palabras, borrador y deshacer. Los valores distintos se muestran como Mixto. Las flechas se llaman Mover tabla arriba/abajo y explican su efecto sobre el orden del documento.
+
+Los botones de la tabla se posicionan dentro de la intersección entre página y ventana de previsualización, también al desplazarla. La vista solicita resolución 1× o 2× con 220 ms de pausa tras el zoom, descarta resultados obsoletos y conserva la página ya dibujada al aumentar calidad. Máximo 1350 × 2160, 11,2 MiB por bitmap de tinta; esto no es la memoria total de Android/WebView. El renderizado nativo sigue en el trabajador único, admite cancelación y vuelve a 1× si falta memoria. Solo se conserva un archivo de tinta HD por instantánea. La cuadrícula se redibuja únicamente al cambiar su estado o resolución. Las miniaturas de exportación siguen a 675 × 1080.
+
+Verificación en curso; pendiente registrar ejecución final, APK e inspección del editor. La prueba física se detalla en `PRUEBA_TABLET.md`.
+
+## Histórico: V28
 
 ## Corrección de alineación
 

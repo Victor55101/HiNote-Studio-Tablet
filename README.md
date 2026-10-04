@@ -1,6 +1,12 @@
-# HiNote Studio Tablet — V28
+# HiNote Studio Tablet — V29
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V29 establece **Estándar en 60 %** y añade selección de varias celdas con toques, por fila, columna, tabla completa o Mayús + clic para un rango. Alineación horizontal/vertical, tamaño, color y grosor se aplican a las celdas marcadas; «Mixto» indica valores distintos. **Terminar selección** vuelve a la edición de texto.
+
+**Tamaño de tabla** define el valor de las celdas **Según tabla**: Estándar mantiene 60 % y **Ajustar al espacio** intenta 60, 55 o 50 %. **Tamaño de selección** permite un valor fijo que tiene prioridad; cambiar el modo general no borra esos tamaños. Para unificar una tabla anterior, pulsa **Toda la tabla → Según tabla**. El porcentaje fijo se conserva visible al cambiar de celda o reabrir el borrador.
+
+**Mover tabla arriba/abajo** cambia su orden respecto a los bloques del documento. Los controles de la previsualización permanecen dentro de la página y del área visible. La tinta y la cuadrícula se muestran hasta a doble resolución según el zoom y la pantalla: solo se solicita la página actual, después de una pausa breve en el gesto, sin recomponer el texto. La tinta tiene un máximo de 1350 × 2160 píxeles por bitmap; no se generan todas las páginas en alta resolución. Las miniaturas nativas exportadas mantienen su formato.
 
 V27 añade **Tablas** con escritura Estándar/Compacta, celdas editables y saltos por filas completas. Consulta la sección [Tablas manuscritas](#v27--tablas-manuscritas).
 
@@ -95,7 +101,7 @@ Los APK de depuración pueden tener una firma distinta de la instalación anteri
 
 La pestaña **Tablas** inserta un bloque después del párrafo seleccionado (o en el párrafo vacío). Toca el bloque para editar las celdas. Admite hasta 12 columnas, 200 filas por tabla y 2000 celdas por nota, dentro del límite compartido de 200 000 caracteres.
 
-- **Estándar** conserva el 73 % del tamaño calibrado. **Compacta** comienza en 65 % y ajusta cada celda hasta 50 % para intentar respetar su altura mínima. También se puede fijar un tamaño específico por celda.
+- Desde V29, **Estándar** conserva el 60 % del tamaño calibrado. **Ajustar al espacio** intenta 60/55/50 % por celda para respetar su altura mínima. También se puede fijar un tamaño específico para las celdas seleccionadas, incluidos los antiguos 65 y 73 %.
 - Anchos, sangría y alturas mínimas en medios cuadros. Arrastra los controles de filas/columnas o escribe una medida. El contenido puede aumentar la altura; nunca se recorta para forzar una medida.
 - Alineación horizontal y vertical, color parcial y grosor de texto/bordes. El grosor de la escritura se escala junto con sus coordenadas, sin cambiar la presión original.
 - Pegar texto con tabulaciones reparte columnas; los saltos separan filas. Los saltos introducidos dentro de una celda se conservan como renglones.

@@ -3,7 +3,11 @@ const TableEditor = (() => {
   const el=id=>document.getElementById(id), clone=x=>JSON.parse(JSON.stringify(x));
   const snap=n=>Math.round(n*2)/2, clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
   let tables={}, working=null, originalId=null, insertion=null, selectedRow=0, selectedCol=0, cellSelection=null, active=false, drag=null, resume=null;
+  let selecting=false, selectedCells=new Set(['0:0']), selectionAnchor=[0,0], toolsFrame=null;
+  const cellKey=(r,c)=>`${r}:${c}`;
   const currentCell=()=>working?.rows[selectedRow]?.cells[selectedCol];
+  const chosenCells=()=>[...selectedCells].map(key=>{const [r,c]=key.split(':').map(Number);return working?.rows[r]?.cells[c];}).filter(Boolean);
+  function singleCell(r=selectedRow,c=selectedCol){selectedRow=r;selectedCol=c;selectedCells=new Set([cellKey(r,c)]);selectionAnchor=[r,c];cellSelection=null;}
   const locked=()=>exporting||CalibrationUI.isBusy()||ImageEditor.isBusy();
   const newId=()=> 'table_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
   const blank=()=>({segments:[],align:'left',valign:'top',size:0});
@@ -37,7 +41,7 @@ const TableEditor = (() => {
     const button=document.createElement('button');button.className='btn';button.type='button';
     button.textContent=t?`▦ Tabla · ${t.rows.length} filas × ${t.widths.length} columnas`:'▦ Tabla no disponible';
     button.onclick=()=>open(id);div.append(button);
-    const hint=document.createElement('small');hint.textContent=t?`${t.mode==='compact'?'Compacta · 65–50 %':'Estándar · 73 %'} · Toca para editar · Filas completas entre páginas`:'';div.append(hint);return div;
+    const hint=document.createElement('small');hint.textContent=t?`${t.mode==='compact'?'Ajustar al espacio · 60–50 %':'Estándar · 60 %'}${t.rows.some(r=>r.cells.some(c=>c.size>0))?' · Con tamaños fijos por celda':''} · Toca para editar`:'';div.append(hint);return div;
   }
   function show(message){el('tableMessage').textContent=message;}
   function readCell(node){
@@ -73,20 +77,43 @@ const TableEditor = (() => {
   }
   function sync(){
     const c=currentCell();if(!c)return;
-    el('tableCellLabel').textContent=`Celda ${selectedRow+1}, ${selectedCol+1}`;
-    for(const [id,value] of Object.entries({tableMode:working.mode,tableLeft:working.left,tableGap:working.gap,tableBorder:working.border,tableBorderColor:working.color,tableColWidth:working.widths[selectedCol],tableRowHeight:working.rows[selectedRow].height,tableAlign:c.align,tableValign:c.valign,tableCellSize:c.size||0}))el(id).value=value;
+    if(!chosenCells().length)singleCell();
+    const cells=chosenCells(),common=key=>cells.every(cell=>(cell[key]||0)===(cells[0][key]||0))?(cells[0][key]||0):'mixed';
+    el('tableCellLabel').textContent=cells.length===1?`Celda ${selectedRow+1}, ${selectedCol+1}`:`${cells.length} celdas · activa ${selectedRow+1}, ${selectedCol+1}`;
+    const size=common('size'),sizeSelect=el('tableCellSize');
+    // Normalize numeric option values (0.60 and 0.6 are the same stored size).
+    if(size!=='mixed'&&![...sizeSelect.options].some(o=>o.value===String(size))){const option=new Option(`Fijo · ${Math.round(size*10000)/100} %`,String(size));sizeSelect.add(option);}
+    sizeSelect.querySelector('[value="0"]').textContent=working.mode==='compact'?'Según tabla · ajuste 60–50 %':'Según tabla · 60 %';
+    for(const [id,value] of Object.entries({tableMode:working.mode,tableLeft:working.left,tableGap:working.gap,tableBorder:working.border,tableBorderColor:working.color,tableColWidth:working.widths[selectedCol],tableRowHeight:working.rows[selectedRow].height,tableAlign:common('align'),tableValign:common('valign'),tableCellSize:size}))el(id).value=value;
     el('tableRepeat').checked=working.repeat_header!==false;
-    el('tableGrid').querySelectorAll('td').forEach(td=>{const n=td.firstChild;td.classList.toggle('selectedCell',+n.dataset.row===selectedRow&&+n.dataset.col===selectedCol);});
-    el('tableRemove').disabled=!originalId;el('tableMoveUp').disabled=!originalId;el('tableMoveDown').disabled=!originalId;
+    el('tableGrid').classList.toggle('selectingCells',selecting);
+    el('tableGrid').querySelectorAll('td').forEach(td=>{const n=td.firstChild,selected=selectedCells.has(cellKey(+n.dataset.row,+n.dataset.col));td.classList.toggle('selectedCell',selected);td.setAttribute('aria-selected',String(selected));n.contentEditable=String(!selecting);n.tabIndex=0;});
+    el('tableSelectCells').setAttribute('aria-pressed',String(selecting));el('tableSelectCells').classList.toggle('accent',selecting);
+    el('tableSelectCells').textContent=selecting?'Terminar selección':'Seleccionar celdas';
+    el('tableSelectionHint').textContent=selecting?'Toca para marcar o desmarcar. Mayús + clic selecciona un rango. Los controles se aplican a las celdas marcadas.':'Toca una celda para escribir. Usa Seleccionar celdas para dar formato a varias.';
+    const at=readLines().findIndex(l=>l[0]?.tableId===originalId);
+    el('tableRemove').disabled=!originalId;el('tableMoveUp').disabled=!originalId||at<=0;el('tableMoveDown').disabled=!originalId||at>=readLines().length-1;
+  }
+  function selectGroup(kind){
+    flush();selecting=true;cellSelection=null;selectedCells.clear();
+    working.rows.forEach((row,r)=>row.cells.forEach((cell,c)=>{if(kind==='all'||(kind==='row'&&r===selectedRow)||(kind==='col'&&c===selectedCol))selectedCells.add(cellKey(r,c));}));
+    sync();
+  }
+  function selectCell(r,c,range=false){
+    const key=cellKey(r,c);cellSelection=null;
+    if(range){const [ar,ac]=selectionAnchor;selectedCells.clear();for(let row=Math.min(ar,r);row<=Math.max(ar,r);row++)for(let col=Math.min(ac,c);col<=Math.max(ac,c);col++)selectedCells.add(cellKey(row,col));}
+    else{if(selectedCells.has(key)&&selectedCells.size>1)selectedCells.delete(key);else selectedCells.add(key);selectionAnchor=[r,c];}
+    if(selectedCells.has(key)){selectedRow=r;selectedCol=c;}else [selectedRow,selectedCol]=[...selectedCells][0].split(':').map(Number);
+    sync();
   }
   function open(id=null){
     if(locked()||ime)return;captureSelection();checkpoint();
     if(!id&&Object.keys(live()).length>=50){toast('La nota admite hasta 50 tablas');return;}
     originalId=id;insertion=bookmark();
     working=id?get(id):{id:newId(),widths:[4,5,6],rows:Array.from({length:4},(_,r)=>({height:r?2:1,cells:Array.from({length:3},()=>({...blank(),align:r?'left':'center'}))})),left:1,gap:0,mode:'standard',border:2,color:'#000000',repeat_header:true};
-    selectedRow=selectedCol=0;cellSelection=null;activate();
+    selecting=false;singleCell(0,0);activate();
   }
-  function activate(){el('tableDialog').classList.remove('hidden');document.querySelector('.app').inert=true;draw();show('Estándar: 73 %. Compacta: 65–50 % según el espacio. Las alturas son mínimas: la fila crece si hace falta.');el('tableDone').focus();}
+  function activate(){el('tableDialog').classList.remove('hidden');document.querySelector('.app').inert=true;draw();show('Estándar: 60 %. Ajustar al espacio reduce hasta 50 % si hace falta. La fila crece para conservar todo el texto.');el('tableDone').focus();}
   function close(){working=null;originalId=null;resume=null;drag=null;el('tableDialog').classList.add('hidden');document.querySelector('.app').inert=false;queueDraft();el('insertTable').focus();}
   function commit(){
     flush();try{validate(working);}catch(e){show(e.message);return false;}
@@ -109,9 +136,10 @@ const TableEditor = (() => {
     if(kind==='delRow'){if(working.rows.length===1)return show('Conserva al menos una fila');if(working.rows[selectedRow].cells.some(c=>lineText(c.segments))&&!confirm('¿Eliminar esta fila y su texto?'))return;working.rows.splice(selectedRow,1);selectedRow=Math.min(selectedRow,working.rows.length-1);}
     if(kind==='addCol'){if(working.widths.length>=12)return show('Máximo 12 columnas');if(16-working.left<working.widths.length+1)return show('Reduce la sangría para añadir otra columna');while(working.left+working.widths.reduce((a,b)=>a+b,0)+1>16){const i=working.widths.indexOf(Math.max(...working.widths));working.widths[i]-=.5;}working.widths.splice(selectedCol+1,0,1);working.rows.forEach(r=>r.cells.splice(selectedCol+1,0,blank()));selectedCol++;}
     if(kind==='delCol'){if(working.widths.length===1)return show('Conserva al menos una columna');if(working.rows.some(r=>lineText(r.cells[selectedCol].segments))&&!confirm('¿Eliminar esta columna y su texto?'))return;working.widths.splice(selectedCol,1);working.rows.forEach(r=>r.cells.splice(selectedCol,1));selectedCol=Math.min(selectedCol,working.widths.length-1);}
+    singleCell();
   });}
   function capture(){
-    if(!working)return;const sel=getSelection();if(!sel?.rangeCount)return;
+    if(!working||selecting||selectedCells.size>1)return;const sel=getSelection();if(!sel?.rangeCount)return;
     const range=sel.getRangeAt(0),node=(range.startContainer.nodeType===1?range.startContainer:range.startContainer.parentElement)?.closest('.cellEditor');
     if(!node||!node.contains(range.endContainer))return;
     const start=range.cloneRange();start.selectNodeContents(node);start.setEnd(range.startContainer,range.startOffset);
@@ -120,16 +148,16 @@ const TableEditor = (() => {
   function ink(){
     capture();flush();const cell=currentCell(),s=cellSelection;
     const patch={color:el('tableInkColor').value.toUpperCase(),thickness:+el('tableInkWidth').value};
-    if(s&&s.row===selectedRow&&s.col===selectedCol&&s.end>s.start)cell.segments=mergeSegments([...sliceSegments(cell.segments,0,s.start),...sliceSegments(cell.segments,s.start,s.end).map(x=>({...x,...patch})),...sliceSegments(cell.segments,s.end)]);
-    else cell.segments=cell.segments.map(x=>({...x,...patch}));
-    draw();queueDraft();show('Formato aplicado. Selecciona palabras para cambiar solo una parte de la celda.');
+    if(!selecting&&selectedCells.size===1&&s&&s.row===selectedRow&&s.col===selectedCol&&s.end>s.start)cell.segments=mergeSegments([...sliceSegments(cell.segments,0,s.start),...sliceSegments(cell.segments,s.start,s.end).map(x=>({...x,...patch})),...sliceSegments(cell.segments,s.end)]);
+    else chosenCells().forEach(c=>c.segments=c.segments.map(x=>({...x,...patch})));
+    draw();queueDraft();show(`Color y grosor aplicados a ${selectedCells.size===1?'la selección de texto o celda':selectedCells.size+' celdas'}.`);
   }
   function insertCellText(text){
     if(text.length>MAX_CHARS)return show('El texto supera el límite de la nota');
     document.execCommand('insertText',false,text);flush();queueDraft();
   }
   function paste(event){
-    const node=event.target.closest('.cellEditor');if(!node)return;event.preventDefault();
+    const node=event.target.closest('.cellEditor');if(!node)return;event.preventDefault();if(selecting)return show('Termina la selección para escribir o pegar en una celda.');
     const text=event.clipboardData.getData('text/plain').replace(/\r\n?/g,'\n');
     if(!text.includes('\t'))return insertCellText(text);
     const rows=text.replace(/\n$/,'').split('\n').map(r=>r.split('\t'));
@@ -143,12 +171,29 @@ const TableEditor = (() => {
   }
   function remove(){const id=originalId;if(!id||!confirm('¿Eliminar la tabla y su contenido de esta nota? Puedes deshacerlo.'))return;const lines=readLines().filter(l=>l[0]?.tableId!==id);delete tables[id];close();renderLines(lines.length?lines:[[]]);checkpoint();changed();}
   function mode(value){active=value;render();}
+  function positionTools(){
+    toolsFrame=null;
+    const wrap=el('previewWrap').getBoundingClientRect(),shell=el('canvasShell').getBoundingClientRect();
+    const left=Math.max(wrap.left,shell.left)+6,right=Math.min(wrap.right,shell.right)-6,top=Math.max(wrap.top,shell.top)+6,bottom=Math.min(wrap.bottom,shell.bottom)-6;
+    el('tableOverlay').querySelectorAll('.tableTarget').forEach(box=>{
+      const r=box.getBoundingClientRect(),bar=box.querySelector('.tableQuickActions'),resize=box.querySelector('.tableResize');
+      const visible=r.right>left&&r.left<right&&r.bottom>top&&r.top<bottom;
+      bar.style.visibility=resize.style.visibility=visible?'visible':'hidden';if(!visible)return;
+      const w=bar.offsetWidth,h=bar.offsetHeight;
+      bar.style.left=`${clamp(r.left,left,Math.max(left,right-w))-r.left}px`;
+      bar.style.top=`${clamp(r.top-h-4,top,Math.max(top,bottom-h))-r.top}px`;
+      resize.style.left=`${clamp(r.right-44,left,Math.max(left,right-44))-r.left}px`;
+      resize.style.top=`${clamp(r.bottom-44,top,Math.max(top,bottom-44))-r.top}px`;
+    });
+  }
+  function scheduleTools(){if(toolsFrame===null)toolsFrame=requestAnimationFrame(positionTools);}
   function render(){
-    const layer=el('tableOverlay');if(!layer)return;layer.replaceChildren();
+    const layer=el('tableOverlay');if(!layer)return;if(drag){scheduleTools();return;}layer.replaceChildren();
     if(!active||!composition||previewRevision!==revision||exporting||working)return;
     for(const t of composition.table_pages?.[currentPage]||[]){
       const box=document.createElement('div'),k=.675*zoom;box.className='tableTarget';box.dataset.id=t.id;Object.assign(box.style,{left:`${t.x*k}px`,top:`${t.y*k}px`,width:`${t.width*k}px`,height:`${t.height*k}px`});
-      for(const [action,label] of [['tableMove','↔'],['tableOpen','Editar tabla'],['tableResize','↘']]){const b=document.createElement('button');b.className=action;b.textContent=label;b.setAttribute('aria-label',action==='tableMove'?'Mover tabla por medios cuadros':action==='tableResize'?'Redimensionar tabla':'Editar tabla');box.append(b);}
+      const bar=document.createElement('div');bar.className='tableQuickActions';box.append(bar);
+      for(const [action,label] of [['tableMove','↔'],['tableOpen','Editar tabla'],['tableResize','↘']]){const b=document.createElement('button');b.className=action;b.textContent=label;b.setAttribute('aria-label',action==='tableMove'?'Mover tabla por medios cuadros':action==='tableResize'?'Redimensionar tabla':'Editar tabla');(action==='tableResize'?box:bar).append(b);}
       const edit=box.querySelector('.tableOpen');let tap=null;
       edit.onclick=()=>{if(!working)open(t.id);};
       // Touch browsers can omit the compatibility click immediately after a drag.
@@ -158,6 +203,7 @@ const TableEditor = (() => {
       edit.onpointerup=e=>{const start=tap;tap=null;if(start?.id===e.pointerId&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<12){e.preventDefault();e.stopPropagation();if(!working)open(t.id);}};
       layer.append(box);
     }
+    positionTools();
   }
   function previewStart(e){
     if(!e.target.matches('.tableMove,.tableResize')||locked()||working||drag)return;
@@ -192,14 +238,20 @@ const TableEditor = (() => {
     el('insertTable').onclick=()=>open();el('tableDone').onclick=commit;el('tableCancel').onclick=close;el('tableRemove').onclick=remove;
     el('tableMoveUp').onclick=()=>move(-1);el('tableMoveDown').onclick=()=>move(1);
     for(const [id,kind] of [['tableAddRow','addRow'],['tableDelRow','delRow'],['tableAddCol','addCol'],['tableDelCol','delCol']])el(id).onclick=()=>structure(kind);
-    const grid=el('tableGrid');grid.addEventListener('focusin',e=>{const n=e.target.closest('.cellEditor');if(n){selectedRow=+n.dataset.row;selectedCol=+n.dataset.col;cellSelection=null;sync();}});
+    el('tableSelectCells').onclick=()=>{flush();selecting=!selecting;if(!selecting)singleCell();cellSelection=null;sync();};
+    for(const [id,kind] of [['tableSelectRow','row'],['tableSelectCol','col'],['tableSelectAll','all']])el(id).onclick=()=>selectGroup(kind);
+    const grid=el('tableGrid');grid.addEventListener('focusin',e=>{const n=e.target.closest('.cellEditor');if(n&&!selecting){singleCell(+n.dataset.row,+n.dataset.col);sync();}});
+    grid.addEventListener('pointerdown',e=>{if(e.target.closest('.cellEditor')&&(e.shiftKey||e.ctrlKey||e.metaKey)){flush();selecting=true;cellSelection=null;sync();}});
+    grid.addEventListener('click',e=>{const n=e.target.closest('.cellEditor');if(n&&selecting)selectCell(+n.dataset.row,+n.dataset.col,e.shiftKey);});
     grid.addEventListener('input',()=>{flush();queueDraft();});grid.addEventListener('paste',paste);grid.addEventListener('drop',e=>e.preventDefault());
-    grid.addEventListener('beforeinput',e=>{if(['insertParagraph','insertLineBreak'].includes(e.inputType)&&!e.isComposing){e.preventDefault();insertCellText('\n');}});
-    grid.addEventListener('keydown',e=>{if(e.isComposing)return;if(e.key==='Enter'){e.preventDefault();insertCellText('\n');}if(e.key==='Tab'){e.preventDefault();const n=el('tableGrid').querySelectorAll('.cellEditor'),index=selectedRow*working.widths.length+selectedCol+(e.shiftKey?-1:1);n[clamp(index,0,n.length-1)].focus();}});
+    grid.addEventListener('beforeinput',e=>{if(selecting){e.preventDefault();return;}if(['insertParagraph','insertLineBreak'].includes(e.inputType)&&!e.isComposing){e.preventDefault();insertCellText('\n');}});
+    grid.addEventListener('keydown',e=>{if(e.isComposing)return;if(selecting){const n=e.target.closest('.cellEditor');if(n&&[' ','Enter'].includes(e.key)){e.preventDefault();selectCell(+n.dataset.row,+n.dataset.col,e.shiftKey);}return;}if(e.key==='Enter'){e.preventDefault();insertCellText('\n');}if(e.key==='Tab'){e.preventDefault();const n=el('tableGrid').querySelectorAll('.cellEditor'),index=selectedRow*working.widths.length+selectedCol+(e.shiftKey?-1:1);n[clamp(index,0,n.length-1)].focus();}});
     document.addEventListener('selectionchange',capture);el('tableApplyInk').onclick=ink;
-    for(const [id,fn] of Object.entries({tableMode:()=>working.mode=el('tableMode').value,tableLeft:()=>working.left=clamp(snap(+el('tableLeft').value),.5,16-working.widths.reduce((a,b)=>a+b,0)),tableGap:()=>working.gap=clamp(snap(+el('tableGap').value),0,10),tableBorder:()=>working.border=clamp(Math.round(+el('tableBorder').value),1,10),tableBorderColor:()=>working.color=el('tableBorderColor').value,tableRepeat:()=>working.repeat_header=el('tableRepeat').checked,tableAlign:()=>currentCell().align=el('tableAlign').value,tableValign:()=>currentCell().valign=el('tableValign').value,tableCellSize:()=>currentCell().size=+el('tableCellSize').value,tableRowHeight:()=>working.rows[selectedRow].height=clamp(snap(+el('tableRowHeight').value),.5,25),tableColWidth:()=>{const others=working.widths.reduce((n,w,i)=>n+(i===selectedCol?0:w),0);working.widths[selectedCol]=clamp(snap(+el('tableColWidth').value),1,16-working.left-others);}}))el(id).onchange=()=>modify(fn);
+    for(const [id,key] of [['tableAlign','align'],['tableValign','valign'],['tableCellSize','size']])el(id).onchange=()=>{const value=el(id).value;if(value==='mixed')return;modify(()=>chosenCells().forEach(c=>c[key]=key==='size'?Number(value):value));show(`Formato aplicado a ${selectedCells.size} ${selectedCells.size===1?'celda':'celdas'}.`);};
+    for(const [id,fn] of Object.entries({tableMode:()=>working.mode=el('tableMode').value,tableLeft:()=>working.left=clamp(snap(+el('tableLeft').value),.5,16-working.widths.reduce((a,b)=>a+b,0)),tableGap:()=>working.gap=clamp(snap(+el('tableGap').value),0,10),tableBorder:()=>working.border=clamp(Math.round(+el('tableBorder').value),1,10),tableBorderColor:()=>working.color=el('tableBorderColor').value,tableRepeat:()=>working.repeat_header=el('tableRepeat').checked,tableRowHeight:()=>working.rows[selectedRow].height=clamp(snap(+el('tableRowHeight').value),.5,25),tableColWidth:()=>{const others=working.widths.reduce((n,w,i)=>n+(i===selectedCol?0:w),0);working.widths[selectedCol]=clamp(snap(+el('tableColWidth').value),1,16-working.left-others);}}))el(id).onchange=()=>modify(fn);
     grid.addEventListener('pointerdown',e=>{if(!e.target.classList.contains('tableGrip')||drag)return;e.preventDefault();flush();const column=e.target.classList.contains('column'),index=+(column?e.target.dataset.col:e.target.dataset.row);drag={kind:column?'column':'row',pointer:e.pointerId,index,x:e.clientX,y:e.clientY,value:column?working.widths[index]:working.rows[index].height};e.target.setPointerCapture(e.pointerId);});
     el('tableOverlay').addEventListener('pointerdown',previewStart);document.addEventListener('pointermove',dragMove,{passive:false});document.addEventListener('pointerup',e=>dragEnd(e));document.addEventListener('pointercancel',e=>dragEnd(e,true));
+    el('previewWrap').addEventListener('scroll',scheduleTools,{passive:true});
     el('tableDialog').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'&&!e.target.closest('.cellEditor')){const focus=[...el('tableDialog').querySelectorAll('button,input,select,[contenteditable=true]')].filter(n=>!n.disabled&&n.getClientRects().length);const i=focus.indexOf(document.activeElement);if((e.shiftKey&&i===0)||(!e.shiftKey&&i===focus.length-1)){e.preventDefault();focus[e.shiftKey?focus.length-1:0].focus();}}});
     if(resume?.table){try{validate(resume.table);working=resume.table;originalId=resume.originalId;insertion=resume.insertion;activate();show('Se recuperó la tabla que estabas editando. Aplica los cambios o cancela para conservar la versión anterior.');}catch(e){resume=null;}}
   }

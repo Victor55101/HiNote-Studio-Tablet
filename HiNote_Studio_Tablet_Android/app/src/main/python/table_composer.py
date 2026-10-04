@@ -143,7 +143,7 @@ def plan_row(table, row, lib, row_index, seed, word_spacing, letter_spacing, war
     for col, (cell, squares) in enumerate(zip(row["cells"], table["widths"])):
         check()
         explicit = cell.get("size", 0)
-        sizes = [explicit] if explicit else ([.73] if table["mode"] == "standard" else [.65, .60, .55, .50])
+        sizes = [explicit] if explicit else ([.60] if table["mode"] == "standard" else [.60, .55, .50])
         plan = None
         for size in sizes:
             plan = _scaled_lines(cell, size, squares * GRID - 2 * padding, lib,

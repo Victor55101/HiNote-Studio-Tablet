@@ -113,4 +113,22 @@ public class ImageStoreTest {
         File diagnostic=new File("build/reports/tests/native-paper.jpg");diagnostic.getParentFile().mkdirs();
         Files.copy(output.toPath(),diagnostic.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
+    @Test public void highResolutionInkKeepsGeometryAndCapsBitmapMemory() throws Exception {
+        String json="{\"strokes\":[[\"#000000\",100,[[150,240,1],[300,240,1]],0.6666667]]}";
+        for(int request:new int[]{1,2,99}){
+            File file=new File(directory,"resolution-"+request+".png");
+            PageRenderer.renderPreview(json,file,request,()->{});
+            Bitmap b=BitmapFactory.decodeFile(file.getPath());int scale=request>1?2:1;
+            assertEquals(675*scale,b.getWidth());assertEquals(1080*scale,b.getHeight());
+            assertTrue(b.getAllocationByteCount()<=1350*2160*4);
+            assertEquals(0,Color.alpha(b.getPixel(0,0)));
+            assertTrue(Color.alpha(b.getPixel(135*scale,162*scale))>200);
+            assertEquals(0,Color.alpha(b.getPixel(135*scale,180*scale)));b.recycle();
+        }
+    }
+    @Test public void cancelledHighResolutionRenderLeavesNoPartialFile() throws Exception {
+        File file=new File(directory,"cancel-hd.png");final int[] calls={0};
+        assertThrows(IllegalStateException.class,()->PageRenderer.renderPreview("{\"strokes\":[[\"#000000\",100,[[100,100,1],[300,100,1]]]]}",file,2,()->{if(++calls[0]>1)throw new IllegalStateException("cancelled");}));
+        assertFalse(file.exists());assertFalse(new File(file.getPath()+".part").exists());
+    }
 }

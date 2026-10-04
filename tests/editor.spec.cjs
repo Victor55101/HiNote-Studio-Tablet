@@ -350,6 +350,76 @@ test('Preview table controls move and resize without changing text or images',as
   await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),0);
 });
 
+test('Cell percentages remain visible after changing cells and reloading',async page=>{
+  await setup(page);await openTable(page);
+  assert.match(await page.locator('#tableMode option:checked').textContent(),/60 %/);
+  for(const value of ['0.6','0.5','0.73']){
+    await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();await page.selectOption('#tableCellSize',value);
+    await page.locator('.cellEditor[data-row="1"][data-col="0"]').focus();await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();
+    assert.equal(await page.inputValue('#tableCellSize'),value);assert.match(await page.locator('#tableCellSize option:checked').textContent(),/Fijo/);
+  }
+  await page.selectOption('#tableCellSize','0.6');await page.click('#tableDone');await page.evaluate(()=>saveDraft());await page.reload();await page.click('.tableBlock button');
+  assert.equal(await page.inputValue('#tableCellSize'),'0.6');
+  await page.selectOption('#tableMode','compact');assert.equal(await page.inputValue('#tableCellSize'),'0.6');
+  await page.selectOption('#tableCellSize','0');assert.match(await page.locator('#tableCellSize option:checked').textContent(),/60–50 %/);
+});
+test('Touch multi-cell formatting preserves unselected cells and supports undo',async page=>{
+  await setup(page);await openTable(page);await fillCell(page,0,0,'Primera');await fillCell(page,1,1,'Segunda');await fillCell(page,2,2,'Tercera');
+  await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();await page.click('#tableSelectCells');
+  for(const [r,c] of [[1,1],[2,2]]){const n=page.locator(`.cellEditor[data-row="${r}"][data-col="${c}"]`);await n.scrollIntoViewIfNeeded();const b=await n.boundingBox();await page.touchscreen.tap(b.x+15,b.y+15);}
+  assert.equal(await page.locator('td.selectedCell').count(),3);assert.equal(await page.inputValue('#tableAlign'),'mixed');
+  await page.selectOption('#tableAlign','right');await page.selectOption('#tableValign','middle');await page.selectOption('#tableCellSize','0.6');
+  assert.equal(await page.locator('td.selectedCell').count(),3);
+  await page.fill('#tableInkColor','#ff0000');await page.click('#tableApplyInk');
+  fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/tables-multiselect.png')});
+  await page.click('#tableDone');const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);
+  for(const i of [0,1,2]){const c=t.rows[i].cells[i];assert.equal(c.size,.6);assert.equal(c.align,'right');assert.equal(c.valign,'middle');assert.equal(c.segments[0].color,'#FF0000');}
+  assert.equal(t.rows[1].cells[0].align,'left');assert.equal(t.rows[1].cells[0].size,0);
+  await page.click('.tableBlock button');await page.click('#tableSelectAll');await page.selectOption('#tableCellSize','0.5');await page.click('#tableDone');
+  await page.click('#undoBtn');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].table),t);
+});
+test('Row column whole-table and range selection apply only to marked cells',async page=>{
+  await setup(page);await openTable(page);await page.locator('.cellEditor[data-row="1"][data-col="1"]').focus();
+  await page.click('#tableSelectRow');assert.equal(await page.locator('td.selectedCell').count(),3);await page.selectOption('#tableAlign','right');
+  await page.click('#tableSelectCol');assert.equal(await page.locator('td.selectedCell').count(),4);await page.selectOption('#tableValign','bottom');
+  await page.click('#tableSelectAll');assert.equal(await page.locator('td.selectedCell').count(),12);await page.selectOption('#tableCellSize','0');
+  await page.click('#tableSelectCells');await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();
+  await page.locator('.cellEditor[data-row="1"][data-col="1"]').click({modifiers:['Shift']});
+  assert.equal(await page.locator('td.selectedCell').count(),4);await page.selectOption('#tableCellSize','0.55');await page.click('#tableDone');
+  const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);
+  for(let r=0;r<4;r++)for(let c=0;c<3;c++){const cell=t.rows[r].cells[c];assert.equal(cell.size,r<=1&&c<=1?.55:0);assert.equal(cell.valign,c===1?'bottom':'top');if(r===1)assert.equal(cell.align,'right');}
+});
+test('Named table move buttons change document order and respect ends',async page=>{
+  await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openTable(page);await page.click('#tableDone');await page.click('.tableBlock button');
+  await page.click('#tableMoveUp');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].type),'table');assert.equal(await page.isDisabled('#tableMoveUp'),true);
+  await page.click('#tableMoveDown');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].segments[0].text),'Antes');
+});
+test('Table preview tools stay inside the page and viewport while zooming and panning',async page=>{
+  await setup(page);await openTable(page);await page.click('#tableDone');
+  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:59,width:888,height:950,rows:[0,1,2,3]}]]};previewRevision=revision;TableEditor.mode(true);});
+  for(const view of [[.74,0,0],[1.84,80,40],[1.84,220,520],[.3,0,0]]){
+    await page.evaluate(([z,x,y])=>{zoom=z;applyZoom();$('previewWrap').scrollLeft=x;$('previewWrap').scrollTop=y;},view);
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const bounds=await page.evaluate(()=>{const a=$('previewWrap').getBoundingClientRect(),s=$('canvasShell').getBoundingClientRect();return {left:Math.max(a.left,s.left),right:Math.min(a.right,s.right),top:Math.max(a.top,s.top),bottom:Math.min(a.bottom,s.bottom)};});
+    for(const selector of ['.tableMove','.tableOpen','.tableResize']){const b=await page.locator(selector).boundingBox();assert(b);assert(b.x>=bounds.left&&b.y>=bounds.top);assert(b.x+b.width<=bounds.right+1&&b.y+b.height<=bounds.bottom+1,`${selector}: ${JSON.stringify({b,bounds,view})}`);}
+  }
+  await page.evaluate(()=>{zoom=.74;applyZoom();});await page.screenshot({path:path.join(root,'test-results/tables-preview-tools.png')});
+});
+test('Preview sharpness is bounded debounced and rejects stale pages without composing',async page=>{
+  await setup(page,'Hola');await page.evaluate(()=>{zoom=.6;composition={snapshot:'sharp',page_count:2};previewRevision=revision;drawCurrent();});
+  const calls=()=>page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='pageHD'));
+  const deliver=async request=>{await page.evaluate(c=>{const canvas=document.createElement('canvas');canvas.width=675*c[5];canvas.height=1080*c[5];canvas.getContext('2d').fillRect(100,100,30,30);onPageResult(c[4],c[1],c[2],canvas.toDataURL(),null);},request);};
+  let first=(await calls()).at(-1);assert.equal(first[5],1);await deliver(first);await page.waitForFunction(()=>shownPreview?.resolution===1);
+  await page.evaluate(()=>{for(const z of [1.1,1.3,1.8,2.5]){zoom=z;applyZoom();}});
+  await page.waitForFunction(()=>bridgeCalls.filter(c=>c[0]==='pageHD').length===2);
+  const hd=(await calls()).at(-1);assert.equal(hd[5],2);await deliver(hd);await page.waitForFunction(()=>$('previewCanvas').width===1350);
+  assert.equal(await page.evaluate(()=>$('gridCanvas').width),1350);
+  await page.evaluate(()=>{zoom=.7;applyZoom();});await page.waitForTimeout(300);assert.equal((await calls()).length,2);
+  await page.evaluate(()=>{currentPage=1;drawCurrent();});const next=(await calls()).at(-1);await deliver(first);assert.equal(await page.evaluate(()=>shownPreview),null);
+  await deliver(next);await page.waitForFunction(()=>shownPreview?.index===1);
+  assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').length),0);
+});
+
 test('Touch table handles keep pointer capture and allow opening the editor',async page=>{
   await setup(page);await openTable(page);await fillCell(page,0,0,'Táctil');await page.click('#tableDone');
   const preview=()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);};
@@ -381,7 +451,7 @@ test('Touch table handles keep pointer capture and allow opening the editor',asy
       await context.route('https://hinote.local/images/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect x="10" y="10" width="620" height="460" fill="#21bca8"/><circle cx="320" cy="240" r="140" fill="#273c75"/></svg>'}));
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
-        requestPage:(...a)=>bridgeCalls.push(['page',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
+        requestPage:(...a)=>bridgeCalls.push(['page',...a]),requestPageHD:(...a)=>bridgeCalls.push(['pageHD',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
         requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
         getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder'])}; });
       const page = await context.newPage(); page.setDefaultTimeout(10000); const errors=[]; page.on('pageerror',error=>errors.push(error.message));

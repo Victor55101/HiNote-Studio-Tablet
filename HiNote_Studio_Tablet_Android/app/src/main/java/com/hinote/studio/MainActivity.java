@@ -206,18 +206,25 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void requestPage(String snapshot,int index,boolean grid,int id){
+            requestPageHD(snapshot,index,grid,id,1);
+        }
+        @JavascriptInterface public void requestPageHD(String snapshot,int index,boolean grid,int id,int resolution){
             if(destroyed||calibrating.get()||exporting.get())return;pageRevision.set(id);removeQueued(pageJob);
             TaskToken token=new TaskToken("page",id,new AtomicBoolean());
             pageJob=worker.submit(()->{
                 try{
                     token.check();ready();
                     JSONObject info=new JSONObject(backend.callAttr("snapshot_info",sessionDir.getPath(),snapshot).toString());
-                    File jpg=thumbnail(snapshot,index,grid,info,token);token.check();
+                    File jpg;
+                    try{jpg=thumbnail(snapshot,index,resolution>1?2:1,info,token);}
+                    catch(OutOfMemoryError lowMemory){token.check();jpg=thumbnail(snapshot,index,1,info,token);}
+                    token.check();
                     ByteArrayOutputStream bytes=new ByteArrayOutputStream();
                     try(InputStream in=new FileInputStream(jpg)){byte[] buffer=new byte[16384];int n;while((n=in.read(buffer))!=-1)bytes.write(buffer,0,n);}
                     String data="data:image/png;base64,"+Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP);
                     send("onPageResult",id+","+quote(snapshot)+","+index+","+quote(data)+",null");
-                }catch(Exception e){if(!token.isCancelled())send("onPageResult",id+","+quote(snapshot)+","+index+",null,"+quote(message(e)));}
+                }catch(OutOfMemoryError e){if(!token.isCancelled())send("onPageResult",id+","+quote(snapshot)+","+index+",null,"+quote("No hay memoria suficiente para mostrar esta página"));}
+                catch(Exception e){if(!token.isCancelled())send("onPageResult",id+","+quote(snapshot)+","+index+",null,"+quote(message(e)));}
             });
         }
         @JavascriptInterface public void requestSave(String snapshot,String title,boolean grid,String images,int pages){
@@ -248,13 +255,17 @@ public class MainActivity extends Activity {
         final String snapshot,title,images;final int pages;final Uri folder;final AtomicBoolean cancelled=new AtomicBoolean();
         ExportJob(String snapshot,String title,String images,int pages,Uri folder){this.snapshot=snapshot;this.folder=folder;this.images=images;this.pages=pages;String clean=title==null?"":title.trim();this.title=clean.isEmpty()?"Nueva nota":clean.substring(0,Math.min(128,clean.length()));}
     }
-    private File thumbnail(String snapshot,int index,boolean grid,JSONObject info,TaskToken token)throws Exception{
+    private File thumbnail(String snapshot,int index,int resolution,JSONObject info,TaskToken token)throws Exception{
         if(index<0||index>=info.getInt("page_count"))throw new IOException("Página fuera de rango");
-        File file=new File(new File(sessionDir,snapshot),"page-"+index+"-ink.png");
+        File directory=new File(sessionDir,snapshot);
+        File file=new File(directory,"page-"+index+(resolution>1?"-ink-hd.png":"-ink.png"));
         if(!file.isFile()){
             String json=backend.callAttr("page_preview",sessionDir.getPath(),snapshot,index).toString();
-            PageRenderer.render(json,file,false,info.getJSONObject("layout").getDouble("grid_step"),new JSONArray(),true,token::check);
+            PageRenderer.renderPreview(json,file,resolution,token::check);
         }
+        // Keep only the current high-resolution page on disk, not an HD notebook.
+        File[] cached=directory.listFiles();
+        if(cached!=null)for(File old:cached)if(old.getName().endsWith("-ink-hd.png")&&!old.equals(file))old.delete();
         return file;
     }
     @Override protected void onActivityResult(int code,int result,Intent data){

@@ -55,8 +55,8 @@ class TableTests(unittest.TestCase):
         t['mode']='compact';compact=self.compose(t)
         a=standard['pages'][0];b=compact['pages'][0]
         self.assertLessEqual(b['tables'][0]['height'],a['tables'][0]['height'])
-        self.assertTrue(all(p['scale']==.73 for p in a['placements']))
-        self.assertTrue(all(.5<=p['scale']<=.65 for p in b['placements']))
+        self.assertTrue(all(p['scale']==.60 for p in a['placements']))
+        self.assertTrue(all(.5<=p['scale']<=.60 for p in b['placements']))
         sa=[s for s in a['strokes'] if not s.get('shape')];sb=[s for s in b['strokes'] if not s.get('shape')]
         self.assertEqual([s['variant'] for s in sa],[s['variant'] for s in sb])
         self.assertEqual([[p['pressure'] for p in s['points']] for s in sa],[[p['pressure'] for p in s['points']] for s in sb])
@@ -70,6 +70,17 @@ class TableTests(unittest.TestCase):
         self.assertTrue(reds)
         self.assertAlmostEqual(native_width(reds[0]),.55)
         self.assertTrue(all(p['scale']==.55 for p in page['placements'][:4]))
+
+    def test_standard_sixty_percent_and_fixed_sizes_override_both_modes(self):
+        lib=load_library(ASSETS/'glyphs_v24.json')
+        for mode in ('standard','compact'):
+            for fixed in (0,.5,.6,.73):
+                with self.subTest(mode=mode,fixed=fixed):
+                    t=validate_table(table(1,'a\nb',widths=[5]));t['mode']=mode
+                    t['rows'][0]['cells'][0]['size']=fixed
+                    plan=plan_row(t,t['rows'][0],lib,0,123,15,0,_Warnings(),lambda:None)
+                    self.assertEqual(plan['cells'][0]['size'],fixed or .6)
+                    if fixed in (0,.5,.6):self.assertEqual(plan['height'],GRID)
 
     def test_whole_rows_move_and_header_repeats(self):
         t=table(9,'dato')

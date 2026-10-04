@@ -1,5 +1,18 @@
 # Comprobación en la tablet
 
+## V29: formato conjunto y nitidez
+
+1. Crea una tabla: Estándar debe usar 60 %. Escribe dos renglones breves en una fila de un cuadro y compara con el texto normal exterior al 100 %.
+2. Toca **Seleccionar celdas**, marca varias celdas separadas y cambia Alinear, Vertical y Tamaño de selección. Solo las marcadas deben cambiar y permanecer seleccionadas después de cada ajuste. Prueba también color/grosor, Seleccionar fila, Seleccionar columna, Toda la tabla y Mayús + clic con teclado. Terminar selección vuelve a escribir en una celda.
+3. Si marcas celdas con valores diferentes, debe aparecer Mixto. Elige Fijo · 60 %, cambia a otra celda y regresa; el selector nunca debe quedar vacío. Repite con 50 % y tras cerrar/reabrir el borrador. Los controles de ancho/alto actúan sobre la columna/fila activa indicada.
+4. Cambia Tamaño de tabla entre Estándar y Ajustar al espacio. Las celdas Según tabla lo siguen; las de tamaño fijo conservan su valor. Para homogeneizar una tabla anterior, usa Toda la tabla y Según tabla. Comprueba deshacer, cancelar y recuperar una edición pendiente.
+5. Coloca texto antes y después. Mover tabla arriba/abajo debe cambiar el orden respecto a esos bloques, sin borrar texto. Los botones se desactivan en los extremos.
+6. En la pestaña Tablas, prueba zoom pequeño/grande y desplázate vertical y horizontalmente. ↔, Editar tabla y ↘ deben permanecer completos dentro de la vista cuando la tabla sea visible; comprueba arrastre y edición con un dedo.
+7. Amplía una página: la tinta debe definirse mejor después de una pausa breve, sin regenerar todo el cuaderno. Cambia rápidamente de página y zoom: no deben aparecer páginas antiguas ni bloquearse el editor. Prueba con un cuaderno largo, imágenes y una calibración propia.
+8. Actualiza, guarda el .hinote y comprueba texto/tablas/miniaturas en Huawei Notes. La mayor resolución de vista no cambia los trazos ni el formato del fondo exportado.
+
+Antes de desinstalar por diferencia de firma, respalda .hnprofile, exporta notas y conserva texto: la desinstalación borra borrador, imágenes privadas y perfiles añadidos.
+
 ## V28: continuidad de renglones y texto después de una tabla
 
 1. Abre la tabla de V27 que mostraba el salto antes del tercer renglón y pulsa **Actualizar**. Debe mantener dos renglones por cuadro, sin el hueco adicional. Comprueba tanto texto ajustado automáticamente como saltos introducidos con Enter.

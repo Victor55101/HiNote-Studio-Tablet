@@ -119,28 +119,36 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div id="tableDialog" class="tableDialog hidden" role="dialog" aria-modal="true" aria-labelledby="tableTitle">
   <section class="tableCard">
     <div class="tableHeading"><div><h2 id="tableTitle">Editar tabla</h2><p>Tu escritura · Dos renglones por cuadro cuando la altura de los trazos lo permite</p></div><button class="btn" id="tableCancel">Cancelar</button></div>
+    <div class="tableToolArea">
     <div class="tableTools">
-      <label>Escritura <select id="tableMode"><option value="standard">Estándar · 73 %</option><option value="compact">Compacta · ajuste 65–50 %</option></select></label>
+      <label>Tamaño de tabla <select id="tableMode"><option value="standard">Estándar · 60 %</option><option value="compact">Ajustar al espacio · 60–50 %</option></select></label>
       <label>Izquierda <input id="tableLeft" type="number" min="0.5" max="15" step="0.5" value="1"> cuadros</label>
       <label>Espacio anterior <input id="tableGap" type="number" min="0" max="10" step="0.5" value="0"></label>
       <label>Borde <input id="tableBorder" type="number" min="1" max="10" value="2"><input id="tableBorderColor" type="color" value="#000000" aria-label="Color del borde"></label>
       <label><input id="tableRepeat" type="checkbox" checked> Repetir encabezado</label>
       <button class="btn" id="tableAddRow">＋ Fila</button><button class="btn" id="tableDelRow">− Fila</button><button class="btn" id="tableAddCol">＋ Columna</button><button class="btn" id="tableDelCol">− Columna</button>
     </div>
+    <div class="tableTools tableSelectionTools">
+      <button class="btn" id="tableSelectCells" aria-pressed="false">Seleccionar celdas</button>
+      <button class="btn" id="tableSelectRow">Seleccionar fila</button><button class="btn" id="tableSelectCol">Seleccionar columna</button><button class="btn" id="tableSelectAll">Toda la tabla</button>
+      <small id="tableSelectionHint">Toca una celda para escribir. Usa Seleccionar celdas para dar formato a varias.</small>
+    </div>
     <div class="tableTools">
       <strong id="tableCellLabel">Celda 1, 1</strong>
-      <label>Ancho columna <input id="tableColWidth" type="number" min="1" max="15.5" step="0.5"></label>
-      <label>Alto mínimo fila <input id="tableRowHeight" type="number" min="0.5" max="25" step="0.5"></label>
-      <label>Alinear <select id="tableAlign"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
-      <label>Vertical <select id="tableValign"><option value="top">Arriba</option><option value="middle">Centro</option><option value="bottom">Abajo</option></select></label>
-      <label>Letra de celda <select id="tableCellSize"><option value="0">Según tabla</option><option value="0.73">Estándar · 73 %</option><option value="0.65">Compacta · 65 %</option><option value="0.60">Compacta · 60 %</option><option value="0.55">Compacta · 55 %</option><option value="0.50">Compacta · 50 %</option></select></label>
+      <label>Columna activa · ancho <input id="tableColWidth" type="number" min="1" max="15.5" step="0.5"></label>
+      <label>Fila activa · alto mínimo <input id="tableRowHeight" type="number" min="0.5" max="25" step="0.5"></label>
+      <label>Alinear <select id="tableAlign"><option value="mixed" disabled>Mixto</option><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
+      <label>Vertical <select id="tableValign"><option value="mixed" disabled>Mixto</option><option value="top">Arriba</option><option value="middle">Centro</option><option value="bottom">Abajo</option></select></label>
+      <label>Tamaño de selección <select id="tableCellSize"><option value="mixed" disabled>Mixto</option><option value="0">Según tabla · 60 %</option><option value="0.73">Fijo · 73 %</option><option value="0.65">Fijo · 65 %</option><option value="0.6">Fijo · 60 %</option><option value="0.55">Fijo · 55 %</option><option value="0.5">Fijo · 50 %</option></select></label>
       <input id="tableInkColor" type="color" value="#000000" aria-label="Color del texto seleccionado">
       <label>Grosor <select id="tableInkWidth"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
-      <button class="btn" id="tableApplyInk">Aplicar al texto</button>
+      <button class="btn" id="tableApplyInk">Aplicar color y grosor</button>
+    </div>
+    <p id="tableSizeHint">El tamaño de tabla se usa en las celdas «Según tabla». Un tamaño fijo tiene prioridad. Para unificar, selecciona Toda la tabla y elige Según tabla.</p>
     </div>
     <p id="tableMessage" role="status"></p>
     <div id="tableGridWrap"><table id="tableGrid" aria-label="Celdas de la tabla"></table></div>
-    <div class="tableActions"><button class="btn" id="tableMoveUp">↑ Antes</button><button class="btn" id="tableMoveDown">↓ Después</button><button class="btn danger" id="tableRemove">Eliminar tabla</button><small>Filas indivisibles. Pega columnas separadas por tabulaciones. Arrastra ⋮ y ⋯ para ajustar por medios cuadros.</small><button class="btn primary" id="tableDone">Aplicar tabla</button></div>
+    <div class="tableActions"><button class="btn" id="tableMoveUp" title="Coloca la tabla antes del bloque de texto anterior">↑ Mover tabla arriba</button><button class="btn" id="tableMoveDown" title="Coloca la tabla después del siguiente bloque de texto">↓ Mover tabla abajo</button><button class="btn danger" id="tableRemove">Eliminar tabla</button><small>Las flechas cambian el orden de la tabla en el documento. Las filas pasan completas a la siguiente página.</small><button class="btn primary" id="tableDone">Aplicar tabla</button></div>
   </section>
 </div>
 <div id="cropDialog" class="cropDialog hidden" role="dialog" aria-modal="true" aria-labelledby="cropTitle">

@@ -21,8 +21,16 @@ final class PageRenderer {
     static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, Runnable check) throws Exception {
         render(json, destination, grid, gridStep, images, inkOnly, null, check);
     }
+    static void renderPreview(String json, File destination, int resolution, Runnable check) throws Exception {
+        render(json, destination, false, 0, new JSONArray(), true, null, resolution > 1 ? 2 : 1, check);
+    }
     private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, Runnable check) throws Exception {
-        Bitmap bitmap=Bitmap.createBitmap(675,1080,Bitmap.Config.ARGB_8888);
+        render(json, destination, grid, gridStep, images, inkOnly, paper, 1, check);
+    }
+    private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, int resolution, Runnable check) throws Exception {
+        check.run();
+        // At most 1350 x 2160 (11.2 MiB), one page at a time. Export size is unchanged.
+        Bitmap bitmap=Bitmap.createBitmap(675*resolution,1080*resolution,Bitmap.Config.ARGB_8888);
         File partial=new File(destination.getPath()+".part");
         try {
             Canvas canvas=new Canvas(bitmap); canvas.drawColor(inkOnly ? Color.TRANSPARENT : Color.WHITE);
@@ -36,7 +44,7 @@ final class PageRenderer {
                     canvas.drawBitmap(nativePaper,new Rect(40,88,88,104),new Rect(40,56,88,72),null);
                 }finally{nativePaper.recycle();}
             }
-            canvas.scale(.675f,.675f);
+            canvas.scale(.675f*resolution,.675f*resolution);
             Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
             if(grid && !inkOnly){
                 paint.setColor(Color.argb(46,115,160,180)); paint.setStrokeWidth(.6f);

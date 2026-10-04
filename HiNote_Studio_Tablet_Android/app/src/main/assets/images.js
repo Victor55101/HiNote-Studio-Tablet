@@ -6,6 +6,7 @@ const ImageEditor = (() => {
   const fullCrop = () => ({left:0,top:0,right:1,bottom:1});
   let images = [], minimumPages = 1, selectedId = null, active = false, busy = false, ticket = 0, pending = null;
   let gesture = null, pointers = new Map(), crop = null, cropStart = null, frame = null;
+  let gridKey='';
   const selected = () => images.find(im => im.id === selectedId && im.page === currentPage);
   const src = asset => `https://hinote.local/images/${asset}`;
   const newId = () => 'im_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,12);
@@ -43,10 +44,12 @@ const ImageEditor = (() => {
     if(im)position(box,im);
   }
   function renderGrid() {
-    const c=el('gridCanvas'), ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);
-    ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
+    const c=el('gridCanvas'),resolution=previewResolution(),step=(composition?.layout?.table_grid_step || composition?.layout?.grid_step || 58.8)*.675;
+    const key=`${resolution}:${step}:${el('gridCheck').checked}`;if(gridKey===key)return;gridKey=key;
+    c.width=675*resolution;c.height=1080*resolution;
+    const ctx=c.getContext('2d');ctx.setTransform(resolution,0,0,resolution,0,0);
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,675,1080);
     if(el('gridCheck').checked){
-      const step=(composition?.layout?.table_grid_step || composition?.layout?.grid_step || 58.8)*.675;
       ctx.strokeStyle='rgba(115,160,180,.18)';ctx.lineWidth=.405;ctx.beginPath();
       for(let x=0;x<=675;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,1080);}
       for(let y=0;y<=1080;y+=step){ctx.moveTo(0,y);ctx.lineTo(675,y);}

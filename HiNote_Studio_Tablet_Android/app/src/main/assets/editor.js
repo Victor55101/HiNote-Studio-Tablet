@@ -7,6 +7,8 @@ const listRegex = /^([ \t]*)(•|\*|-|\d+[.)]|[A-Za-z]+[.)])([ \t]+|$)(.*)$/;
 let savedSelection = null, ime = false, refreshTimer, draftTimer, historyTimer, toastTimer;
 let revision = 0, previewRevision = -1, pageRequest = 0;
 let composition = null, composing = false, exporting = false, currentPage = 0, zoom = 1;
+let qualityTimer, requestedPreview=null, shownPreview=null;
+const previewResolution=()=>Math.min(2,Math.max(1,Math.ceil(zoom*(window.devicePixelRatio||1))));
 let history = [], historyIndex = -1;
 let folderBusy = false, exportFolderState = {configured:false,label:''};
 let activeProfile = 'original';
@@ -355,7 +357,7 @@ window.onExportFolder=(raw,error)=>{
   controls();if(error)toast(error);
 };
 function changed() {
-  clearTimeout(refreshTimer); revision++; composing = false;
+  clearTimeout(refreshTimer); clearTimeout(qualityTimer); revision++; composing = false;
   if (window.AndroidBridge) AndroidBridge.invalidateCompose(revision);
   $('status').textContent = 'Vista pendiente…'; controls(); queueDraft();
   const n = characterCount();
@@ -387,6 +389,7 @@ window.onWorkProgress = (kind, id, page) => {
   if (kind === 'calibration') window.onCalibrationProgress(id,`Analizando página ${page}…`);
 };
 function drawCurrent() {
+  clearTimeout(qualityTimer);requestedPreview=null;shownPreview=null;
   ImageEditor.finishGesture(false);ImageEditor.render();
   TableEditor.render();
   $('pageBadge').textContent = `Página ${currentPage + 1}/${ImageEditor.count()}`;
@@ -396,15 +399,27 @@ function drawCurrent() {
   }
   if (previewRevision !== revision) {const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);return;}
   const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);
-  AndroidBridge.requestPage(composition.snapshot, currentPage, $('gridCheck').checked, ++pageRequest);
+  requestPreview();
 }
+function requestPreview(){
+  if(!window.AndroidBridge||!composition||currentPage>=composition.page_count||previewRevision!==revision||exporting||CalibrationUI.isBusy()||composing)return;
+  const snapshot=composition.snapshot,index=currentPage,resolution=previewResolution();
+  if([requestedPreview,shownPreview].some(p=>p?.snapshot===snapshot&&p.index===index&&p.resolution>=resolution))return;
+  requestedPreview={snapshot,index,resolution,id:++pageRequest};
+  try{
+    if(typeof AndroidBridge.requestPageHD==='function')AndroidBridge.requestPageHD(snapshot,index,$('gridCheck').checked,pageRequest,resolution);
+    else AndroidBridge.requestPage(snapshot,index,$('gridCheck').checked,pageRequest);
+  }catch(e){requestedPreview=null;$('status').textContent='Error de vista';toast(e.message);}
+}
+function schedulePreviewQuality(){clearTimeout(qualityTimer);qualityTimer=setTimeout(requestPreview,220);}
 window.onPageResult = (id, snapshot, index, data, error) => {
   const fresh = () => id === pageRequest && composition?.snapshot === snapshot && index === currentPage && previewRevision === revision;
   if (!fresh()) return;
-  if (error) { $('status').textContent = 'Error de vista'; toast(error); return; }
+  if (error) { requestedPreview=null;$('status').textContent = 'Error de vista'; toast(error); return; }
   const img = new Image();
-  img.onload = () => { if (!fresh()) return; const canvas = $('previewCanvas'); canvas.width = img.width; canvas.height = img.height; canvas.getContext('2d').drawImage(img, 0, 0); applyZoom(); ImageEditor.render(); $('status').textContent = 'Listo'; };
-  img.onerror = () => { if (fresh()) $('status').textContent = 'No se pudo abrir la vista'; }; img.src = data;
+  const release=()=>{img.onload=null;img.onerror=null;img.src='';};
+  img.onload = () => { if (!fresh()){release();return;} const canvas = $('previewCanvas'); canvas.width = img.width; canvas.height = img.height; canvas.getContext('2d').drawImage(img, 0, 0);shownPreview=requestedPreview;requestedPreview=null;release(); applyZoom(); $('status').textContent = 'Listo'; };
+  img.onerror = () => { if (fresh()){requestedPreview=null;$('status').textContent = 'No se pudo abrir la vista';}release(); }; img.src = data;
 };
 function applyZoom() {
   const canvas = $('previewCanvas'), shell = $('canvasShell'); canvas.style.display = 'block';
@@ -412,6 +427,7 @@ function applyZoom() {
   shell.style.width = `${675 * zoom}px`; shell.style.height = `${1080 * zoom}px`; shell.style.flexShrink = '0'; $('zoomLabel').textContent = `${Math.round(zoom * 100)}%`;
   ImageEditor.render();
   TableEditor.render();
+  schedulePreviewQuality();
 }
 function exportNote() {
   if (exporting || CalibrationUI.isBusy() || folderBusy || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
