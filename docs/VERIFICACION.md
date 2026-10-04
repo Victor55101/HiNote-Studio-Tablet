@@ -8,7 +8,15 @@ La selección de celdas admite toques, fila, columna, tabla completa y rango con
 
 Los botones de la tabla se posicionan dentro de la intersección entre página y ventana de previsualización, también al desplazarla. La vista solicita resolución 1× o 2× con 220 ms de pausa tras el zoom, descarta resultados obsoletos y conserva la página ya dibujada al aumentar calidad. Máximo 1350 × 2160, 11,2 MiB por bitmap de tinta; esto no es la memoria total de Android/WebView. El renderizado nativo sigue en el trabajador único, admite cancelación y vuelve a 1× si falta memoria. Solo se conserva un archivo de tinta HD por instantánea. La cuadrícula se redibuja únicamente al cambiar su estado o resolución. Las miniaturas de exportación siguen a 675 × 1080.
 
-Verificación en curso; pendiente registrar ejecución final, APK e inspección del editor. La prueba física se detalla en `PRUEBA_TABLET.md`.
+La ejecución final [37167138418](https://github.com/Victor55101/HiNote-Studio-Tablet/actions/runs/37167138418), fuente `24c0d34ef410510b1cb901ee2ddbfb306acb6f8a`, aprobó **54 pruebas Python, 44 Chromium/Playwright y 21 Android/Robolectric: 119 en total**, y compiló el APK. Se comprobó selección táctil de celdas separadas, fila/columna/tabla/rango, formatos mixtos, valores 60/50 % visibles tras reabrir, precedencia de tamaño fijo, guardado, deshacer, orden del documento, controles dentro de la vista con zoom/desplazamiento, solicitudes de calidad acotadas y descarte de páginas obsoletas. Inspeccionadas las capturas del editor, selección múltiple y controles de vista. El puente Android está simulado en las pruebas web.
+
+Las pruebas de gráficos Android comprueban transparencia, centro y cobertura del trazo a 1×/2×, límite de memoria por bitmap y limpieza al cancelar. La cobertura admite un cuarto de píxel base de cuantización del antialiasing; no exige que un píxel aislado sea opaco. Se mantienen las pruebas del papel exportado y grosor.
+
+APK `HiNote-Studio-Tablet-V29.apk`: paquete `com.hinote.studio`, versión `2.9-tablet`/código 29, arm64-v8a, **22125555 bytes**. SHA-256: `efa138c3f68dcc6d12c60cf99dc3712ccce73a19b11ba86c4eae450d37ab48e4`. Verificados ZIP, manifiesto, coincidencia de los diez recursos del editor/banco, los diez módulos Python y el puente compilado `requestPageHD`. No incluye perfiles personales ni bancos antiguos.
+
+La firma de depuración V29 (`396552cc…dd95d79`) es distinta de la V28 entregada (`921179a3…a2c6430`). Antes de desinstalar, respaldar calibraciones .hnprofile, exportar las notas y conservar el texto: desinstalar borra borrador, imágenes privadas y perfiles añadidos. Todavía no hay una clave estable de firma configurada.
+
+El usuario mostró su tabla V28 importada en Huawei Notes. La apariencia y el rendimiento de V29 aún deben comprobarse físicamente en la MatePad; la resolución está acotada, pero las pruebas no representan la memoria total de Android/WebView. Procedimiento en `PRUEBA_TABLET.md`.
 
 ## Histórico: V28
 
