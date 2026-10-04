@@ -13,7 +13,8 @@ ASSETS=APP/'assets'
 sys.path.insert(0,str(APP/'python'))
 import mobile_backend as backend
 from handwriting_composer import compose_document,load_library,_Warnings
-from math_graph_composer import validate_object,plan_object,smooth_points
+from math_graph_composer import validate_object,plan_object,smooth_points,Ink,graph_geometry
+from pencilengine_width import native_width
 from table_composer import GRID,HALF
 from pencilengine_reader import validate_pencilengine,read_pencilengine
 from pencilengine_writer import write_pencilengine
@@ -143,5 +144,91 @@ class MathGraphTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaises(InterruptedError):backend.compose(str(ASSETS),td,json.dumps({'paragraphs':[{'type':'graph','object':graph()}]}),'{}',Token())
             self.assertFalse(list(Path(td).iterdir()))
+
+    def painter(self):
+        return Ink(load_library(ASSETS/'glyphs_v24.json'),123,_Warnings(),lambda:None)
+
+    def test_caret_fields_have_no_spacing_and_absolute_value_is_centered(self):
+        plain=self.painter().expression(row('12'),1,'#000000',2)
+        with_carets=self.painter().expression(row('','12','',''),1,'#000000',2)
+        self.assertAlmostEqual(plain.width,with_carets.width)
+        self.assertEqual([(p['x'],p['baseline_y']) for p in plain.placements],
+                         [(p['x'],p['baseline_y']) for p in with_carets.placements])
+        group=self.painter().expression({'type':'group','bracket':'|','body':row('','12','')},1,'#000000',2)
+        glyphs=[p for s in group.strokes if s.get('char') for p in s['points']]
+        bars=[s for s in group.strokes if s.get('native_segment')]
+        self.assertEqual(len(bars),2)
+        left,right=(s['points'][0]['x'] for s in bars)
+        self.assertAlmostEqual(min(p['x'] for p in glyphs)-left,right-max(p['x'] for p in glyphs))
+        self.assertFalse(self.painter().expression({'type':'fraction','num':row(),'den':row()},1,'#000000',2).strokes)
+
+    def test_indices_are_small_and_close_to_the_base(self):
+        expr={'type':'scripts','base':row('Q'),'sup':row('2'),'sub':row('1')}
+        box=self.painter().expression(expr,1,'#000000',2)
+        self.assertEqual([p['scale'] for p in box.placements],[1,.48,.48])
+        def bounds(char):
+            ys=[p['y'] for s in box.strokes if s.get('char')==char for p in s['points']]
+            return min(ys),max(ys)
+        top,bottom=bounds('Q');height=bottom-top
+        sup_top,sup_bottom=bounds('2');sub_top,sub_bottom=bounds('1')
+        self.assertLess(sup_bottom-sup_top,height*.65)
+        self.assertGreaterEqual(sup_bottom,top+height*.3)
+        self.assertLessEqual(sup_bottom,top+height*.5)
+        self.assertLessEqual(sub_top,bottom)
+        self.assertGreaterEqual(sub_top,top+height*.65)
+
+    def test_axes_ticks_and_primary_fraction_bar_follow_the_sheet_grid(self):
+        for options in ({},{'xmin':-5,'xmax':5,'ymin':-5,'ymax':5}):
+            g=graph(**options);geo=graph_geometry(g)
+            for value in (geo['ax'],geo['ay']):
+                self.assertAlmostEqual(value/HALF,round(value/HALF))
+            for v in (0,2,4):
+                x,y=geo['xy'](v,v)
+                self.assertAlmostEqual(x/HALF,round(x/HALF))
+                self.assertAlmostEqual(y/HALF,round(y/HALF))
+        f={'type':'fraction','num':row('Q2−Q1'),'den':row('2')}
+        page=self.compose([formula(row('x=',f))])['pages'][0]
+        bar=next(s for s in page['strokes'] if s.get('native_segment'))
+        self.assertAlmostEqual(bar['points'][0]['y']/HALF,round(bar['points'][0]['y']/HALF))
+
+    def test_graph_styles_export_and_shared_guides_are_not_overdrawn(self):
+        trace={'type':'line','color':'#245BCE','pointColor':'#E53935','guideColor':'#11977B','labelColor':'#8B36AD',
+               'width':3,'guideWidth':1.5,'pointSize':3,'markers':True,'guides':True,
+               'points':[{'x':2,'y':8,'label':'A'},{'x':5,'y':8,'label':'B'},{'x':7,'y':2,'label':'C'}]}
+        box=plan_object(graph(series=[trace]),load_library(ASSETS/'glyphs_v24.json'),123,_Warnings(),lambda:None)
+        for ink in ('#245BCE','#E53935','#11977B','#8B36AD'):
+            self.assertTrue(any(s['color']==ink for s in box.strokes))
+        paths=[s for s in box.strokes if s['color']=='#245BCE']
+        self.assertEqual(len(paths),1);self.assertEqual(len(paths[0]['points']),3)
+        guides=[s for s in box.strokes if s['color']=='#11977B']
+        coords=[tuple((round(p['x'],7),round(p['y'],7)) for p in s['points']) for s in guides]
+        self.assertEqual(len(coords),len(set(coords)))
+        self.assertTrue(all(abs(native_width(s)-.5)<1e-7 for s in guides))
+        axes=[s for s in box.strokes if s['color']=='#000000' and not s.get('char') and not s.get('native_segment')]
+        self.assertEqual(len(axes),4)
+        self.assertTrue(all(abs(native_width(s)-2/3)<1e-6 for s in axes))
+
+    def test_invalid_graph_style_is_rejected(self):
+        for patch in ({'pointColor':'red'},{'guideWidth':0},{'pointSize':20},{'width':float('nan')}):
+            g=graph();g['series'][0].update(patch)
+            with self.subTest(patch=patch),self.assertRaises(ValueError):validate_object(g)
+
+    def test_matrix_row_baselines_are_separated_by_half_squares(self):
+        matrix={'type':'matrix','bracket':'[','cells':[[row('1'),row('2')],[row('1'),row('4')],[row('1'),row('6')]]}
+        box=plan_object(formula(row('A=',matrix)),load_library(ASSETS/'glyphs_v24.json'),123,_Warnings(),lambda:None)
+        ys=[p['baseline_y'] for p in box.placements if p['char']=='1']
+        self.assertEqual(len(ys),3)
+        for a,b in zip(ys,ys[1:]):self.assertAlmostEqual((b-a)/HALF,round((b-a)/HALF))
+
+    def test_dashed_curves_keep_gaps_across_short_interpolation_segments(self):
+        g=graph();g['series'][0].update(dashed=True,guides=False,markers=False)
+        box=plan_object(g,load_library(ASSETS/'glyphs_v24.json'),123,_Warnings(),lambda:None)
+        paths=[s for s in box.strokes if s['color']=='#245BCE' and not s.get('char')]
+        self.assertGreater(len(paths),5)
+        lengths=[sum(math.dist((a['x'],a['y']),(b['x'],b['y'])) for a,b in zip(s['points'],s['points'][1:])) for s in paths]
+        self.assertTrue(all(length<=5.000001 for length in lengths))
+        for a,b in zip(paths,paths[1:]):
+            end,start=a['points'][-1],b['points'][0]
+            self.assertGreater(math.dist((end['x'],end['y']),(start['x'],start['y'])),4.8)
 
 if __name__=='__main__':unittest.main()

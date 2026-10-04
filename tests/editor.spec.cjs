@@ -448,6 +448,7 @@ test('Touch table handles keep pointer capture and allow opening the editor',asy
   assert.equal(await page.locator('.cellEditor[data-row="0"][data-col="0"]').innerText(),'Táctil');
 });
 
+async function graphPaste(page,value){await page.locator('#graphBulk').evaluate(n=>n.open=true);await page.fill('#graphPoints',value);}
 async function openMath(page,kind='formula'){await page.click('[data-tab="math"]');await page.click(kind==='formula'?'#insertFormula':'#insertGraph');await page.waitForSelector('#mathDialog:not(.hidden)');}
 
 test('Formula templates nest at the cursor and preserve surrounding normal text',async page=>{
@@ -489,22 +490,22 @@ test('Matrix slots keep row and column structure and per-field color',async page
 });
 test('Graph traces colors guides coordinates and signed axes survive reload',async page=>{
   await setup(page);await openMath(page,'graph');await page.fill('#graph_title','Oferta y demanda');await page.fill('#graph_xlabel','Q');await page.fill('#graph_ylabel','P');
-  await page.fill('#graphPoints','1; 9; A\n4; 5; B\n9; 2; C');await page.selectOption('#graphType','curve');await page.check('#graph_guides');
-  await page.click('#graphAddTrace');await page.fill('#graphPoints','2; 1; D\n8; 9; O');await page.selectOption('#graphType','line');
+  await graphPaste(page,'1; 9; A\n4; 5; B\n9; 2; C');await page.selectOption('#graphType','curve');await page.check('#graph_guides');
+  await page.click('#graphAddTrace');await graphPaste(page,'2; 1; D\n8; 9; O');await page.selectOption('#graphType','line');
   await page.screenshot({path:path.join(root,'test-results','graph-editor.png')});await page.click('#mathDone');
   const graph=await page.evaluate(()=>serializeDocument().paragraphs[0].object);assert.equal(graph.kind,'graph');assert.equal(graph.series.length,2);assert.equal(graph.series[0].type,'curve');assert.equal(graph.series[0].guides,true);assert.equal(graph.series[1].points[1].label,'O');
   await page.evaluate(()=>saveDraft());await page.reload();assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object),graph);
   await page.click('.objectBlock button');await page.fill('#graph_xmin','-5');await page.fill('#graph_xmax','10');await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.xmin),-5);
 });
 test('Dragging graph points uses coordinates and unfinished point input is recovered',async page=>{
-  await setup(page);await openMath(page,'graph');await page.fill('#graphPoints','2; 8; A');await page.locator('#graphPoints').blur();
+  await setup(page);await openMath(page,'graph');await graphPaste(page,'2; 8; A');await page.locator('#graphPoints').blur();
   await page.locator('.graphPoint').scrollIntoViewIfNeeded();
   const point=await page.locator('.graphPoint').boundingBox();await page.mouse.move(point.x+point.width/2,point.y+point.height/2);await page.mouse.down();await page.mouse.move(point.x+50,point.y+35,{steps:5});await page.mouse.up();
-  assert.notEqual(await page.inputValue('#graphPoints'),'2; 8; A');await page.fill('#graphPoints','3; 7; Pendiente');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#mathDialog:not(.hidden)');assert.equal(await page.inputValue('#graphPoints'),'3; 7; Pendiente');
+  assert.notEqual(await page.inputValue('#graphPoints'),'2; 8; A');await graphPaste(page,'3; 7; Pendiente');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#mathDialog:not(.hidden)');assert.equal(await page.inputValue('#graphPoints'),'3; 7; Pendiente');
   await page.click('#mathDone');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points[0]),{x:3,y:7,label:'Pendiente'});
 });
 test('Invalid mathematical geometry is explained and does not replace a saved object',async page=>{
-  await setup(page);await openMath(page,'graph');await page.click('#mathDone');await page.click('.objectBlock button');await page.fill('#graphPoints','20; 4');await page.click('#mathDone');
+  await setup(page);await openMath(page,'graph');await page.click('#mathDone');await page.click('.objectBlock button');await graphPaste(page,'20; 4');await page.click('#mathDone');
   assert.equal(await page.locator('#mathDialog:not(.hidden)').count(),1);assert.match(await page.textContent('#mathMessage'),/límites/);
   await page.click('#mathCancel');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points),[]);
 });
@@ -520,6 +521,84 @@ test('Math preview handles stay visible while zooming and moving blocks',async p
   assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.gap),1);
   await page.evaluate(()=>{previewRevision=revision;zoom=1.2;applyZoom();});await page.locator('#previewWrap').evaluate(n=>n.scrollTop=300);await page.waitForTimeout(50);
   const wrap=await page.locator('#previewWrap').boundingBox();for(const name of ['.objectQuickActions','.objectResize']){const box=await page.locator(name).boundingBox();assert.ok(box.x>=wrap.x-1&&box.x+box.width<=wrap.x+wrap.width+1);assert.ok(box.y>=wrap.y-1&&box.y+box.height<=wrap.y+wrap.height+1);}
+});
+test('Formula molds are removable without leftover fields and undo restores their data',async page=>{
+  await setup(page);await openMath(page);
+  const groups={basic:['fraction','root','cubeRoot','nthRoot','scripts','square','subscript','group','absolute'],matrix:['matrix','determinant','brackets'],calculus:['derivative','partial','sum','product','integral','limit'],functions:['sin','log']};
+  for(const [category,templates] of Object.entries(groups)){
+    await page.click('[data-category="'+category+'"]');
+    for(const template of templates){
+      await page.click('[data-template="'+template+'"]');
+      assert.ok(await page.locator('.mathTemplate').count()>0,template);
+      await page.click('#mathDeleteTemplate');
+      assert.equal(await page.locator('.mathTemplate').count(),0,template+' left a mold');
+      assert.equal(await page.locator('.mathSlot').count(),1,template+' left duplicate caret fields');
+    }
+  }
+  await page.click('[data-category="basic"]');await page.locator('.mathSlot').fill('a+b');await page.locator('.mathSlot').selectText();
+  await page.click('[data-template="fraction"]');await page.getByLabel('Denominador',{exact:true}).fill('c');await page.click('#mathDeleteTemplate');
+  assert.equal(await page.locator('.mathFraction').count(),0);await page.click('#mathUndo');
+  assert.equal(await page.getByLabel('Numerador',{exact:true}).inputValue(),'a+b');assert.equal(await page.getByLabel('Denominador',{exact:true}).inputValue(),'c');
+});
+test('Formula backspace removes empty nested shells with touch keyboard input and no ghost bars',async page=>{
+  await setup(page);await openMath(page);await page.click('[data-template="fraction"]');await page.click('[data-template="root"]');
+  await page.getByLabel('Interior de raíz',{exact:true}).evaluate(n=>n.dispatchEvent(new InputEvent('beforeinput',{inputType:'deleteContentBackward',bubbles:true,cancelable:true})));
+  assert.equal(await page.locator('.mathRoot').count(),0);assert.equal(await page.locator('.mathFraction').count(),1);
+  await page.click('#mathBackspace');assert.equal(await page.locator('.mathTemplate').count(),0);
+  await page.click('[data-template="absolute"]');await page.getByLabel('Interior de grupo',{exact:true}).fill('12');await page.click('#mathDone');
+  const nodes=await page.evaluate(()=>serializeDocument().paragraphs[0].object.expression.items.filter(n=>n.type!=='text'));
+  assert.equal(nodes.length,1);assert.equal(nodes[0].type,'group');
+});
+test('Formula power and subscript share the preceding base and deleting an index preserves the base',async page=>{
+  await setup(page);await openMath(page);await page.locator('.mathSlot').fill('Q');await page.click('[data-template="subscript"]');
+  assert.equal(await page.getByLabel('Base',{exact:true}).inputValue(),'Q');assert.equal(await page.getByLabel('Exponente',{exact:true}).count(),0);
+  await page.getByLabel('Subíndice',{exact:true}).fill('1');await page.getByLabel('Base',{exact:true}).click();await page.click('[data-template="scripts"]');
+  await page.getByLabel('Exponente',{exact:true}).fill('2');
+  const sizes=await page.evaluate(()=>({base:parseFloat(getComputedStyle(document.querySelector('[aria-label="Base"]')).fontSize),sup:parseFloat(getComputedStyle(document.querySelector('[aria-label="Exponente"]')).fontSize)}));
+  assert.ok(sizes.sup<sizes.base*.55);
+  await page.click('#mathDone');const script=await page.evaluate(()=>serializeDocument().paragraphs[0].object.expression.items.find(n=>n.type==='scripts'));
+  assert.equal(script.base.items[0].text,'Q');assert.equal(script.sub.items[0].text,'1');assert.equal(script.sup.items[0].text,'2');
+  await page.click('.objectBlock button');const power=page.getByLabel('Exponente',{exact:true});await power.selectText();await page.keyboard.press('Backspace');
+  await page.getByLabel('Subíndice',{exact:true}).selectText();await page.keyboard.press('Backspace');
+  assert.equal(await page.locator('.mathScripts').count(),0);assert.equal(await page.locator('.mathSlot').inputValue(),'Q');
+});
+test('Formula incomplete fractions stay editable and cannot export a residual blank denominator',async page=>{
+  await setup(page);await openMath(page);await page.click('[data-template="fraction"]');await page.getByLabel('Numerador',{exact:true}).fill('a');
+  await page.click('#mathDone');assert.equal(await page.locator('#mathDialog:not(.hidden)').count(),1);assert.match(await page.textContent('#mathMessage'),/Completa/);
+  assert.equal(await page.getByLabel('Denominador',{exact:true}).evaluate(n=>n===document.activeElement),true);
+  await page.click('#mathDeleteTemplate');await page.locator('.mathSlot').fill('a');await page.click('#mathDone');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.expression.items[0].text),'a');
+});
+test('Graph point fields add labels without punctuation and deleting one point is undoable',async page=>{
+  await setup(page);await openMath(page,'graph');
+  for(const p of [[2,8,'A'],[5,5,'B'],[8,2,'C']]){
+    await page.fill('#graphPointX',String(p[0]));await page.fill('#graphPointY',String(p[1]));await page.fill('#graphPointLabel',p[2]);await page.click('#graphSavePoint');await page.click('#graphNewPoint');
+  }
+  await page.getByRole('button',{name:'Editar punto 2',exact:true}).click();await page.fill('#graphPointLabel','Medio');await page.click('#graphDeletePoint');
+  assert.equal(await page.locator('.graphPoint').count(),2);await page.click('#graphUndo');assert.equal(await page.locator('.graphPoint').count(),3);
+  await page.getByRole('button',{name:'Eliminar punto 2',exact:true}).click();await page.click('#mathDone');
+  assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points),[{x:2,y:8,label:'A'},{x:8,y:2,label:'C'}]);
+});
+test('Graph colors are independent and the plotted scale uses physical half squares',async page=>{
+  await setup(page);await openMath(page,'graph');await graphPaste(page,'2; 8; A\n6; 2; B');await page.check('#graph_guides');
+  for(const [id,color] of [['graphColor','#245bce'],['graph_pointColor','#e53935'],['graph_guideColor','#11977b'],['graph_labelColor','#8b36ad']])await page.locator('#'+id).evaluate((n,color)=>{n.value=color;n.dispatchEvent(new Event('change',{bubbles:true}));},color);
+  const circle=await page.locator('.graphPoint').first().evaluate(n=>({x:+n.getAttribute('cx'),y:+n.getAttribute('cy'),color:getComputedStyle(n).fill}));
+  assert.equal(circle.x%20,0);assert.equal(circle.y%20,0);assert.equal(circle.color,'rgb(229, 57, 53)');
+  await page.click('#mathDone');const trace=await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0]);
+  assert.equal(trace.color,'#245bce');assert.equal(trace.pointColor,'#e53935');assert.equal(trace.guideColor,'#11977b');assert.equal(trace.labelColor,'#8b36ad');
+  await page.evaluate(()=>saveDraft());await page.reload();assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0]),trace);
+});
+test('Graph tapping an existing point selects it without snapping or adding another point',async page=>{
+  await setup(page);await openMath(page,'graph');await graphPaste(page,'1.3; 2.7; A\n8; 8; B');await page.locator('#graphPoints').blur();await page.check('#graphTapAdd');
+  const hit=page.locator('.graphHit').first();await hit.scrollIntoViewIfNeeded();const b=await hit.boundingBox();await page.touchscreen.tap(b.x+b.width/2,b.y+b.height/2);
+  assert.equal(await page.inputValue('#graphPointX'),'1.3');assert.equal(await page.inputValue('#graphPointY'),'2.7');assert.equal(await page.locator('.graphPoint').count(),2);
+  await page.click('#graphDeletePoint');await page.click('#mathDone');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points),[{x:8,y:8,label:'B'}]);
+});
+test('Graph new point draft fields survive reload before being added',async page=>{
+  await setup(page);await openMath(page,'graph');await page.fill('#graphPointX','3.5');await page.fill('#graphPointY','7');await page.fill('#graphPointLabel','Pendiente');
+  await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#mathDialog:not(.hidden)');
+  assert.equal(await page.inputValue('#graphPointX'),'3.5');assert.equal(await page.inputValue('#graphPointLabel'),'Pendiente');
+  await page.click('#graphSavePoint');await page.click('#mathDone');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points),[{x:3.5,y:7,label:'Pendiente'}]);
 });
 test('Notebook combination selects native pages and sends their explicit reviewed order',async page=>{
   await setup(page,'Apunte intacto');await page.click('[data-tab="save"]');await page.click('#mergeNotebooks');await page.click('#notebookImport');

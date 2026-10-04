@@ -90,6 +90,10 @@ def validate_object(obj, kind=None):
         if not isinstance(series, list) or len(series) > 8: raise ValueError("Cada gráfica admite hasta 8 trazos")
         for trace in series:
             color(trace.get("color", obj["color"]))
+            for key in ("pointColor", "guideColor", "labelColor"):
+                if key in trace: color(trace[key])
+            for key, default, high in (("width", obj["thickness"], 10), ("guideWidth", 1, 4), ("pointSize", 2.5, 6)):
+                if key in trace: trace[key] = number(trace[key], .5, high)
             if trace.get("type") not in ("points", "line", "curve"):
                 raise ValueError("Tipo de trazo inválido")
             points = trace.get("points")
@@ -129,7 +133,12 @@ class Box:
         self.strokes, self.placements = [], []
 
     def put(self, other, x=0, y=0):
-        self.top, self.bottom = min(self.top, y + other.top), max(self.bottom, y + other.bottom)
+        # Empty caret fields have no ink bounds; they must not move a baseline.
+        if other.strokes:
+            if not self.strokes and self.top == self.bottom == 0:
+                self.top, self.bottom = y + other.top, y + other.bottom
+            else:
+                self.top, self.bottom = min(self.top, y + other.top), max(self.bottom, y + other.bottom)
         for source in other.strokes:
             s = {**source, "points": [{**p, "x": p["x"] + x, "y": p["y"] + y} for p in source["points"]]}
             self.strokes.append(s)
@@ -155,9 +164,12 @@ class Ink:
             stroke.update(color=color, opacity=100, thickness=0, width_scale=1,
                           points=[{"x": x, "y": y, "t": 0, "pressure": .88, "extra1": 0., "extra2": 0.,
                                    "extra3": .2, "state": 4, "index": float(i)} for i, (x, y) in enumerate(coords)])
+        top, bottom = min(y for _, y in coords), max(y for _, y in coords)
+        if not box.strokes and box.top == box.bottom == 0:
+            box.top, box.bottom = top, bottom
+        else:
+            box.top, box.bottom = min(box.top, top), max(box.bottom, bottom)
         box.strokes.append(stroke)
-        box.top = min(box.top, min(y for _, y in coords))
-        box.bottom = max(box.bottom, max(y for _, y in coords))
 
     def sign(self, ch, size, ink, thickness):
         # Normalized paths are a fallback only; calibrated mathematical signs win.
@@ -248,24 +260,32 @@ class Ink:
         if typ == "row":
             out = Box()
             for child in node["items"]:
-                b = self.expression(child, size, ink, thickness); out.put(b, out.width); out.width += b.width + 3 * size
-            out.width = max(0, out.width - 3 * size); return out
+                b = self.expression(child, size, ink, thickness)
+                if not b.width: continue
+                if out.width: out.width += 3 * size
+                out.put(b, out.width); out.width += b.width
+                if hasattr(b, 'grid_anchor') and not hasattr(out, 'grid_anchor'): out.grid_anchor=b.grid_anchor
+            return out
         if typ == "fraction":
             a = self.expression(node["num"], size*.9, ink, thickness); b = self.expression(node["den"], size*.9, ink, thickness)
+            if not a.strokes and not b.strokes: return Box()
             out = Box(max(a.width,b.width)+2*gap)
             y = -em*.35
             out.put(a,(out.width-a.width)/2,y-gap-a.bottom)
             out.put(b,(out.width-b.width)/2,y+gap-b.top)
-            self.path(out,[(0,y),(out.width,y)],ink,thickness*size,straight=True); return out
+            self.path(out,[(0,y),(out.width,y)],ink,thickness*size,straight=True);out.grid_anchor=y;return out
         if typ == "scripts":
             base = self.expression(node["base"], size, ink, thickness)
-            sup = self.expression(node["sup"], size*.62, ink, thickness); sub = self.expression(node["sub"], size*.62, ink, thickness)
-            out = Box(base.width+max(sup.width,sub.width)+(gap if sup.width or sub.width else 0)); out.put(base)
-            if sup.width: out.put(sup,base.width+gap,min(base.top+em*.25,-em*.65)-sup.bottom)
-            if sub.width: out.put(sub,base.width+gap,max(base.bottom-em*.15,em*.12)-sub.top)
+            sup = self.expression(node["sup"], size*.48, ink, thickness); sub = self.expression(node["sub"], size*.48, ink, thickness)
+            side_gap = 2.5 * size
+            out = Box(base.width+max(sup.width,sub.width)+(side_gap if sup.width or sub.width else 0)); out.put(base)
+            height = max(base.bottom-base.top, em*.6)
+            if sup.width: out.put(sup,base.width+side_gap,base.top+height*.4-sup.bottom)
+            if sub.width: out.put(sub,base.width+side_gap,max(base.top+height*.7,base.bottom-em*.25)-sub.top)
             return out
         if typ == "root":
             body = self.expression(node["body"],size,ink,thickness); idx=self.expression(node["index"],size*.5,ink,thickness)
+            if not body.strokes and not idx.strokes: return Box()
             offset=max(18*size,idx.width+9*size); out=Box(offset+body.width+gap)
             out.put(body,offset); top=min(body.top,-em*.65)-gap; bottom=max(body.bottom,0)
             self.path(out,[(offset-18*size,-em*.25),(offset-13*size,-em*.35),(offset-8*size,bottom),
@@ -273,21 +293,28 @@ class Ink:
             if idx.width: out.put(idx,0,top+em*.2-idx.bottom)
             return out
         if typ == "group":
-            body=self.expression(node["body"],size,ink,thickness);out=Box(body.width+26*size)
-            out.put(body,13*size);top=min(body.top,-em*.7)-3*size;bottom=max(body.bottom,0)+3*size
-            for x,opening in ((0,True),(out.width-9*size,False)):self.bracket(out,x,top,bottom,opening,node.get("bracket","("),ink,thickness,size)
+            body=self.expression(node["body"],size,ink,thickness)
+            if not body.strokes: return Box()
+            bracket=node.get("bracket","(");bw=0 if bracket=="|" else 9*size;pad=8*size if bracket=="|" else 4*size
+            out=Box(body.width+2*(bw+pad));out.put(body,bw+pad)
+            if hasattr(body,'grid_anchor'):out.grid_anchor=body.grid_anchor
+            top=min(body.top,-em*.7)-3*size;bottom=max(body.bottom,0)+3*size
+            for x,opening in ((0,True),(out.width-bw,False)):self.bracket(out,x,top,bottom,opening,bracket,ink,thickness,size)
             return out
         if typ == "matrix":
             cells=[[self.expression(c,size*.85,ink,thickness) for c in row] for row in node["cells"]]
             widths=[max(row[c].width for row in cells) for c in range(len(cells[0]))]
-            heights=[max(b.bottom for b in row)-min(b.top for b in row) for row in cells]
-            h=sum(heights)+gap*(len(cells)-1);out=Box(sum(widths)+18*size*(len(widths)-1)+26*size)
-            top=-h/2-em*.3;y=top
-            for row,height in zip(cells,heights):
-                baseline=y-min(b.top for b in row);x=13*size
+            tops=[min(b.top for b in row) for row in cells];bottoms=[max(b.bottom for b in row) for row in cells]
+            baselines=[0]
+            for i in range(1,len(cells)):baselines.append(baselines[-1]+math.ceil((bottoms[i-1]-tops[i]+gap)/HALF)*HALF)
+            heights=[bottom-top for top,bottom in zip(tops,bottoms)]
+            bracket=node.get("bracket","[");bw=0 if bracket=="|" else 9*size;pad=8*size if bracket=="|" else 4*size
+            h=baselines[-1]+bottoms[-1]-tops[0];out=Box(sum(widths)+18*size*(len(widths)-1)+2*(bw+pad))
+            top=-h/2-em*.3;shift=top-tops[0];out.grid_anchor=shift
+            for row,baseline in zip(cells,baselines):
+                baseline+=shift;x=bw+pad
                 for b,w in zip(row,widths):out.put(b,x+(w-b.width)/2,baseline);x+=w+18*size
-                y+=height+gap
-            for x,opening in ((0,True),(out.width-9*size,False)):self.bracket(out,x,top-gap/2,top+h+gap/2,opening,node.get("bracket","["),ink,thickness,size)
+            for x,opening in ((0,True),(out.width-bw,False)):self.bracket(out,x,top-gap/2,top+h+gap/2,opening,bracket,ink,thickness,size)
             return out
         if typ == "operator":
             symbol=node["symbol"]
@@ -317,23 +344,60 @@ def smooth_points(points):
     return out+[points[-1]]
 
 
+def graph_geometry(obj, unit=GRID):
+    """Tick anchors and the editor share the sheet's half-square lattice.
+
+    Coordinate values are never changed. Dense scales which cannot fit a half
+    square per tick use continuous spacing instead of dropping data or labels.
+    """
+    w, h = obj['width'], obj['height']
+    def axis(low, high, step, start, end):
+        tick = math.floor(low/step+1e-9)
+        span = high/step-tick
+        scale = math.floor((end-start)/span*2+1e-9)/2
+        fitted = obj.get('gridFit', True) and scale >= .5
+        if not fitted: scale = (end-start)/span
+        return {'tick': tick, 'scale': scale, 'start': start, 'fitted': fitted}
+    x = axis(obj['xmin'], obj['xmax'], obj['xstep'], 1.5, w-.5)
+    y = axis(obj['ymin'], obj['ymax'], obj['ystep'], 1.5 if obj.get('title') else 1, h-1.5)
+    def xy(px, py):
+        return ((x['start']+(px/obj['xstep']-x['tick'])*x['scale'])*unit,
+                (h-1.5-(py/obj['ystep']-y['tick'])*y['scale'])*unit)
+    left, bottom = xy(obj['xmin'], obj['ymin'])
+    right, top = xy(obj['xmax'], obj['ymax'])
+    ax, ay = xy(max(obj['xmin'], min(obj['xmax'], 0)), max(obj['ymin'], min(obj['ymax'], 0)))
+    return {'xy': xy, 'left': left, 'right': right, 'top': top, 'bottom': bottom,
+            'ax': ax, 'ay': ay, 'x': x, 'y': y}
+
+
 def draw_graph(obj, painter):
     w,h=obj["width"]*GRID,obj["height"]*GRID
     if w < 4*GRID or h < 4*GRID:raise ValueError("Una gráfica necesita al menos 4 × 4 cuadros para sus ejes y etiquetas")
     out=Box(w,0,h);size=obj["size"];ink=obj["color"];thickness=obj["thickness"]
     # Labels occupy reserved margins; plot area is independent of handwriting size.
-    left,right,top,bottom=GRID*1.1,w-GRID*.65,GRID*.9,h-GRID*1.15
-    if obj.get("title"): top+=GRID*.45
-    def xy(x,y):return (left+(x-obj["xmin"])/(obj["xmax"]-obj["xmin"])*(right-left),bottom-(y-obj["ymin"])/(obj["ymax"]-obj["ymin"])*(bottom-top))
-    xzero=max(obj["xmin"],min(obj["xmax"],0));yzero=max(obj["ymin"],min(obj["ymax"],0));ax,ay=xy(xzero,yzero)
+    geometry=graph_geometry(obj);xy=geometry['xy']
+    left,right,top,bottom,ax,ay=(geometry[k] for k in ('left','right','top','bottom','ax','ay'))
+    xzero=max(obj["xmin"],min(obj["xmax"],0));yzero=max(obj["ymin"],min(obj["ymax"],0))
     def line(coords,c=ink,width=thickness,dashed=False):
         if not dashed:return painter.path(out,coords,c,width,straight=len(coords)==2)
+        drawing=True;remaining=5;pending=[]
         for a,b in zip(coords,coords[1:]):
             length=math.dist(a,b)
             if not length:continue
-            for start in range(0,math.ceil(length),10):
-                end=min(start+5,length);p=lambda d:(a[0]+(b[0]-a[0])*d/length,a[1]+(b[1]-a[1])*d/length)
-                painter.path(out,[p(start),p(end)],c,width,straight=True)
+            start=0
+            while start<length-1e-8:
+                end=min(start+remaining,length)
+                p=lambda d:(a[0]+(b[0]-a[0])*d/length,a[1]+(b[1]-a[1])*d/length)
+                if drawing:
+                    if not pending:pending.append(p(start))
+                    pending.append(p(end))
+                elif pending:
+                    painter.path(out,pending,c,width);pending=[]
+                remaining-=end-start;start=end
+                if remaining<1e-7:
+                    if pending:painter.path(out,pending,c,width);pending=[]
+                    drawing=not drawing;remaining=5
+        if pending:painter.path(out,pending,c,width)
     def label(text,x,y,c=ink,s=size,align="left",vertical="baseline"):
         b=painter.text(text,s,c,thickness)
         if b.width>w-GRID*.2:raise ValueError("La etiqueta de gráfica no cabe: acórtala o reduce su tamaño")
@@ -343,6 +407,21 @@ def draw_graph(obj, painter):
     def ticks(axis):
         low,high,step=(obj[axis+k] for k in ("min","max","step"));start=math.ceil(low/step-1e-9)*step
         return [start+i*step for i in range(int((high-start)/step+1e-8)+1)]
+    guides={}
+    for trace in obj['series']:
+        if not trace.get('guides'): continue
+        c=trace.get('guideColor',trace.get('color',ink));width=trace.get('guideWidth',1)
+        for point in trace['points']:
+            x,y=xy(point['x'],point['y'])
+            for key,a,b in ((('v',round(x,8),c,width),y,ay),(('h',round(y,8),c,width),x,ax)):
+                guides.setdefault(key,[]).append((min(a,b),max(a,b)))
+    for (axis,position,c,width),intervals in guides.items():
+        merged=[]
+        for a,b in sorted(intervals):
+            if merged and a<=merged[-1][1]+1e-7: merged[-1]=(merged[-1][0],max(b,merged[-1][1]))
+            else: merged.append((a,b))
+        for a,b in merged:
+            line([(position,a),(position,b)] if axis=='v' else [(a,position),(b,position)],c,width,True)
     for axis in ("x","y"):
         for value in ticks(axis):
             x,y=xy(value,yzero) if axis=="x" else xy(xzero,value)
@@ -352,21 +431,27 @@ def draw_graph(obj, painter):
                 if abs(value)>1e-9:
                     text=f"{value:.5g}".replace("e+","e")
                     label(text,x,ay+22, s=size*.72,align="center") if axis=="x" else label(text,ax-9,y+6,s=size*.72,align="right")
-    line([(left,ay),(right,ay)]);line([(ax,bottom),(ax,top)])
+    # Keep stems and arrow wings in one ink tool with matching width/caps.
+    painter.path(out,[(left,ay),(right,ay)],ink,thickness)
+    painter.path(out,[(ax,bottom),(ax,top)],ink,thickness)
     if obj.get("arrows",True):
-        line([(right-8,ay-5),(right,ay),(right-8,ay+5)]);line([(ax-5,top+8),(ax,top),(ax+5,top+8)])
+        painter.path(out,[(right-8,ay-5),(right,ay),(right-8,ay+5)],ink,thickness)
+        painter.path(out,[(ax-5,top+8),(ax,top),(ax+5,top+8)],ink,thickness)
     label(obj.get("xlabel","x"),right,ay+(30 if obj.get('ticks',True) else 8),align="right",vertical='top');label(obj.get("ylabel","y"),ax+12,top-10)
-    if obj.get("title"):label(obj["title"],w/2,GRID*.5,align="center")
+    if obj.get("title"):label(obj["title"],w/2,max(GRID*.5,top-GRID*.7),align="center")
     for trace in obj["series"]:
-        painter.check();c=trace.get("color",ink);coords=[xy(p["x"],p["y"]) for p in trace["points"]]
+        painter.check();c=trace.get("color",ink);width=trace.get('width',thickness)
+        coords=[xy(p["x"],p["y"]) for p in trace["points"]]
         if trace["type"]!="points" and len(coords)>1:
             rendered=smooth_points([(p["x"],p["y"]) for p in trace["points"]]) if trace["type"]=="curve" else [(p["x"],p["y"]) for p in trace["points"]]
-            line([xy(x,y) for x,y in rendered],c,dashed=bool(trace.get("dashed")))
+            rendered=[xy(x,y) for x,y in rendered]
+            if trace.get('dashed'): line(rendered,c,width,True)
+            else: painter.path(out,rendered,c,width)
         for p,(x,y) in zip(trace["points"],coords):
-            if trace.get("guides"):line([(x,ay),(x,y),(ax,y)],c,1,True)
             if trace.get("markers",True) or trace["type"]=="points":
-                painter.path(out,[(x+2.3*math.cos(i*math.pi/8),y+2.3*math.sin(i*math.pi/8)) for i in range(17)],c,thickness)
-            if p.get("label"):label(p["label"],x+7,y-8,c)
+                radius=trace.get('pointSize',2.5)
+                painter.path(out,[(x+radius*math.cos(i*math.pi/8),y+radius*math.sin(i*math.pi/8)) for i in range(17)],trace.get('pointColor',c),max(1,width))
+            if p.get("label"):label(p["label"],x+7,y-8,trace.get('labelColor',trace.get('pointColor',c)))
     return out
 
 
@@ -381,9 +466,14 @@ def plan_object(obj, lib, seed, warnings, check):
         if b.width<=width-2*pad:break
         if not obj.get("fit",True) or size<=.4+.00001:raise ValueError("La fórmula no cabe: amplía su ancho, reduce el tamaño o divídela en fórmulas")
         size=max(.4,min(size-.05,size*(width-2*pad)/max(b.width,1)))
-    out=Box(width,0,max(obj["height"]*GRID,math.ceil((b.bottom-b.top+2*pad)/HALF)*HALF))
-    free=width-2*pad-b.width;align=obj.get("align","left")
-    out.put(b,pad+(free/2 if align=="center" else free if align=="right" else 0),pad-b.top)
+    # Baselines (or the main fraction bar) land on a half-square, rather than
+    # floating a fixed padding distance below the block's upper edge.
+    anchor=getattr(b,'grid_anchor',0)
+    shift=math.ceil((pad-b.top+anchor)/HALF-1e-9)*HALF-anchor
+    out=Box(width,0,max(obj["height"]*GRID,math.ceil((shift+b.bottom+pad)/HALF)*HALF))
+    free=width-b.width;align=obj.get("align","left")
+    x=math.floor((free/2 if align=="center" else free if align=="right" else 0)/HALF)*HALF
+    out.put(b,x,shift)
     if size<obj["size"]-.001:warnings.append(f"Fórmula ajustada al ancho: {round(size*100)} %")
     return out
 
