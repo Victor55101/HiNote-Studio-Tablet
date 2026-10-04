@@ -381,13 +381,23 @@ test('Touch multi-cell formatting preserves unselected cells and supports undo',
 test('Row column whole-table and range selection apply only to marked cells',async page=>{
   await setup(page);await openTable(page);await page.locator('.cellEditor[data-row="1"][data-col="1"]').focus();
   await page.click('#tableSelectRow');assert.equal(await page.locator('td.selectedCell').count(),3);await page.selectOption('#tableAlign','right');
-  await page.click('#tableSelectCol');assert.equal(await page.locator('td.selectedCell').count(),4);await page.selectOption('#tableValign','bottom');
+  await page.click('#tableSelectCol');assert.equal(await page.locator('td.selectedCell').count(),6);await page.selectOption('#tableValign','bottom');
   await page.click('#tableSelectAll');assert.equal(await page.locator('td.selectedCell').count(),12);await page.selectOption('#tableCellSize','0');
   await page.click('#tableSelectCells');await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();
   await page.locator('.cellEditor[data-row="1"][data-col="1"]').click({modifiers:['Shift']});
   assert.equal(await page.locator('td.selectedCell').count(),4);await page.selectOption('#tableCellSize','0.55');await page.click('#tableDone');
   const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);
-  for(let r=0;r<4;r++)for(let c=0;c<3;c++){const cell=t.rows[r].cells[c];assert.equal(cell.size,r<=1&&c<=1?.55:0);assert.equal(cell.valign,c===1?'bottom':'top');if(r===1)assert.equal(cell.align,'right');}
+  for(let r=0;r<4;r++)for(let c=0;c<3;c++){const cell=t.rows[r].cells[c];assert.equal(cell.size,r<=1&&c<=1?.55:0);assert.equal(cell.valign,r===1||c===1?'bottom':'top');if(r===1)assert.equal(cell.align,'right');}
+});
+test('Selecting additional columns and rows preserves the existing marked cells',async page=>{
+  await setup(page);await openTable(page);await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();
+  await page.click('#tableSelectCol');assert.equal(await page.locator('td.selectedCell').count(),4);
+  await page.locator('.cellEditor[data-row="0"][data-col="1"]').click();
+  await page.click('#tableSelectCol');assert.equal(await page.locator('td.selectedCell').count(),8);
+  await page.locator('.cellEditor[data-row="1"][data-col="2"]').click();
+  await page.click('#tableSelectRow');assert.equal(await page.locator('td.selectedCell').count(),9);
+  const selected=await page.locator('#tableGrid td.selectedCell .cellEditor').evaluateAll(nodes=>nodes.map(n=>`${n.dataset.row}:${n.dataset.col}`));
+  assert(selected.includes('0:0')&&selected.includes('3:1')&&selected.includes('1:2'));
 });
 test('Named table move buttons change document order and respect ends',async page=>{
   await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openTable(page);await page.click('#tableDone');await page.click('.tableBlock button');

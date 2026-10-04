@@ -90,12 +90,13 @@ const TableEditor = (() => {
     el('tableGrid').querySelectorAll('td').forEach(td=>{const n=td.firstChild,selected=selectedCells.has(cellKey(+n.dataset.row,+n.dataset.col));td.classList.toggle('selectedCell',selected);td.setAttribute('aria-selected',String(selected));n.contentEditable=String(!selecting);n.tabIndex=0;});
     el('tableSelectCells').setAttribute('aria-pressed',String(selecting));el('tableSelectCells').classList.toggle('accent',selecting);
     el('tableSelectCells').textContent=selecting?'Terminar selección':'Seleccionar celdas';
-    el('tableSelectionHint').textContent=selecting?'Toca para marcar o desmarcar. Mayús + clic selecciona un rango. Los controles se aplican a las celdas marcadas.':'Toca una celda para escribir. Usa Seleccionar celdas para dar formato a varias.';
+    el('tableSelectionHint').textContent=selecting?'Toca para marcar o desmarcar. Fila y columna se agregan a la selección. Mayús + clic selecciona un rango; Toda la tabla marca todas las celdas.':'Toca una celda para escribir. Usa Seleccionar celdas para dar formato a varias.';
     const at=readLines().findIndex(l=>l[0]?.tableId===originalId);
     el('tableRemove').disabled=!originalId;el('tableMoveUp').disabled=!originalId||at<=0;el('tableMoveDown').disabled=!originalId||at>=readLines().length-1;
   }
   function selectGroup(kind){
-    flush();selecting=true;cellSelection=null;selectedCells.clear();
+    flush();selecting=true;cellSelection=null;
+    if(kind==='all')selectedCells.clear();
     working.rows.forEach((row,r)=>row.cells.forEach((cell,c)=>{if(kind==='all'||(kind==='row'&&r===selectedRow)||(kind==='col'&&c===selectedCol))selectedCells.add(cellKey(r,c));}));
     sync();
   }
