@@ -593,8 +593,35 @@ def compose_document(
     if not paragraphs:
         paragraphs = [{"segments": [{"text": "", "scale": 1.0}], "list": None}]
 
-    for para in paragraphs:
+    consumed = set()
+    for paragraph_index, para in enumerate(paragraphs):
+        if paragraph_index in consumed: continue
         check()
+        if para.get("type") in ("formula", "graph"):
+            from math_graph_composer import plan_object, draw_object
+            from table_composer import GRID, HALF
+            group = [para["object"]]
+            following = paragraph_index + 1
+            while following < len(paragraphs):
+                other = paragraphs[following]
+                if other.get("type") not in ("formula", "graph") or not other["object"].get("beside", False): break
+                group.append(other["object"]); consumed.add(following); following += 1
+            for i, obj in enumerate(group):
+                for previous in group[:i]:
+                    if max(obj["left"], previous["left"]) < min(obj["left"]+obj["width"], previous["left"]+previous["width"]) - .001:
+                        raise ValueError("Los elementos colocados lado a lado se superponen. Ajusta Izquierda y Ancho.")
+            plans = [plan_object(obj, lib, seed+paragraph_index*977+i, warnings, check) for i,obj in enumerate(group)]
+            height = max(box.bottom+obj.get("gap",0)*GRID for obj,box in zip(group,plans))
+            top = GRID if not current_page["strokes"] else math.ceil(baseline_y/HALF)*HALF
+            limit = math.floor(bottom_limit/HALF)*HALF
+            if height > limit-GRID+.001:
+                raise ValueError("La fórmula o gráfica no cabe completa en una hoja. Reduce su tamaño o su altura.")
+            if top+height > limit+.001:
+                if current_page["strokes"]: new_page()
+                top = GRID
+            for obj,box in zip(group,plans): draw_object(obj,box,top+obj.get("gap",0)*GRID,page())
+            table_bottom = top+height; baseline_y = table_bottom+GRID
+            continue
         if para.get("type") == "table":
             from table_composer import GRID, HALF, validate_table, plan_row, draw_row, draw_borders
             table = validate_table(para["table"])

@@ -448,22 +448,107 @@ test('Touch table handles keep pointer capture and allow opening the editor',asy
   assert.equal(await page.locator('.cellEditor[data-row="0"][data-col="0"]').innerText(),'Táctil');
 });
 
+async function openMath(page,kind='formula'){await page.click('[data-tab="math"]');await page.click(kind==='formula'?'#insertFormula':'#insertGraph');await page.waitForSelector('#mathDialog:not(.hidden)');}
+
+test('Formula templates nest at the cursor and preserve surrounding normal text',async page=>{
+  await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openMath(page);
+  await page.locator('.mathSlot').first().fill('x=');await page.click('[data-template="fraction"]');
+  await page.getByLabel('Numerador',{exact:true}).fill('a+b');await page.click('[data-template="root"]');
+  await page.getByLabel('Interior de raíz',{exact:true}).fill('c');await page.getByLabel('Denominador',{exact:true}).fill('2');
+  await page.click('#mathDone');const doc=await page.evaluate(()=>serializeDocument());
+  assert.equal(doc.paragraphs[1].type,'formula');const expr=doc.paragraphs[1].object.expression;
+  assert.equal(expr.items[0].text,'x=');const f=expr.items.find(n=>n.type==='fraction');assert.equal(f.den.items[0].text,'2');
+  assert.equal(f.num.items.find(n=>n.type==='root').body.items[0].text,'c');
+  assert.deepEqual(await lines(page),['Antes','\uFFFC','','Después']);
+  assert.equal(doc.paragraphs[0].segments[0].scale,1);
+  await page.click('.objectBlock button');await page.screenshot({path:path.join(root,'test-results','formula-editor.png')});
+});
+test('Formula templates wrap selected text and support field navigation and undo',async page=>{
+  await setup(page);await openMath(page);const first=page.locator('.mathSlot').first();await first.fill('a+b');await first.selectText();
+  await page.click('[data-template="fraction"]');assert.equal(await page.getByLabel('Numerador',{exact:true}).inputValue(),'a+b');
+  await page.getByLabel('Denominador',{exact:true}).fill('c');await page.click('#mathUndo');await page.click('#mathUndo');
+  assert.equal(await page.locator('.mathFraction').count(),0);await page.click('#mathRedo');assert.equal(await page.locator('.mathFraction').count(),1);
+  await page.getByLabel('Denominador',{exact:true}).fill('c');await page.click('#mathNext');assert.equal(await page.locator('.mathSlot').last().evaluate(n=>n===document.activeElement),true);
+  await page.click('#mathDone');assert.equal((await page.evaluate(()=>serializeDocument())).paragraphs[0].object.expression.items.find(n=>n.type==='fraction').den.items[0].text,'c');
+});
+test('Math blocks undo redo reload and recover unfinished formula fields',async page=>{
+  await setup(page);await openMath(page);await page.locator('.mathSlot').first().fill('E=mc');await page.click('#mathDone');
+  await page.click('#undoBtn');assert.equal(await page.locator('.objectBlock').count(),0);await page.click('#redoBtn');assert.equal(await page.locator('.objectBlock').count(),1);
+  await page.click('.objectBlock button');await page.locator('.mathSlot').first().fill('E=mc2');await page.evaluate(()=>saveDraft());await page.reload();
+  await page.waitForSelector('#mathDialog:not(.hidden)');assert.equal(await page.locator('.mathSlot').first().inputValue(),'E=mc2');
+  await page.click('#mathCancel');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.expression.items[0].text),'E=mc');
+  await page.click('.objectBlock button');await page.locator('.mathSlot').first().fill('E=mc2');await page.click('#mathDone');await page.evaluate(()=>saveDraft());await page.reload();
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.expression.items[0].text),'E=mc2');
+});
+test('Matrix slots keep row and column structure and per-field color',async page=>{
+  await setup(page);await openMath(page);await page.click('[data-category="matrix"]');await page.click('[data-template="matrix"]');
+  for(let r=1;r<=2;r++)for(let c=1;c<=2;c++)await page.getByLabel(`Matriz fila ${r}, columna ${c}`,{exact:true}).fill(String((r-1)*2+c));
+  await page.locator('#mathColor').evaluate(n=>{n.value='#e53935';n.dispatchEvent(new Event('change',{bubbles:true}));});await page.click('#mathFieldColor');
+  await page.click('#mathDone');const matrix=await page.evaluate(()=>serializeDocument().paragraphs[0].object.expression.items.find(n=>n.type==='matrix'));
+  assert.deepEqual(matrix.cells.map(r=>r.map(c=>c.items[0].text)),[['1','2'],['3','4']]);assert.equal(matrix.cells[1][1].items[0].color,'#e53935');
+});
+test('Graph traces colors guides coordinates and signed axes survive reload',async page=>{
+  await setup(page);await openMath(page,'graph');await page.fill('#graph_title','Oferta y demanda');await page.fill('#graph_xlabel','Q');await page.fill('#graph_ylabel','P');
+  await page.fill('#graphPoints','1; 9; A\n4; 5; B\n9; 2; C');await page.selectOption('#graphType','curve');await page.check('#graph_guides');
+  await page.click('#graphAddTrace');await page.fill('#graphPoints','2; 1; D\n8; 9; O');await page.selectOption('#graphType','line');
+  await page.screenshot({path:path.join(root,'test-results','graph-editor.png')});await page.click('#mathDone');
+  const graph=await page.evaluate(()=>serializeDocument().paragraphs[0].object);assert.equal(graph.kind,'graph');assert.equal(graph.series.length,2);assert.equal(graph.series[0].type,'curve');assert.equal(graph.series[0].guides,true);assert.equal(graph.series[1].points[1].label,'O');
+  await page.evaluate(()=>saveDraft());await page.reload();assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object),graph);
+  await page.click('.objectBlock button');await page.fill('#graph_xmin','-5');await page.fill('#graph_xmax','10');await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.xmin),-5);
+});
+test('Dragging graph points uses coordinates and unfinished point input is recovered',async page=>{
+  await setup(page);await openMath(page,'graph');await page.fill('#graphPoints','2; 8; A');await page.locator('#graphPoints').blur();
+  await page.locator('.graphPoint').scrollIntoViewIfNeeded();
+  const point=await page.locator('.graphPoint').boundingBox();await page.mouse.move(point.x+point.width/2,point.y+point.height/2);await page.mouse.down();await page.mouse.move(point.x+50,point.y+35,{steps:5});await page.mouse.up();
+  assert.notEqual(await page.inputValue('#graphPoints'),'2; 8; A');await page.fill('#graphPoints','3; 7; Pendiente');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#mathDialog:not(.hidden)');assert.equal(await page.inputValue('#graphPoints'),'3; 7; Pendiente');
+  await page.click('#mathDone');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points[0]),{x:3,y:7,label:'Pendiente'});
+});
+test('Invalid mathematical geometry is explained and does not replace a saved object',async page=>{
+  await setup(page);await openMath(page,'graph');await page.click('#mathDone');await page.click('.objectBlock button');await page.fill('#graphPoints','20; 4');await page.click('#mathDone');
+  assert.equal(await page.locator('#mathDialog:not(.hidden)').count(),1);assert.match(await page.textContent('#mathMessage'),/límites/);
+  await page.click('#mathCancel');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points),[]);
+});
+test('Side by side graph blocks remove intervening empty lines and retain independent sizes',async page=>{
+  await setup(page);await openMath(page,'graph');await page.click('#mathDone');await select(page,{line:1,offset:0});await openMath(page,'graph');
+  await page.fill('#mathLeft','8.5');await page.check('#mathBeside');await page.click('#mathDone');const p=await page.evaluate(()=>serializeDocument().paragraphs);
+  assert.equal(p[0].type,'graph');assert.equal(p[1].type,'graph');assert.equal(p[1].object.beside,true);assert.equal(p[1].object.left,8.5);
+});
+test('Math preview handles stay visible while zooming and moving blocks',async page=>{
+  await setup(page);await openMath(page,'graph');await page.click('#mathDone');
+  await page.evaluate(()=>{const o=serializeDocument().paragraphs[0].object;composition={snapshot:'math-mock',page_count:1,object_pages:[[{id:o.id,kind:o.kind,x:60,y:60,width:415,height:470}]]};previewRevision=revision;zoom=.6;applyZoom();MathGraphEditor.mode(true);});
+  const b=await page.locator('.objectMove').boundingBox();await page.mouse.move(b.x+10,b.y+10);await page.mouse.down();await page.mouse.move(b.x+34,b.y+34);await page.mouse.up();
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.gap),1);
+  await page.evaluate(()=>{previewRevision=revision;zoom=1.2;applyZoom();});await page.locator('#previewWrap').evaluate(n=>n.scrollTop=300);await page.waitForTimeout(50);
+  const wrap=await page.locator('#previewWrap').boundingBox();for(const name of ['.objectQuickActions','.objectResize']){const box=await page.locator(name).boundingBox();assert.ok(box.x>=wrap.x-1&&box.x+box.width<=wrap.x+wrap.width+1);assert.ok(box.y>=wrap.y-1&&box.y+box.height<=wrap.y+wrap.height+1);}
+});
+test('Notebook combination selects native pages and sends their explicit reviewed order',async page=>{
+  await setup(page,'Apunte intacto');await page.click('[data-tab="save"]');await page.click('#mergeNotebooks');await page.click('#notebookImport');
+  await page.evaluate(()=>{const id=bridgeCalls.filter(c=>c[0]==='notebook-import').at(-1)[1];onNotebookResult(id,JSON.stringify({sources:[{id:'semester',title:'Materia',pages:[{id:'p8',number:8},{id:'p9',number:9}]},{id:'class',title:'Clase',pages:[{id:'new',number:1}]}]}),null);});
+  assert.equal(await page.locator('#notebookQueue li').count(),3);await page.locator('#notebookQueue li').first().getByRole('button',{name:/↓/}).click();
+  await page.getByLabel('Materia, página 8',{exact:true}).uncheck();await page.fill('#notebookName','Materia semestre');await page.click('#notebookExport');
+  const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='notebook-action').at(-1));assert.equal(call[1],'merge');assert.deepEqual(JSON.parse(call[2]),{title:'Materia semestre',pages:[{source:'semester',page:'p9'},{source:'class',page:'new'}]});
+  assert.equal(await page.isDisabled('#notebookClose'),true);await page.evaluate(id=>onNotebookResult(id-1,'{"fileSaved":true}',null),call[3]);assert.equal(await page.isDisabled('#notebookClose'),true);
+  await page.evaluate(id=>onNotebookResult(id,'{"fileSaved":true}',null),call[3]);await page.screenshot({path:path.join(root,'test-results','notebooks-editor.png')});await page.click('#notebookClose');assert.deepEqual(await lines(page),['Apunte intacto']);
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
   let browser;try{browser=await chromium.launch({headless:true});}catch(e){server.close();throw e;} let failed = 0;
   try {
-    for (const {name,fn} of tests) {
+    const selected = process.env.TEST_FILTER ? tests.filter(t=>t.name.includes(process.env.TEST_FILTER)) : tests;
+    for (const {name,fn} of selected) {
       const context = await browser.newContext({viewport:{width:1280,height:850},hasTouch:true});
       await context.route('https://hinote.local/images/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect x="10" y="10" width="620" height="460" fill="#21bca8"/><circle cx="320" cy="240" r="140" fill="#273c75"/></svg>'}));
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
         requestPage:(...a)=>bridgeCalls.push(['page',...a]),requestPageHD:(...a)=>bridgeCalls.push(['pageHD',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
         requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
-        getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder'])}; });
+        getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder']),
+        requestNotebookImport:(...a)=>bridgeCalls.push(['notebook-import',...a]),requestNotebookAction:(...a)=>bridgeCalls.push(['notebook-action',...a]),cancelNotebook:()=>bridgeCalls.push(['notebook-cancel'])}; });
       const page = await context.newPage(); page.setDefaultTimeout(10000); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       try {
         await page.goto(`http://127.0.0.1:${server.address().port}`); await page.waitForSelector('#editor .line'); await fn(page);
@@ -476,5 +561,7 @@ test('Touch table handles keep pointer capture and allow opening the editor',asy
       } finally { await context.close(); }
     }
   } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
-  console.log(`${tests.length-failed}/${tests.length} editor tests passed`); process.exitCode=failed?1:0;
+  const total = process.env.TEST_FILTER ? tests.filter(t=>t.name.includes(process.env.TEST_FILTER)).length : tests.length;
+  assert.ok(total, 'The test filter must select at least one test');
+  console.log(`${total-failed}/${total} editor tests passed`); process.exitCode=failed?1:0;
 })().catch(error=>{console.error(error);process.exitCode=1;});

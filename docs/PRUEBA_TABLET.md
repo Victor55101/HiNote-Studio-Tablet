@@ -1,5 +1,19 @@
 # Comprobación en la tablet
 
+## V30: escritura matemática y combinación de páginas
+
+1. Abre el borrador anterior y comprueba texto, tablas, imágenes y perfil. En una tabla, selecciona dos columnas y después dos filas: la selección debe acumularse. Estándar sigue siendo 60 %.
+2. En **Fórmulas y gráficas → Insertar fórmula**, escribe `x=` e inserta una fracción. Llena numerador/denominador, inserta una raíz y una potencia dentro del numerador. Toca los campos, navega con los botones y prueba insertar un molde envolviendo texto seleccionado. Revisa Deshacer fórmula/Rehacer y color del campo activo.
+3. Reproduce una matriz, una derivada, una integral con límites y una sumatoria de tus apuntes. Prueba una fórmula centrada, tamaño 60 % y dimensiones de medio cuadro. Actualiza la vista: no debe haber trazos superpuestos ni datos omitidos. Una fórmula demasiado ancha debe reducirse uniformemente o explicar cómo ajustarla.
+4. Usa Original y después tu calibración ampliada. Los signos disponibles en tu letra deben usar sus muestras; un signo incluido sin muestra usa la forma geométrica con aviso. Un carácter desconocido pide calibrarlo. Exporta e importa el `.hinote` para comprobar la escritura y los signos en Notes.
+5. Inserta una gráfica con ejes Q/P. Escribe `1; 9; A`, `4; 5; B` y `9; 2; C` en líneas separadas; elige Curva suave y guías punteadas. Añade otro trazo ascendente rojo. Cambia escala, flechas, rangos negativos y etiquetas. Arrastra un punto y toca para agregar otro; prueba ajustar a medio paso y dejar coordenadas libres.
+6. Coloca dos gráficas lado a lado: izquierda 1/ancho 7 e izquierda 8.5/ancho 7 con Al lado del anterior. Prueba espacio previo de 0.5 y diferentes alturas. Cerca del final de página, ambas deben pasar completas a la siguiente. Escribe `Hola` después: debe volver a la línea inferior habitual del cuadro. Comprueba bloques entre tablas y texto.
+7. Deshaz/repite una inserción, modifica un bloque, cancela y elimina. Cierra la app mientras escribes una fórmula y mientras editas coordenadas aún sin salir del campo: deben recuperarse al reabrir. Prueba zoom y arrastre táctil en la previsualización; los controles deben permanecer visibles dentro del panel.
+8. Exporta desde Notes una copia del cuaderno del semestre y el apunte nuevo. En **Guardado → Combinar cuadernos .hinote**, agrega los dos, selecciona sus páginas y revisa miniaturas y orden. Guarda con otro nombre. Reimporta la copia y comprueba primera página, unión entre cuadernos y última página, tinta, fotos, formas y papel. Los originales deben conservarse.
+9. Repite con el `.hinote` de ejemplos: sus páginas originales 8 y 9 deben convertirse en 1 y 2 en la copia. Prueba cambiar el orden, quitar páginas, cancelar selección y cancelar guardado. Un archivo dañado debe explicar el fallo y permitir volver a intentarlo.
+
+La validación automática comprueba hashes, referencias, formato de tinta, paginación y conservación byte por byte de las muestras. La importación, los gestos de HarmonyOS y el uso del lasso siguen requiriendo esta comprobación en la tablet. Combinar crea un cuaderno nuevo: no escribe directamente dentro del cuaderno que está abierto en Huawei Notes.
+
 ## V29: formato conjunto y nitidez
 
 1. Crea una tabla: Estándar debe usar 60 %. Escribe dos renglones breves en una fila de un cuadro y compara con el texto normal exterior al 100 %.

@@ -8,7 +8,7 @@ const TableEditor = (() => {
   const currentCell=()=>working?.rows[selectedRow]?.cells[selectedCol];
   const chosenCells=()=>[...selectedCells].map(key=>{const [r,c]=key.split(':').map(Number);return working?.rows[r]?.cells[c];}).filter(Boolean);
   function singleCell(r=selectedRow,c=selectedCol){selectedRow=r;selectedCol=c;selectedCells=new Set([cellKey(r,c)]);selectionAnchor=[r,c];cellSelection=null;}
-  const locked=()=>exporting||CalibrationUI.isBusy()||ImageEditor.isBusy();
+  const locked=()=>exporting||CalibrationUI.isBusy()||ImageEditor.isBusy()||MathGraphEditor.isOpen()||NotebookUI.isBusy();
   const newId=()=> 'table_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
   const blank=()=>({segments:[],align:'left',valign:'top',size:0});
   const isLine=line=>Boolean(line?.[0]?.tableId);
@@ -121,7 +121,7 @@ const TableEditor = (() => {
     const others=Object.values(live()).filter(t=>t.id!==working.id),all=[...others,working];
     const cells=all.reduce((n,t)=>n+t.widths.length*t.rows.length,0);
     const chars=all.reduce((n,t)=>n+t.rows.reduce((a,r)=>a+r.cells.reduce((b,c)=>b+lineText(c.segments).length,0),0),0);
-    if(cells>2000||chars+readLines().filter(l=>!isLine(l)).reduce((n,l)=>n+lineText(l).length+1,0)>MAX_CHARS){show('La nota admite hasta 2000 celdas y 200000 caracteres');return false;}
+    if(cells>2000||chars+readLines().filter(l=>!isBlockLine(l)).reduce((n,l)=>n+lineText(l).length+1,0)+MathGraphEditor.count()>MAX_CHARS){show('La nota admite hasta 2000 celdas y 200000 caracteres');return false;}
     const lines=readLines(),id=working.id;
     tables[id]=clone(working);
     if(!originalId){

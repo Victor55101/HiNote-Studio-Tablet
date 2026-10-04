@@ -1,0 +1,395 @@
+"""Structured mathematics and coordinate plots, exported as native editable ink.
+
+No expression evaluation, network, fonts or rasterized formulas are involved.
+Characters prefer the active calibration; geometric math signs are a documented
+fallback. Layout works in Huawei's physical half-square grid, not font metrics.
+"""
+import copy
+import math
+import random
+import re
+import struct
+import unicodedata
+
+from table_composer import GRID, HALF, half, number, border_stroke
+from pencilengine_width import native_width
+
+SLOTS = {"fraction": ("num", "den"), "root": ("index", "body"),
+         "scripts": ("base", "sup", "sub"), "group": ("body",),
+         "operator": ("lower", "upper", "body")}
+
+
+def color(value):
+    if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        raise ValueError("Color de fórmula o gráfica inválido")
+    return value
+
+
+def validate_object(obj, kind=None):
+    if not isinstance(obj, dict) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", str(obj.get("id", ""))):
+        raise ValueError("Identificador de fórmula o gráfica inválido")
+    kind = kind or obj.get("kind")
+    if kind not in ("formula", "graph") or obj.get("kind") != kind:
+        raise ValueError("Elemento matemático desconocido")
+    obj["left"] = half(obj.get("left", 1), .5, 15)
+    obj["width"] = half(obj.get("width", 15), 2, 15.5)
+    if obj["left"] + obj["width"] > 16.00001:
+        raise ValueError("El elemento sale del ancho de la hoja")
+    obj["gap"] = half(obj.get("gap", 0), 0, 10)
+    obj["height"] = half(obj.get("height", 2 if kind == "formula" else 8), .5, 24.5)
+    obj["size"] = number(obj.get("size", 1 if kind == "formula" else .6), .4, 1.5)
+    obj["thickness"] = int(number(obj.get("thickness", 2), 1, 10))
+    obj["color"] = color(obj.get("color", "#000000"))
+    if obj.get("align", "left") not in ("left", "center", "right"):
+        raise ValueError("Alineación matemática inválida")
+    if kind == "formula":
+        count = [0, 0]
+        def visit(node, depth=0):
+            count[0] += 1
+            if count[0] > 500 or depth > 12 or not isinstance(node, dict):
+                raise ValueError("La fórmula admite hasta 500 elementos y 12 niveles")
+            typ = node.get("type")
+            if typ == "text":
+                if not isinstance(node.get("text"), str) or len(node["text"]) > 2048 or "\n" in node["text"]:
+                    raise ValueError("Campo de fórmula inválido")
+                count[1] += len(node["text"])
+                if "color" in node: color(node["color"])
+            elif typ == "row":
+                if not isinstance(node.get("items"), list) or len(node["items"]) > 500:
+                    raise ValueError("Secuencia de fórmula inválida")
+                for item in node["items"]: visit(item, depth + 1)
+            elif typ == "matrix":
+                cells = node.get("cells")
+                if not isinstance(cells, list) or not 1 <= len(cells) <= 6 or not isinstance(cells[0], list) or not 1 <= len(cells[0]) <= 6:
+                    raise ValueError("Las matrices admiten de 1 a 6 filas y columnas")
+                for row in cells:
+                    if not isinstance(row, list) or len(row) != len(cells[0]): raise ValueError("Matriz irregular")
+                    for cell in row: visit(cell, depth + 1)
+                if node.get("bracket", "[") not in ("[", "(", "|"): raise ValueError("Contorno de matriz inválido")
+            elif typ in SLOTS:
+                if typ == "operator" and node.get("symbol") not in ("Σ", "∫", "lim", "∏"):
+                    raise ValueError("Operador matemático inválido")
+                if typ == "group" and node.get("bracket", "(") not in ("(", "[", "|"):
+                    raise ValueError("Agrupador inválido")
+                for slot in SLOTS[typ]: visit(node.get(slot), depth + 1)
+            else: raise ValueError("Molde de fórmula no reconocido")
+        visit(obj.get("expression"))
+        if count[1] > 8192: raise ValueError("La fórmula admite hasta 8192 caracteres")
+    else:
+        for axis in ("x", "y"):
+            low = number(obj.get(axis + "min", 0), -1e9, 1e9)
+            high = number(obj.get(axis + "max", 10), -1e9, 1e9)
+            step = number(obj.get(axis + "step", 1), 1e-9, 1e9)
+            if high <= low or (high - low) / step > 40:
+                raise ValueError("Cada eje necesita mínimo < máximo y hasta 40 divisiones")
+            obj[axis + "min"], obj[axis + "max"], obj[axis + "step"] = low, high, step
+        for key in ("title", "xlabel", "ylabel"):
+            if not isinstance(obj.get(key, ""), str) or len(obj.get(key, "")) > 60:
+                raise ValueError("Etiqueta de gráfica demasiado larga")
+        series = obj.get("series", [])
+        if not isinstance(series, list) or len(series) > 8: raise ValueError("Cada gráfica admite hasta 8 trazos")
+        for trace in series:
+            color(trace.get("color", obj["color"]))
+            if trace.get("type") not in ("points", "line", "curve"):
+                raise ValueError("Tipo de trazo inválido")
+            points = trace.get("points")
+            if not isinstance(points, list) or len(points) > 100: raise ValueError("Cada trazo admite hasta 100 puntos")
+            for p in points:
+                if not isinstance(p, dict): raise ValueError("Punto de gráfica inválido")
+                p["x"] = number(p.get("x"), obj["xmin"], obj["xmax"])
+                p["y"] = number(p.get("y"), obj["ymin"], obj["ymax"])
+                if not isinstance(p.get("label", ""), str) or len(p.get("label", "")) > 60:
+                    raise ValueError("Etiqueta de punto inválida")
+            if trace["type"] == "curve" and any(b["x"] <= a["x"] for a, b in zip(points, points[1:])):
+                raise ValueError("Ordena los puntos de la curva por X, sin valores repetidos")
+    return obj
+
+
+def object_text(obj):
+    if obj["kind"] == "graph":
+        yield from (obj.get(key, "") for key in ("title", "xlabel", "ylabel"))
+        for trace in obj.get("series", []):
+            for p in trace["points"]: yield p.get("label", "")
+        return
+    def visit(node):
+        if node["type"] == "text": yield node["text"]
+        elif node["type"] == "row":
+            for item in node["items"]: yield from visit(item)
+        elif node["type"] == "matrix":
+            for row in node["cells"]:
+                for item in row: yield from visit(item)
+        else:
+            for slot in SLOTS[node["type"]]: yield from visit(node[slot])
+    yield from visit(obj["expression"])
+
+
+class Box:
+    def __init__(self, width=0, top=0, bottom=0):
+        self.width, self.top, self.bottom = width, top, bottom
+        self.strokes, self.placements = [], []
+
+    def put(self, other, x=0, y=0):
+        self.top, self.bottom = min(self.top, y + other.top), max(self.bottom, y + other.bottom)
+        for source in other.strokes:
+            s = {**source, "points": [{**p, "x": p["x"] + x, "y": p["y"] + y} for p in source["points"]]}
+            self.strokes.append(s)
+        self.placements.extend({**p, "x": p["x"] + x, "baseline_y": p["baseline_y"] + y} for p in other.placements)
+
+
+class Ink:
+    def __init__(self, lib, seed, warnings, check):
+        self.lib, self.rng, self.warnings, self.check = lib, random.Random(seed), warnings, check
+        self.prototype = next(s for variants in lib["glyphs"].values() for g in variants for s in g["strokes"]
+                              if int.from_bytes(bytes.fromhex(s["point_header_hex"])[:4], "big") != 2)
+
+    def path(self, box, coords, color="#000000", thickness=2, straight=False):
+        self.check()
+        if len(coords) < 2: return
+        if straight:
+            stroke = border_stroke(coords, {"color": color, "border": thickness})
+        else:
+            stroke = {k: self.prototype[k] for k in ("header_hex", "metadata_hex", "point_header_hex")}
+            metadata=bytearray.fromhex(stroke['metadata_hex'])
+            struct.pack_into('>f',metadata,96,thickness/3)
+            stroke['metadata_hex']=metadata.hex()
+            stroke.update(color=color, opacity=100, thickness=0, width_scale=1,
+                          points=[{"x": x, "y": y, "t": 0, "pressure": .88, "extra1": 0., "extra2": 0.,
+                                   "extra3": .2, "state": 4, "index": float(i)} for i, (x, y) in enumerate(coords)])
+        box.strokes.append(stroke)
+        box.top = min(box.top, min(y for _, y in coords))
+        box.bottom = max(box.bottom, max(y for _, y in coords))
+
+    def sign(self, ch, size, ink, thickness):
+        # Normalized paths are a fallback only; calibrated mathematical signs win.
+        circle = lambda cx, cy, rx, ry: [(cx + rx * math.cos(i * math.pi / 12), cy + ry * math.sin(i * math.pi / 12)) for i in range(25)]
+        paths = {
+            "×": [[(0,-.7),(.65,-.1)],[(0,-.1),(.65,-.7)]],
+            "÷": [[(0,-.4),(.7,-.4)],[(.34,-.76),(.36,-.76)],[(.34,-.04),(.36,-.04)]],
+            "−": [[(0,-.4),(.7,-.4)]], "·": [[(.2,-.4),(.22,-.4)]],
+            "±": [[(0,-.4),(.7,-.4)],[(.35,-.7),(.35,-.1)],[(0,.05),(.7,.05)]],
+            "≠": [[(0,-.55),(.7,-.55)],[(0,-.25),(.7,-.25)],[(.12,0),(.58,-.8)]],
+            "≤": [[(.7,-.8),(0,-.45),(.7,-.1)],[(0,.08),(.7,.08)]],
+            "≥": [[(0,-.8),(.7,-.45),(0,-.1)],[(0,.08),(.7,.08)]],
+            "≈": [[(i/20*.7,-.55+math.sin(i/20*2*math.pi)*.08) for i in range(21)],[(i/20*.7,-.25+math.sin(i/20*2*math.pi)*.08) for i in range(21)]],
+            "→": [[(0,-.4),(.9,-.4)],[(.65,-.65),(.9,-.4),(.65,-.15)]],
+            "∞": [[(.45+.45*math.cos(i*math.pi/24),-.4+.22*math.sin(i*math.pi/12)) for i in range(49)]],
+            "π": [[(0,-.7),(.8,-.7)],[(.2,-.7),(.15,0)],[(.6,-.7),(.6,-.1),(.72,0),(.8,-.05)]],
+            "Δ": [[(0,0),(.4,-.85),(.8,0),(0,0)]],
+            "Σ": [[(.8,-.85),(0,-.85),(.45,-.42),(0,0),(.8,0)]],
+            "∏": [[(0,0),(0,-1),(.8,-1),(.8,0)]],
+            "∫": [[(.6,-1),(.4,-1.08),(.25,-.98),(.2,-.7),(.2,.1),(.15,.3),(0,.35),(-.12,.28)]],
+            "∂": [circle(.3,-.3,.28,.3),[(.02,-.82),(.24,-.95),(.52,-.8),(.58,-.58),(.52,-.22)]],
+            "α": [circle(.3,-.32,.28,.32),[(.57,-.65),(.53,-.2),(.6,0),(.75,-.08)]],
+            "β": [[(0,.3),(0,-.8),(.2,-1),(.5,-.92),(.52,-.65),(.16,-.45),(.54,-.4),(.6,-.15),(.42,0),(0,0)]],
+            "γ": [[(0,-.65),(.15,-.65),(.32,-.2),(.4,.3),(.26,.2),(.32,-.1),(.64,-.65)]],
+            "η": [[(0,-.65),(.1,-.5),(.1,0),(.1,-.45),(.3,-.65),(.5,-.55),(.5,.28)]],
+            "θ": [circle(.3,-.45,.27,.45),[(.05,-.45),(.55,-.45)]],
+            "λ": [[(0,-.9),(.18,-.88),(.35,-.5),(.65,0)],[(.35,-.5),(0,0)]],
+            "μ": [[(0,-.65),(0,.3)],[(0,-.1),(.18,0),(.38,-.12),(.42,-.65),(.42,-.1),(.58,0),(.7,-.1)]],
+            "ρ": [circle(.3,-.32,.3,.32),[(0,-.32),(0,.3)]],
+            "σ": [circle(.3,-.3,.3,.3),[(.3,-.6),(.75,-.6)]],
+            "ω": [[(0,-.65),(-.02,-.2),(.1,0),(.27,-.08),(.35,-.4),(.37,-.1),(.55,0),(.7,-.18),(.7,-.65)]],
+            "φ": [circle(.35,-.38,.34,.3),[(.35,-.95),(.35,.3)]],
+            "Ω": [[(0,0),(.23,0),(.08,-.35),(.08,-.7),(.23,-.9),(.5,-.9),(.7,-.7),(.7,-.35),(.55,0),(.8,0)]],
+            "|": [[(.1,-.9),(.1,.15)]], "[": [[(.25,-.9),(0,-.9),(0,.1),(.25,.1)]],
+            "]": [[(0,-.9),(.25,-.9),(.25,.1),(0,.1)]],
+            "(": [[(.25,-.9),(.06,-.65),(0,-.4),(.06,-.15),(.25,.1)]],
+            ")": [[(0,-.9),(.19,-.65),(.25,-.4),(.19,-.15),(0,.1)]]}
+        if ch not in paths: raise ValueError(f"Agrega el carácter «{ch}» a tu calibración para escribir esta fórmula o etiqueta")
+        self.warnings.append("Signos matemáticos geométricos (sin muestra calibrada): " + ch)
+        em = 38 * size
+        left=min(x for path in paths[ch] for x,_ in path)
+        b = Box((max(x for path in paths[ch] for x, _ in path)-left) * em + 2 * size)
+        for path in paths[ch]: self.path(b, [((x-left)*em, y*em) for x, y in path], ink, thickness)
+        return b
+
+    def text(self, text, size, ink="#000000", thickness=2):
+        from handwriting_composer import _choose_char_items, _place_glyph_sequence
+        out = Box()
+        for ch in unicodedata.normalize("NFC", text):
+            self.check()
+            if ch.isspace(): out.width += 14 * size; continue
+            if ch not in self.lib["glyphs"]:
+                b = self.sign(ch, size, ink, thickness * size)
+            else:
+                items = list(_choose_char_items([{"ch": ch, "scale": size, "color": ink, "opacity": 100,
+                                                  "thickness": thickness}], self.lib["glyphs"], self.rng, 14, self.warnings))
+                p = {"strokes": [], "placements": []}
+                _place_glyph_sequence(items, 0, 0, p, self.lib.get("placement_y_offsets", {}), 0, 0, 0, self.rng)
+                # Nested scripts may be smaller than the body's scale controls.
+                # Materialize their scaled width in native metadata; the user
+                # thickness remains an integer and pressure remains unchanged.
+                for stroke in p['strokes']:
+                    metadata=bytearray.fromhex(stroke['metadata_hex'])
+                    struct.pack_into('>f',metadata,96,native_width(stroke)*size)
+                    stroke.update(metadata_hex=metadata.hex(),thickness=0,width_scale=1)
+                pts = [pt for s in p["strokes"] for pt in s["points"]]
+                left, right = min(pt["x"] for pt in pts), max(pt["x"] for pt in pts)
+                b = Box(right-left, min(pt["y"] for pt in pts), max(pt["y"] for pt in pts))
+                b.strokes, b.placements = p["strokes"], p["placements"]
+                normalized = Box(b.width); normalized.put(b, -left); b = normalized
+            out.put(b, out.width); out.width += b.width + 4.8 * size
+        if text and not text[-1].isspace(): out.width = max(0, out.width - 4.8 * size)
+        return out
+
+    def bracket(self, box, x, top, bottom, opening, bracket, ink, thickness, size):
+        w = 9 * size
+        if bracket == "|": coords = [(x,top),(x,bottom)]
+        elif bracket == "[": coords = [(x+w if opening else x,top),(x if opening else x+w,top),
+                                      (x if opening else x+w,bottom),(x+w if opening else x,bottom)]
+        else:
+            coords = [(x + (1-math.sin(i*math.pi/20) if opening else math.sin(i*math.pi/20))*w,
+                       top+(bottom-top)*i/20) for i in range(21)]
+        self.path(box, coords, ink, thickness*size, straight=bracket == "|")
+
+    def expression(self, node, size, ink, thickness):
+        self.check(); typ = node["type"]; em = 38 * size; gap = 6 * size
+        if typ == "text": return self.text(node["text"], size, node.get("color", ink), thickness)
+        if typ == "row":
+            out = Box()
+            for child in node["items"]:
+                b = self.expression(child, size, ink, thickness); out.put(b, out.width); out.width += b.width + 3 * size
+            out.width = max(0, out.width - 3 * size); return out
+        if typ == "fraction":
+            a = self.expression(node["num"], size*.9, ink, thickness); b = self.expression(node["den"], size*.9, ink, thickness)
+            out = Box(max(a.width,b.width)+2*gap)
+            y = -em*.35
+            out.put(a,(out.width-a.width)/2,y-gap-a.bottom)
+            out.put(b,(out.width-b.width)/2,y+gap-b.top)
+            self.path(out,[(0,y),(out.width,y)],ink,thickness*size,straight=True); return out
+        if typ == "scripts":
+            base = self.expression(node["base"], size, ink, thickness)
+            sup = self.expression(node["sup"], size*.62, ink, thickness); sub = self.expression(node["sub"], size*.62, ink, thickness)
+            out = Box(base.width+max(sup.width,sub.width)+(gap if sup.width or sub.width else 0)); out.put(base)
+            if sup.width: out.put(sup,base.width+gap,min(base.top+em*.25,-em*.65)-sup.bottom)
+            if sub.width: out.put(sub,base.width+gap,max(base.bottom-em*.15,em*.12)-sub.top)
+            return out
+        if typ == "root":
+            body = self.expression(node["body"],size,ink,thickness); idx=self.expression(node["index"],size*.5,ink,thickness)
+            offset=max(18*size,idx.width+9*size); out=Box(offset+body.width+gap)
+            out.put(body,offset); top=min(body.top,-em*.65)-gap; bottom=max(body.bottom,0)
+            self.path(out,[(offset-18*size,-em*.25),(offset-13*size,-em*.35),(offset-8*size,bottom),
+                           (offset-2*size,top),(out.width,top)],ink,thickness*size)
+            if idx.width: out.put(idx,0,top+em*.2-idx.bottom)
+            return out
+        if typ == "group":
+            body=self.expression(node["body"],size,ink,thickness);out=Box(body.width+26*size)
+            out.put(body,13*size);top=min(body.top,-em*.7)-3*size;bottom=max(body.bottom,0)+3*size
+            for x,opening in ((0,True),(out.width-9*size,False)):self.bracket(out,x,top,bottom,opening,node.get("bracket","("),ink,thickness,size)
+            return out
+        if typ == "matrix":
+            cells=[[self.expression(c,size*.85,ink,thickness) for c in row] for row in node["cells"]]
+            widths=[max(row[c].width for row in cells) for c in range(len(cells[0]))]
+            heights=[max(b.bottom for b in row)-min(b.top for b in row) for row in cells]
+            h=sum(heights)+gap*(len(cells)-1);out=Box(sum(widths)+18*size*(len(widths)-1)+26*size)
+            top=-h/2-em*.3;y=top
+            for row,height in zip(cells,heights):
+                baseline=y-min(b.top for b in row);x=13*size
+                for b,w in zip(row,widths):out.put(b,x+(w-b.width)/2,baseline);x+=w+18*size
+                y+=height+gap
+            for x,opening in ((0,True),(out.width-9*size,False)):self.bracket(out,x,top-gap/2,top+h+gap/2,opening,node.get("bracket","["),ink,thickness,size)
+            return out
+        if typ == "operator":
+            symbol=node["symbol"]
+            sign=self.text(symbol,size*(1.3 if symbol in "Σ∫" else 1 if symbol=='∏' else .8),ink,thickness)
+            lo=self.expression(node["lower"],size*.55,ink,thickness);hi=self.expression(node["upper"],size*.55,ink,thickness)
+            body=self.expression(node["body"],size,ink,thickness);w=max(sign.width,lo.width,hi.width)
+            out=Box(w+gap+body.width);out.put(sign,(w-sign.width)/2)
+            if hi.width:out.put(hi,(w-hi.width)/2,sign.top-gap-hi.bottom)
+            if lo.width:out.put(lo,(w-lo.width)/2,sign.bottom+gap-lo.top)
+            out.put(body,w+gap);return out
+        raise ValueError("Molde desconocido")
+
+
+def smooth_points(points):
+    """Monotone cubic Hermite interpolation: passes through data, no overshoot."""
+    if len(points) < 3: return points
+    slopes=[(b[1]-a[1])/(b[0]-a[0]) for a,b in zip(points,points[1:])]
+    tangents=[slopes[0]]
+    for a,b in zip(slopes,slopes[1:]):tangents.append(0 if a*b<=0 else 2*a*b/(a+b))
+    tangents.append(slopes[-1]);out=[]
+    for i,(a,b) in enumerate(zip(points,points[1:])):
+        dx=b[0]-a[0]
+        for j in range(24):
+            t=j/24;t2=t*t;t3=t2*t
+            y=(2*t3-3*t2+1)*a[1]+(t3-2*t2+t)*dx*tangents[i]+(-2*t3+3*t2)*b[1]+(t3-t2)*dx*tangents[i+1]
+            out.append((a[0]+t*dx,y))
+    return out+[points[-1]]
+
+
+def draw_graph(obj, painter):
+    w,h=obj["width"]*GRID,obj["height"]*GRID
+    if w < 4*GRID or h < 4*GRID:raise ValueError("Una gráfica necesita al menos 4 × 4 cuadros para sus ejes y etiquetas")
+    out=Box(w,0,h);size=obj["size"];ink=obj["color"];thickness=obj["thickness"]
+    # Labels occupy reserved margins; plot area is independent of handwriting size.
+    left,right,top,bottom=GRID*1.1,w-GRID*.65,GRID*.9,h-GRID*1.15
+    if obj.get("title"): top+=GRID*.45
+    def xy(x,y):return (left+(x-obj["xmin"])/(obj["xmax"]-obj["xmin"])*(right-left),bottom-(y-obj["ymin"])/(obj["ymax"]-obj["ymin"])*(bottom-top))
+    xzero=max(obj["xmin"],min(obj["xmax"],0));yzero=max(obj["ymin"],min(obj["ymax"],0));ax,ay=xy(xzero,yzero)
+    def line(coords,c=ink,width=thickness,dashed=False):
+        if not dashed:return painter.path(out,coords,c,width,straight=len(coords)==2)
+        for a,b in zip(coords,coords[1:]):
+            length=math.dist(a,b)
+            if not length:continue
+            for start in range(0,math.ceil(length),10):
+                end=min(start+5,length);p=lambda d:(a[0]+(b[0]-a[0])*d/length,a[1]+(b[1]-a[1])*d/length)
+                painter.path(out,[p(start),p(end)],c,width,straight=True)
+    def label(text,x,y,c=ink,s=size,align="left",vertical="baseline"):
+        b=painter.text(text,s,c,thickness)
+        if b.width>w-GRID*.2:raise ValueError("La etiqueta de gráfica no cabe: acórtala o reduce su tamaño")
+        if vertical=='top':y-=b.top
+        x-=b.width*(.5 if align=="center" else 1 if align=="right" else 0)
+        x=max(3,min(w-b.width-3,x));y=max(3-b.top,min(h-3-b.bottom,y));out.put(b,x,y)
+    def ticks(axis):
+        low,high,step=(obj[axis+k] for k in ("min","max","step"));start=math.ceil(low/step-1e-9)*step
+        return [start+i*step for i in range(int((high-start)/step+1e-8)+1)]
+    for axis in ("x","y"):
+        for value in ticks(axis):
+            x,y=xy(value,yzero) if axis=="x" else xy(xzero,value)
+            if obj.get("grid",False):line([(x,top),(x,bottom)] if axis=="x" else [(left,y),(right,y)],"#C4CCD5",1)
+            if obj.get("ticks",True):
+                line([(x,ay-3),(x,ay+3)] if axis=="x" else [(ax-3,y),(ax+3,y)])
+                if abs(value)>1e-9:
+                    text=f"{value:.5g}".replace("e+","e")
+                    label(text,x,ay+22, s=size*.72,align="center") if axis=="x" else label(text,ax-9,y+6,s=size*.72,align="right")
+    line([(left,ay),(right,ay)]);line([(ax,bottom),(ax,top)])
+    if obj.get("arrows",True):
+        line([(right-8,ay-5),(right,ay),(right-8,ay+5)]);line([(ax-5,top+8),(ax,top),(ax+5,top+8)])
+    label(obj.get("xlabel","x"),right,ay+(30 if obj.get('ticks',True) else 8),align="right",vertical='top');label(obj.get("ylabel","y"),ax+12,top-10)
+    if obj.get("title"):label(obj["title"],w/2,GRID*.5,align="center")
+    for trace in obj["series"]:
+        painter.check();c=trace.get("color",ink);coords=[xy(p["x"],p["y"]) for p in trace["points"]]
+        if trace["type"]!="points" and len(coords)>1:
+            rendered=smooth_points([(p["x"],p["y"]) for p in trace["points"]]) if trace["type"]=="curve" else [(p["x"],p["y"]) for p in trace["points"]]
+            line([xy(x,y) for x,y in rendered],c,dashed=bool(trace.get("dashed")))
+        for p,(x,y) in zip(trace["points"],coords):
+            if trace.get("guides"):line([(x,ay),(x,y),(ax,y)],c,1,True)
+            if trace.get("markers",True) or trace["type"]=="points":
+                painter.path(out,[(x+2.3*math.cos(i*math.pi/8),y+2.3*math.sin(i*math.pi/8)) for i in range(17)],c,thickness)
+            if p.get("label"):label(p["label"],x+7,y-8,c)
+    return out
+
+
+def plan_object(obj, lib, seed, warnings, check):
+    obj=validate_object(obj);painter=Ink(lib,seed,warnings,check)
+    if obj["kind"]=="graph":return draw_graph(obj,painter)
+    # Fit retries reuse the same variants. Never stretch individual glyphs.
+    size=obj["size"];width=obj["width"]*GRID;pad=GRID*.1
+    while True:
+        painter=Ink(lib,seed,warnings,check)
+        b=painter.expression(obj["expression"],size,obj["color"],obj["thickness"])
+        if b.width<=width-2*pad:break
+        if not obj.get("fit",True) or size<=.4+.00001:raise ValueError("La fórmula no cabe: amplía su ancho, reduce el tamaño o divídela en fórmulas")
+        size=max(.4,min(size-.05,size*(width-2*pad)/max(b.width,1)))
+    out=Box(width,0,max(obj["height"]*GRID,math.ceil((b.bottom-b.top+2*pad)/HALF)*HALF))
+    free=width-2*pad-b.width;align=obj.get("align","left")
+    out.put(b,pad+(free/2 if align=="center" else free if align=="right" else 0),pad-b.top)
+    if size<obj["size"]-.001:warnings.append(f"Fórmula ajustada al ancho: {round(size*100)} %")
+    return out
+
+
+def draw_object(obj, box, y, page):
+    placed=Box();placed.put(box,obj["left"]*GRID,y)
+    page["strokes"].extend(placed.strokes);page["placements"].extend(placed.placements)
+    page.setdefault("objects",[]).append({"id":obj["id"],"kind":obj["kind"],"x":obj["left"]*GRID,
+                                          "y":y,"width":box.width,"height":box.bottom})

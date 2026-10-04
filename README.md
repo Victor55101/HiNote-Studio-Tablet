@@ -1,6 +1,24 @@
-# HiNote Studio Tablet — V29
+# HiNote Studio Tablet — V30
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V30 añade **Fórmulas y gráficas** y **Guardado → Combinar cuadernos .hinote**. Se conserva la selección acumulativa de filas y columnas de las tablas, el estándar de 60 % y los borradores anteriores.
+
+## V30: fórmulas, gráficas y cuadernos
+
+**Insertar fórmula** abre campos que puedes tocar y llenar. Los moldes se insertan en la posición del cursor o envuelven el texto seleccionado: fracciones anidadas, raíces, potencias/subíndices, grupos, funciones, matrices/determinantes de hasta 6 × 6, derivadas, límites, integrales, sumatorias y productos. Campo anterior/siguiente, Tab y Enter permiten navegar; Deshacer fórmula recupera cambios dentro del editor. Cada campo puede tener su color. Se escribe la notación, sin resolverla.
+
+La previsualización final y la exportación usan los trazos de la calibración activa. Un signo matemático calibrado tiene prioridad; para los signos incluidos sin muestra se usan trazos geométricos y se muestra un aviso. Las barras de fracción, radicales y agrupadores se dimensionan con el contenido. Un carácter sin muestra ni forma incluida pide completar la calibración. Así, añadir signos a tu perfil mejora también las fórmulas.
+
+**Insertar gráfica** permite definir límites y pasos de ambos ejes, sus nombres y título. Añade puntos, segmentos o curvas suaves por coordenadas `X; Y; etiqueta opcional`, o activa Tocar para agregar puntos. Arrastra los puntos y ajusta a medio paso si lo deseas. Cada trazo tiene color, marcadores y guías punteadas; las curvas pasan por los puntos introducidos. No se calculan funciones. Hasta ocho trazos y cien puntos por trazo.
+
+Izquierda, ancho, alto mínimo y espacio anterior se indican en **medios cuadros**. Letra y grosor son independientes del espacio ocupado. Ajustar al ancho reduce uniformemente una fórmula hasta el 40 % si hace falta; su altura puede crecer. Para dos gráficas juntas, usa **Al lado del anterior** y posiciones que no se superpongan (por ejemplo, izquierda 1/ancho 7 e izquierda 8.5/ancho 7). El conjunto pasa completo a la siguiente página. El texto normal posterior recupera su línea habitual. Los controles táctiles ↔ y ↘ permiten mover el bloque o cambiar su espacio en la vista previa.
+
+Las fórmulas y gráficas son editables en Studio, se incluyen en deshacer/rehacer y en el borrador, y recuperan una edición pendiente al reabrir la app. En Huawei Notes se reciben como **trazos nativos**, con líneas estructurales independientes, conservando color y geometría. No se convierten en una imagen ni en un editor de ecuaciones de Notes.
+
+Para incorporar apuntes al cuaderno del semestre, exporta ambos desde Huawei Notes como `.hinote`. Abre **Guardado → Combinar cuadernos .hinote**, agrega primero el cuaderno del semestre y después el apunte nuevo, marca páginas y revisa el orden. Ver muestra la miniatura original; ↑/↓ cambia el orden. **Guardar cuaderno combinado** prepara y comprueba los recursos antes de pedir el destino. Crea un archivo nuevo para importar en Notes; no modifica el cuaderno abierto allí ni los archivos originales.
+
+Se copian sin cambios los binarios de tinta y recursos de las páginas seleccionadas, incluyendo imágenes y papel. Se regeneran identificadores, numeración y hashes. También se admiten exportaciones parciales con numeración original, como las páginas 8 y 9 de la muestra. Hasta ocho archivos, 128 MiB por entrada, 256 MiB comprimidos en total y 500 páginas/512 MiB en la salida. La lista de archivos de combinación dura durante la sesión; al reiniciar la app se vuelven a seleccionar. Los límites generales del documento se comparten con texto y tablas: cien bloques matemáticos y 8192 caracteres por fórmula.
 
 V29 establece **Estándar en 60 %** y añade selección de varias celdas con toques, por fila, columna, tabla completa o Mayús + clic para un rango. Alineación horizontal/vertical, tamaño, color y grosor se aplican a las celdas marcadas; «Mixto» indica valores distintos. **Terminar selección** vuelve a la edición de texto.
 
