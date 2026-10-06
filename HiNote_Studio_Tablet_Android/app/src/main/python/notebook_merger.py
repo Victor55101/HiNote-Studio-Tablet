@@ -171,7 +171,7 @@ def merge_notebooks(sources_json,plan_json,output_path,work_dir,token=None):
             for name,digest in root_resources.items():root_map[name]=copy_resource(first[0],name,digest)
             for att in note.get("attachment",[]):
                 if att.get("id"):root_map[att["id"]]=uuid.uuid4().hex
-            root=remap(root,root_map);root["fileList"]=[{"name":root_map[n],"hash":d} for n,d in root_resources.items()]
+            root=remap(root,root_map);root["fileList"]=[{"name":n,"hash":d} for n,d in {root_map[n]:d for n,d in root_resources.items()}.items()]
             for index,record in enumerate(records,1):
                 _check(token);z,source_root,source_pages=opened[record["source"]]
                 source=source_pages.get(record.get("page"))
@@ -188,7 +188,7 @@ def merge_notebooks(sources_json,plan_json,output_path,work_dir,token=None):
                     if page.get(key):mapping[str(page[key])]=uuid.uuid4().hex
                 obj=remap(obj,mapping);page=obj["customNotePageContent"]
                 page.update(id=pid,notesId=note_id,pageNumber=index,lastPageTag=1 if index==len(records) else 0,modifiedTime=now+index)
-                obj["fileList"]=[{"name":mapping[n],"hash":d} for n,d in resources.items()]
+                obj["fileList"]=[{"name":n,"hash":d} for n,d in {mapping[n]:d for n,d in resources.items()}.items()]
                 page_records.append((f"pages/{pid}.jhinote",_gzip_json(obj)))
                 if token is not None:token.onProgress(index)
             md={"customMdContents":[{"fileMdStr":digest,"fileNameMdStr":hashlib.sha256(name.encode()).hexdigest()} for name,(_,digest) in sorted(files.items())]}

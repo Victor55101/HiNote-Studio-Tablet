@@ -244,15 +244,24 @@ class Ink:
         if text and not text[-1].isspace(): out.width = max(0, out.width - 4.8 * size)
         return out
 
-    def bracket(self, box, x, top, bottom, opening, bracket, ink, thickness, size):
-        w = 9 * size
-        if bracket == "|": coords = [(x,top),(x,bottom)]
-        elif bracket == "[": coords = [(x+w if opening else x,top),(x if opening else x+w,top),
-                                      (x if opening else x+w,bottom),(x+w if opening else x,bottom)]
-        else:
-            coords = [(x + (1-math.sin(i*math.pi/20) if opening else math.sin(i*math.pi/20))*w,
-                       top+(bottom-top)*i/20) for i in range(21)]
-        self.path(box, coords, ink, thickness*size, straight=bracket == "|")
+    def bracket(self, top, bottom, opening, bracket, ink, thickness, size):
+        ch = bracket if opening or bracket == "|" else {"(": ")", "[": "]"}[bracket]
+        if ch == "|" and ch not in self.lib["glyphs"]:
+            box = Box()
+            self.warnings.append("Signos matemáticos geométricos (sin muestra calibrada): |")
+            self.path(box, [(0, top), (0, bottom)], ink, thickness*size, straight=True)
+            return box
+        # Use the user's delimiter and stretch only its height to enclose the body.
+        box = self.text(ch, size, ink, thickness)
+        old_top, height = box.top, max(.001, box.bottom-box.top)
+        sy = (bottom-top)/height
+        for stroke in box.strokes:
+            for point in stroke["points"]:
+                point["y"] = top+(point["y"]-old_top)*sy
+        for p in box.placements:
+            p["baseline_y"] = top+(p["baseline_y"]-old_top)*sy
+        box.top, box.bottom = top, bottom
+        return box
 
     def expression(self, node, size, ink, thickness):
         self.check(); typ = node["type"]; em = 38 * size; gap = 6 * size
@@ -295,11 +304,13 @@ class Ink:
         if typ == "group":
             body=self.expression(node["body"],size,ink,thickness)
             if not body.strokes: return Box()
-            bracket=node.get("bracket","(");bw=0 if bracket=="|" else 9*size;pad=8*size if bracket=="|" else 4*size
-            out=Box(body.width+2*(bw+pad));out.put(body,bw+pad)
-            if hasattr(body,'grid_anchor'):out.grid_anchor=body.grid_anchor
+            bracket=node.get("bracket","(");pad=8*size if bracket=="|" else 4*size
             top=min(body.top,-em*.7)-3*size;bottom=max(body.bottom,0)+3*size
-            for x,opening in ((0,True),(out.width-bw,False)):self.bracket(out,x,top,bottom,opening,bracket,ink,thickness,size)
+            left=self.bracket(top,bottom,True,bracket,ink,thickness,size)
+            right=self.bracket(top,bottom,False,bracket,ink,thickness,size)
+            out=Box(body.width+left.width+right.width+2*pad)
+            out.put(left);out.put(body,left.width+pad);out.put(right,out.width-right.width)
+            if hasattr(body,'grid_anchor'):out.grid_anchor=body.grid_anchor
             return out
         if typ == "matrix":
             cells=[[self.expression(c,size*.85,ink,thickness) for c in row] for row in node["cells"]]
@@ -308,13 +319,16 @@ class Ink:
             baselines=[0]
             for i in range(1,len(cells)):baselines.append(baselines[-1]+math.ceil((bottoms[i-1]-tops[i]+gap)/HALF)*HALF)
             heights=[bottom-top for top,bottom in zip(tops,bottoms)]
-            bracket=node.get("bracket","[");bw=0 if bracket=="|" else 9*size;pad=8*size if bracket=="|" else 4*size
-            h=baselines[-1]+bottoms[-1]-tops[0];out=Box(sum(widths)+18*size*(len(widths)-1)+2*(bw+pad))
-            top=-h/2-em*.3;shift=top-tops[0];out.grid_anchor=shift
+            bracket=node.get("bracket","[");pad=8*size if bracket=="|" else 4*size
+            h=baselines[-1]+bottoms[-1]-tops[0]
+            top=-h/2-em*.3;shift=top-tops[0]
+            left=self.bracket(top-gap/2,top+h+gap/2,True,bracket,ink,thickness,size)
+            right=self.bracket(top-gap/2,top+h+gap/2,False,bracket,ink,thickness,size)
+            out=Box(sum(widths)+18*size*(len(widths)-1)+left.width+right.width+2*pad);out.grid_anchor=shift
+            out.put(left);out.put(right,out.width-right.width)
             for row,baseline in zip(cells,baselines):
-                baseline+=shift;x=bw+pad
+                baseline+=shift;x=left.width+pad
                 for b,w in zip(row,widths):out.put(b,x+(w-b.width)/2,baseline);x+=w+18*size
-            for x,opening in ((0,True),(out.width-bw,False)):self.bracket(out,x,top-gap/2,top+h+gap/2,opening,bracket,ink,thickness,size)
             return out
         if typ == "operator":
             symbol=node["symbol"]
@@ -370,6 +384,51 @@ def graph_geometry(obj, unit=GRID):
             'ax': ax, 'ay': ay, 'x': x, 'y': y}
 
 
+class LabelSpace:
+    """Bounded local queries for short labels near dense plots."""
+    def __init__(self, width, height, unit=GRID):
+        self.width, self.height, self.unit = width, height, unit
+        self.cells, self.segments, self.boxes = {}, [], []
+
+    def keys(self, rect):
+        x,y,w,h=rect
+        for i in range(math.floor(x/self.unit),math.floor((x+w)/self.unit)+1):
+            for j in range(math.floor(y/self.unit),math.floor((y+h)/self.unit)+1):
+                yield i,j
+
+    def path(self, points, pad=1):
+        for a,b in zip(points,points[1:]):
+            index=len(self.segments);self.segments.append((a,b,pad))
+            rect=(min(a[0],b[0])-pad,min(a[1],b[1])-pad,abs(a[0]-b[0])+2*pad,abs(a[1]-b[1])+2*pad)
+            for key in self.keys(rect):self.cells.setdefault(key,[]).append(index)
+
+    @staticmethod
+    def crosses(a, b, rect, pad=0):
+        x,y,w,h=rect;x-=pad;y-=pad;w+=2*pad;h+=2*pad
+        dx,dy=b[0]-a[0],b[1]-a[1];lo,hi=0,1
+        for p,q in ((-dx,a[0]-x),(dx,x+w-a[0]),(-dy,a[1]-y),(dy,y+h-a[1])):
+            if abs(p)<1e-12:
+                if q<0:return False
+            elif p<0:lo=max(lo,q/p)
+            else:hi=min(hi,q/p)
+            if lo>hi:return False
+        return True
+
+    def place(self, x, y, width, height, radius=3):
+        margin=radius+self.unit*.12;best=None
+        for gap in (margin,margin+self.unit*.3):
+            for ox,oy in ((gap,-height-gap),(gap,gap),(-width-gap,-height-gap),(-width-gap,gap),
+                          (-width/2,-height-gap),(-width/2,gap),(gap,-height/2),(-width-gap,-height/2)):
+                xx=max(3,min(self.width-width-3,x+ox));yy=max(3,min(self.height-height-3,y+oy))
+                rect=(xx,yy,width,height)
+                indices={i for key in self.keys(rect) for i in self.cells.get(key,[])}
+                collisions=sum(self.crosses(a,b,rect,pad+self.unit*.025) for a,b,pad in (self.segments[i] for i in indices))
+                overlaps=sum(max(0,min(xx+width,bx+bw)-max(xx,bx))*max(0,min(yy+height,by+bh)-max(yy,by)) for bx,by,bw,bh in self.boxes)
+                score=collisions*1000+overlaps*100+math.hypot(xx+width/2-x,yy+height/2-y)
+                if best is None or score<best[0]:best=(score,rect)
+        self.boxes.append(best[1]);return best[1]
+
+
 def draw_graph(obj, painter):
     w,h=obj["width"]*GRID,obj["height"]*GRID
     if w < 4*GRID or h < 4*GRID:raise ValueError("Una gráfica necesita al menos 4 × 4 cuadros para sus ejes y etiquetas")
@@ -377,6 +436,9 @@ def draw_graph(obj, painter):
     # Labels occupy reserved margins; plot area is independent of handwriting size.
     geometry=graph_geometry(obj);xy=geometry['xy']
     left,right,top,bottom,ax,ay=(geometry[k] for k in ('left','right','top','bottom','ax','ay'))
+    arrow_right=right+HALF if obj.get('arrows',True) and right+HALF<=w-3 else right
+    arrow_top=top-HALF if obj.get('arrows',True) and top-HALF>=3 else top
+    labels=[]
     xzero=max(obj["xmin"],min(obj["xmax"],0));yzero=max(obj["ymin"],min(obj["ymax"],0))
     def line(coords,c=ink,width=thickness,dashed=False):
         if not dashed:return painter.path(out,coords,c,width,straight=len(coords)==2)
@@ -427,16 +489,17 @@ def draw_graph(obj, painter):
             x,y=xy(value,yzero) if axis=="x" else xy(xzero,value)
             if obj.get("grid",False):line([(x,top),(x,bottom)] if axis=="x" else [(left,y),(right,y)],"#C4CCD5",1)
             if obj.get("ticks",True):
-                line([(x,ay-3),(x,ay+3)] if axis=="x" else [(ax-3,y),(ax+3,y)])
+                if not obj.get('arrows',True) or (arrow_right-x if axis=='x' else y-arrow_top)>12:
+                    line([(x,ay-3),(x,ay+3)] if axis=="x" else [(ax-3,y),(ax+3,y)])
                 if abs(value)>1e-9:
                     text=f"{value:.5g}".replace("e+","e")
                     label(text,x,ay+22, s=size*.72,align="center") if axis=="x" else label(text,ax-9,y+6,s=size*.72,align="right")
     # Keep stems and arrow wings in one ink tool with matching width/caps.
-    painter.path(out,[(left,ay),(right,ay)],ink,thickness)
-    painter.path(out,[(ax,bottom),(ax,top)],ink,thickness)
+    painter.path(out,[(left,ay),(arrow_right,ay)],ink,thickness)
+    painter.path(out,[(ax,bottom),(ax,arrow_top)],ink,thickness)
     if obj.get("arrows",True):
-        painter.path(out,[(right-8,ay-5),(right,ay),(right-8,ay+5)],ink,thickness)
-        painter.path(out,[(ax-5,top+8),(ax,top),(ax+5,top+8)],ink,thickness)
+        painter.path(out,[(arrow_right-8,ay-5),(arrow_right,ay),(arrow_right-8,ay+5)],ink,thickness)
+        painter.path(out,[(ax-5,arrow_top+8),(ax,arrow_top),(ax+5,arrow_top+8)],ink,thickness)
     label(obj.get("xlabel","x"),right,ay+(30 if obj.get('ticks',True) else 8),align="right",vertical='top');label(obj.get("ylabel","y"),ax+12,top-10)
     if obj.get("title"):label(obj["title"],w/2,max(GRID*.5,top-GRID*.7),align="center")
     for trace in obj["series"]:
@@ -450,8 +513,17 @@ def draw_graph(obj, painter):
         for p,(x,y) in zip(trace["points"],coords):
             if trace.get("markers",True) or trace["type"]=="points":
                 radius=trace.get('pointSize',2.5)
-                painter.path(out,[(x+radius*math.cos(i*math.pi/8),y+radius*math.sin(i*math.pi/8)) for i in range(17)],trace.get('pointColor',c),max(1,width))
-            if p.get("label"):label(p["label"],x+7,y-8,trace.get('labelColor',trace.get('pointColor',c)))
+                painter.path(out,[(x-.01,y),(x+.01,y)],trace.get('pointColor',c),2*radius/.928)
+            if p.get("label"):
+                b=painter.text(p["label"],size,trace.get('labelColor',trace.get('pointColor',c)),thickness)
+                if b.width>w-GRID*.2:raise ValueError("La etiqueta de gráfica no cabe: acórtala o reduce su tamaño")
+                labels.append((b,x,y,trace.get('pointSize',2.5)))
+    space=LabelSpace(w,h)
+    for stroke in out.strokes:
+        space.path([(p['x'],p['y']) for p in stroke['points']],native_width(stroke)*1.4)
+    for b,x,y,radius in labels:
+        xx,yy,_,_=space.place(x,y,b.width,b.bottom-b.top,radius)
+        out.put(b,xx,yy-b.top)
     return out
 
 

@@ -300,7 +300,7 @@ function saveDraft() {
   ImageEditor.finishGesture(false);
   clearTimeout(draftTimer);
   try {
-    const raw=JSON.stringify({version:31,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
+    const raw=JSON.stringify({version:32,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
     const nativeSaved=window.AndroidBridge?.saveDraft ? AndroidBridge.saveDraft(raw) : false;
     try{localStorage.setItem(DRAFT_KEY,raw);}catch(e){if(!nativeSaved)throw e;}
     $('draftStatus').textContent = 'Borrador guardado';
@@ -311,7 +311,7 @@ function restoreDraft() {
   try {
     const native=window.AndroidBridge?.getDraft?AndroidBridge.getDraft():'';
     const draft = JSON.parse(native||localStorage.getItem(DRAFT_KEY)||localStorage.getItem('hinote-draft-v21'));
-    if (!draft || ![21,23,25,27,30,31].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
+    if (!draft || ![21,23,25,27,30,31,32].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
     let count = draft.lines.length - 1, segments = 0;
     for (const line of draft.lines) {
       if (!Array.isArray(line)) return false;

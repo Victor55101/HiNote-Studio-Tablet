@@ -9,3 +9,9 @@
 .graphControls>*{flex-shrink:0}
 @media(max-width:800px){.graphMode .mathScroll{overflow:auto}.graphMode .graphLayout,.graphMode .graphControls{height:auto;overflow:visible}.graphMode .graphPreview{max-height:none;overflow:hidden}}
 @media(max-width:800px){.mathDialog,.notebookDialog{padding:8px}.mathCard,.notebookCard{height:98vh;border-radius:12px}.graphLayout{grid-template-columns:1fr}.graphPreview{grid-row:1}.mathHeading,.notebookHeading{padding:10px}.mathTools{gap:7px;padding:10px}.mathKeys{grid-template-columns:repeat(4,1fr)}.mathKeys .btn{font-size:16px}.notebookDetails{grid-template-columns:1fr}.notebookThumb{max-height:220px}.mathActions .btn{padding:10px}}
+
+/* Empty continuation fields are temporary insertion positions, not boxes. */
+.mathSlot.mathCaret:not(:focus){min-width:0!important;width:0!important;padding-left:0;padding-right:0;border-left:0;border-right:0}
+.objectTarget button{touch-action:none}.objectManipulating{overflow:hidden!important;touch-action:none!important;overscroll-behavior:none}
+.graphViewport{overflow:hidden;touch-action:none}.graphZoomTools{display:flex;gap:6px;align-items:center;justify-content:center;padding:5px}.graphZoomTools .btn{min-width:44px;min-height:40px}
+.notebookChoice{border:1px solid var(--accent);background:#f4f4ff;border-radius:10px;padding:14px;margin:12px 0}.notebookChoice .btn{margin:6px 6px 0 0}

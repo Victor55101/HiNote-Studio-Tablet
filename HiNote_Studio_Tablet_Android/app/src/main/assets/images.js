@@ -139,7 +139,7 @@ const ImageEditor = (() => {
       scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function pointerDown(e){
-    if(e.target.closest('.tableTarget'))return;
+    if(e.target.closest('.tableTarget,.objectTarget')||MathGraphEditor.isDragging())return;
     if(exporting||CalibrationUI.isBusy()||busy||e.button>0||!el('cropDialog').classList.contains('hidden'))return;
     if(pointers.size>=2){e.preventDefault();return;}
     e.preventDefault();pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);

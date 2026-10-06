@@ -74,6 +74,7 @@ public class MainActivity extends Activity {
             public void ui(Runnable action){runOnUiThread(action);}
         });
         notebookTasks=new NotebookTasks(this,sessionDir,new NotebookTasks.Host(){
+            public void current(JSONObject args,File output,TaskToken token)throws Exception{prepareCurrentNotebook(args,output,token);}
             public void result(int ticket,String data,String error){notebookBusy.set(false);send("onNotebookResult",ticket+","+(data==null?"null":quote(data))+","+(error==null?"null":quote(error)));}
             public void status(int ticket,String text){send("onNotebookProgress",ticket+","+quote(text));}
             public void ui(Runnable action){runOnUiThread(action);}
@@ -141,7 +142,7 @@ public class MainActivity extends Activity {
             runOnUiThread(()->{try{notebookTasks.beginImport(ticket);}catch(Exception e){notebookTasks.failed(ticket,e);}});
         }
         @JavascriptInterface public void requestNotebookAction(String action,String raw,int ticket){
-            if(raw==null||raw.length()>100000){send("onNotebookResult",ticket+",null,"+quote("Selección de páginas demasiado grande"));return;}
+            if(raw==null||raw.length()>("current".equals(action)?16000000:100000)){send("onNotebookResult",ticket+",null,"+quote("Selección de páginas demasiado grande"));return;}
             if(!beginNotebook(ticket))return;
             worker.execute(()->{try{ready();notebookTasks.run(action,raw,ticket,new TaskToken("notebook",ticket,notebookCancelled));}
                 catch(OutOfMemoryError e){notebookTasks.failed(ticket,new IOException("No hay memoria suficiente para este cuaderno"));}
@@ -342,29 +343,42 @@ public class MainActivity extends Activity {
         startExport(job,data.getData());
     }
     private void folderResult(String error){send("onExportFolder",quote(exportFolder.describe())+","+(error==null?"null":quote(error)));}
+    private void prepareCurrentNotebook(JSONObject args,File output,TaskToken token)throws Exception{
+        File work=new File(sessionDir,"export-"+UUID.randomUUID().toString().replace("-",""));String snapshot=null;
+        try{
+            JSONObject info=new JSONObject(backend.callAttr("compose",getFilesDir().getPath(),sessionDir.getPath(),args.getJSONObject("document").toString(),args.getJSONObject("settings").toString(),token).toString());
+            snapshot=info.getString("snapshot");token.check();
+            int pages=Math.max(info.getInt("page_count"),args.optInt("pages",1));JSONArray currentImages=args.getJSONArray("images");
+            for(int i=0;i<currentImages.length();i++)pages=Math.max(pages,currentImages.getJSONObject(i).getInt("page")+1);
+            if(pages<1||pages>500)throw new IOException("Máximo 500 páginas");
+            prepareNativeNote(snapshot,args.optString("title","Documento abierto"),currentImages.toString(),pages,output,work,token);
+        }finally{deleteTree(work);if(snapshot!=null)backend.callAttr("remove_snapshot",sessionDir.getPath(),snapshot);}
+    }
+    private void prepareNativeNote(String snapshot,String title,String rawImages,int pages,File output,File work,TaskToken token)throws Exception{
+        JSONObject info=new JSONObject(backend.callAttr("snapshot_info",sessionDir.getPath(),snapshot).toString());
+        if(!work.mkdirs())throw new IOException("No se pudo preparar la exportación");
+        int count=Math.max(pages,info.getInt("page_count"));
+        JSONArray images=imageStore.prepareExport(rawImages,work,count,token::check);
+        for(int i=0;i<count;i++){
+            token.check();if(work.getUsableSpace()<20L*1024*1024)throw new IOException("No queda suficiente espacio para exportar");
+            JSONArray pageImages=new JSONArray();
+            for(int j=0;j<images.length();j++)if(images.getJSONObject(j).getInt("page")==i)pageImages.put(images.getJSONObject(j));
+            String json=i<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),snapshot,i).toString():"{\"strokes\":[]}";
+            PageRenderer.renderForExport(json,new File(work,"page-"+i+"-native.jpg"),pageImages,new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
+            token.onProgress(i+1);
+        }
+        token.check();backend.callAttr("export_snapshot",getFilesDir().getPath(),sessionDir.getPath(),snapshot,title,true,output.getPath(),token,images.toString(),count,work.getPath());
+    }
     private void startExport(ExportJob job,Uri pickedDestination){
         worker.execute(()->{
             Uri uri=pickedDestination;
             File output=new File(sessionDir,"export-"+UUID.randomUUID()+".hinote");TaskToken token=new TaskToken("export",0,job.cancelled);
             File work=new File(sessionDir,"export-"+UUID.randomUUID().toString().replace("-",""));
             try{
-                token.check();ready();JSONObject info=new JSONObject(backend.callAttr("snapshot_info",sessionDir.getPath(),job.snapshot).toString());
+                token.check();ready();
                 if(job.folder!=null)exportFolder.validate(job.folder);
-                if(!work.mkdirs())throw new IOException("No se pudo preparar la exportación");
-                int count=Math.max(job.pages,info.getInt("page_count"));
                 send("onExportStage",quote("Preparando imágenes y recortes…"));
-                JSONArray images=imageStore.prepareExport(job.images,work,count,token::check);
-                for(int i=0;i<count;i++){
-                    token.check();
-                    if(work.getUsableSpace()<20L*1024*1024)throw new IOException("No queda suficiente espacio para exportar");
-                    JSONArray pageImages=new JSONArray();
-                    for(int j=0;j<images.length();j++)if(images.getJSONObject(j).getInt("page")==i)pageImages.put(images.getJSONObject(j));
-                    String json=i<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),job.snapshot,i).toString():"{\"strokes\":[]}";
-                    PageRenderer.renderForExport(json,new File(work,"page-"+i+"-native.jpg"),pageImages,new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
-                    token.onProgress(i+1);
-                }
-                send("onExportStage",quote("Empaquetando y comprobando la nota…"));
-                backend.callAttr("export_snapshot",getFilesDir().getPath(),sessionDir.getPath(),job.snapshot,job.title,true,output.getPath(),token,images.toString(),count,work.getPath());
+                prepareNativeNote(job.snapshot,job.title,job.images,job.pages,output,work,token);
                 send("onExportStage",quote("Escribiendo el archivo…"));
                 if(job.folder!=null)uri=exportFolder.create(job.folder,job.title,token::check);
                 token.check();
