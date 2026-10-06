@@ -148,28 +148,28 @@ class Box:
 class Ink:
     def __init__(self, lib, seed, warnings, check):
         self.lib, self.rng, self.warnings, self.check = lib, random.Random(seed), warnings, check
-        self.prototype = next(s for variants in lib["glyphs"].values() for g in variants for s in g["strokes"]
-                              if int.from_bytes(bytes.fromhex(s["point_header_hex"])[:4], "big") != 2)
-
     def path(self, box, coords, color="#000000", thickness=2, straight=False):
-        self.check()
-        if len(coords) < 2: return
-        if straight:
-            stroke = border_stroke(coords, {"color": color, "border": thickness})
-        else:
-            stroke = {k: self.prototype[k] for k in ("header_hex", "metadata_hex", "point_header_hex")}
-            metadata=bytearray.fromhex(stroke['metadata_hex'])
-            struct.pack_into('>f',metadata,96,thickness/3)
-            stroke['metadata_hex']=metadata.hex()
-            stroke.update(color=color, opacity=100, thickness=0, width_scale=1,
-                          points=[{"x": x, "y": y, "t": 0, "pressure": .88, "extra1": 0., "extra2": 0.,
-                                   "extra3": .2, "state": 4, "index": float(i)} for i, (x, y) in enumerate(coords)])
-        top, bottom = min(y for _, y in coords), max(y for _, y in coords)
-        if not box.strokes and box.top == box.bottom == 0:
-            box.top, box.bottom = top, bottom
-        else:
-            box.top, box.bottom = min(box.top, top), max(box.bottom, bottom)
-        box.strokes.append(stroke)
+        """Geometry uses fresh native line records with a constant pen width.
+
+        A copied handwriting record contains gesture timestamps, tilt and tool
+        state tied to its original samples. Replacing only its coordinates makes
+        Huawei's renderer taper long synthetic paths despite a uniform preview.
+        Each pair here is a native two-point line, the same format as table rules.
+        Round caps meet at the shared vertex; curved paths remain editable ink.
+        """
+        for a,b in zip(coords, coords[1:]):
+            self.check()
+            if a == b: continue
+            stroke=border_stroke([a,b], {"color":color,"border":thickness})
+            # Match the existing synthetic-ink preview pressure without inheriting
+            # any calibration gesture metadata, point headers or end state.
+            for p in stroke['points']:p['pressure']=.88
+            top,bottom=min(a[1],b[1]),max(a[1],b[1])
+            if not box.strokes and box.top == box.bottom == 0:
+                box.top,box.bottom=top,bottom
+            else:
+                box.top,box.bottom=min(box.top,top),max(box.bottom,bottom)
+            box.strokes.append(stroke)
 
     def sign(self, ch, size, ink, thickness):
         # Normalized paths are a fallback only; calibrated mathematical signs win.
@@ -261,6 +261,18 @@ class Ink:
         for p in box.placements:
             p["baseline_y"] = top+(p["baseline_y"]-old_top)*sy
         box.top, box.bottom = top, bottom
+        if ch in self.lib["glyphs"]:
+            # A stretched delimiter is geometry too: preserve the user's outline,
+            # but do not ask Huawei to replay the original gesture at a new height.
+            stable=Box(box.width,top,bottom)
+            for stroke in box.strokes:
+                start=len(stable.strokes)
+                self.path(stable,[(p['x'],p['y']) for p in stroke['points']],ink,thickness*size)
+                # Retain semantic attribution for diagnostics and composition.
+                for segment in stable.strokes[start:]:
+                    if 'char' in stroke:segment['char']=stroke['char']
+            stable.placements=box.placements
+            box=stable
         return box
 
     def expression(self, node, size, ink, thickness):
@@ -372,11 +384,11 @@ def graph_geometry(obj, unit=GRID):
         fitted = obj.get('gridFit', True) and scale >= .5
         if not fitted: scale = (end-start)/span
         return {'tick': tick, 'scale': scale, 'start': start, 'fitted': fitted}
-    x = axis(obj['xmin'], obj['xmax'], obj['xstep'], 1.5, w-.5)
-    y = axis(obj['ymin'], obj['ymax'], obj['ystep'], 1.5 if obj.get('title') else 1, h-1.5)
+    x = axis(obj['xmin'], obj['xmax'], obj['xstep'], 1, w-.5)
+    y = axis(obj['ymin'], obj['ymax'], obj['ystep'], 1.5 if obj.get('title') else 1, h-1)
     def xy(px, py):
         return ((x['start']+(px/obj['xstep']-x['tick'])*x['scale'])*unit,
-                (h-1.5-(py/obj['ystep']-y['tick'])*y['scale'])*unit)
+                (h-1-(py/obj['ystep']-y['tick'])*y['scale'])*unit)
     left, bottom = xy(obj['xmin'], obj['ymin'])
     right, top = xy(obj['xmax'], obj['ymax'])
     ax, ay = xy(max(obj['xmin'], min(obj['xmax'], 0)), max(obj['ymin'], min(obj['ymax'], 0)))

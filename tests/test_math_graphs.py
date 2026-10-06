@@ -2,6 +2,7 @@ import copy
 import json
 import math
 import sys
+import struct
 import tempfile
 import unittest
 import zipfile
@@ -188,7 +189,7 @@ class MathGraphTests(unittest.TestCase):
                 self.assertAlmostEqual(y/HALF,round(y/HALF))
         f={'type':'fraction','num':row('Q2−Q1'),'den':row('2')}
         page=self.compose([formula(row('x=',f))])['pages'][0]
-        bar=next(s for s in page['strokes'] if s.get('native_segment'))
+        bar=max((s for s in page['strokes'] if s.get('native_segment') and s['points'][0]['y']==s['points'][-1]['y']),key=lambda s:abs(s['points'][-1]['x']-s['points'][0]['x']))
         self.assertAlmostEqual(bar['points'][0]['y']/HALF,round(bar['points'][0]['y']/HALF))
 
     def test_graph_styles_export_and_shared_guides_are_not_overdrawn(self):
@@ -199,13 +200,16 @@ class MathGraphTests(unittest.TestCase):
         for ink in ('#245BCE','#E53935','#11977B','#8B36AD'):
             self.assertTrue(any(s['color']==ink for s in box.strokes))
         paths=[s for s in box.strokes if s['color']=='#245BCE']
-        self.assertEqual(len(paths),1);self.assertEqual(len(paths[0]['points']),3)
+        geo=graph_geometry(graph(series=[trace]))
+        expected=[geo['xy'](p['x'],p['y']) for p in trace['points']]
+        self.assertEqual([(s['points'][0]['x'],s['points'][0]['y']) for s in paths]+[(paths[-1]['points'][-1]['x'],paths[-1]['points'][-1]['y'])],expected)
+        self.assertTrue(all(abs(native_width(s)-1)<1e-7 for s in paths))
         guides=[s for s in box.strokes if s['color']=='#11977B']
         coords=[tuple((round(p['x'],7),round(p['y'],7)) for p in s['points']) for s in guides]
         self.assertEqual(len(coords),len(set(coords)))
         self.assertTrue(all(abs(native_width(s)-.5)<1e-7 for s in guides))
-        axes=[s for s in box.strokes if s['color']=='#000000' and not s.get('char') and not s.get('native_segment')]
-        self.assertEqual(len(axes),4)
+        axes=[s for s in box.strokes if s['color']=='#000000' and not s.get('char')]
+        self.assertGreaterEqual(len(axes),6)
         self.assertTrue(all(abs(native_width(s)-2/3)<1e-6 for s in axes))
 
     def test_invalid_graph_style_is_rejected(self):
@@ -227,8 +231,65 @@ class MathGraphTests(unittest.TestCase):
         self.assertGreater(len(paths),5)
         lengths=[sum(math.dist((a['x'],a['y']),(b['x'],b['y'])) for a,b in zip(s['points'],s['points'][1:])) for s in paths]
         self.assertTrue(all(length<=5.000001 for length in lengths))
-        for a,b in zip(paths,paths[1:]):
+        dash_lengths=[lengths[0]]
+        for i,(a,b) in enumerate(zip(paths,paths[1:])):
             end,start=a['points'][-1],b['points'][0]
-            self.assertGreater(math.dist((end['x'],end['y']),(start['x'],start['y'])),4.8)
+            gap=math.dist((end['x'],end['y']),(start['x'],start['y']))
+            if gap<1e-7:dash_lengths[-1]+=lengths[i+1]
+            else:
+                self.assertGreater(gap,4.8);dash_lengths.append(lengths[i+1])
+        self.assertGreater(len(dash_lengths),5)
+        for length in dash_lengths[:-1]:self.assertAlmostEqual(length,5,places=6)
+
+    def test_synthetic_curve_and_math_ink_has_fresh_constant_width_native_records(self):
+        from math_graph_composer import Box
+        painter=self.painter();box=Box()
+        coords=smooth_points([(0,0),(40,35),(65,8),(100,55)])
+        painter.path(box,coords,'#245BCE',3)
+        # The rendered curve still visits every interpolation sample continuously.
+        self.assertEqual([(s['points'][0]['x'],s['points'][0]['y']) for s in box.strokes]+[tuple(box.strokes[-1]['points'][-1][k] for k in ('x','y'))],coords)
+        with tempfile.TemporaryDirectory() as td:
+            # Use the same file-global header as the real composition/export path.
+            manifest=json.loads(backend.compose(str(ASSETS),td,json.dumps({'paragraphs':[{'type':'graph','object':graph(series=[{'type':'curve','color':'#245BCE','markers':False,'points':[{'x':0,'y':0},{'x':4,'y':7},{'x':10,'y':2}]}])}]}),'{}'))
+            source=Path(td)/manifest['snapshot']/'page-0.bin'
+            strokes=read_pencilengine(source).strokes
+            synthetic=[s for s in strokes if s.point_type==2]
+            self.assertGreater(len(synthetic),40)
+            for stroke in synthetic:
+                self.assertEqual(len(stroke.points),2)
+                self.assertEqual([p.state for p in stroke.points],[4,4])
+                self.assertAlmostEqual(stroke.points[0].pressure,stroke.points[1].pressure)
+                self.assertEqual(bytes.fromhex(stroke.metadata_hex)[:8],bytes(8))
+                self.assertEqual(bytes.fromhex(stroke.metadata_hex)[24:68],bytes(44))
+            self.assertEqual(len({s.header_hex[32:64] for s in synthetic}),len(synthetic))
+
+    def test_stretched_calibrated_delimiters_keep_outline_and_constant_width(self):
+        for bracket in ('(', '[', '|'):
+            painter=self.painter();original=self.painter().text(bracket,.7,'#000000',2)
+            top,bottom=-100,60
+            stretched=painter.bracket(top,bottom,True,bracket,'#000000',2,.7)
+            if bracket!='|':self.assertAlmostEqual(stretched.width,original.width)
+            pts=[p for s in stretched.strokes for p in s['points']]
+            self.assertAlmostEqual(min(p['y'] for p in pts),top)
+            self.assertAlmostEqual(max(p['y'] for p in pts),bottom)
+            self.assertTrue(all(s.get('native_segment') for s in stretched.strokes))
+            self.assertTrue(all(abs(native_width(s)-1.4/3)<1e-6 for s in stretched.strokes))
+            if bracket!='|':self.assertIn(bracket,[p['char'] for p in stretched.placements])
+
+    def test_graph_plot_reserves_one_square_left_and_below(self):
+        for options in ({},{'width':7.5,'height':7.5,'xmax':100,'ymax':100,'xstep':20,'ystep':20}):
+            g=graph(**options);geo=graph_geometry(g)
+            self.assertAlmostEqual(geo['left'],GRID)
+            self.assertAlmostEqual(g['height']*GRID-geo['bottom'],GRID)
+
+    def test_mixed_formula_and_graph_rows_share_origin_and_paginate_together(self):
+        for reverse in (False,True):
+            objects=[formula(row('x=2'),width=7,height=2),graph(left=8.5,height=9,beside=True)]
+            if reverse:
+                objects.reverse();objects[0].update(left=1,beside=False);objects[1].update(left=8.5,beside=True)
+            result=self.compose(objects,before=[{'segments':[{'text':'Antes'}]}]*20)
+            pair=result['pages'][-1]['objects']
+            self.assertEqual(len(pair),2);self.assertEqual(pair[0]['y'],pair[1]['y'])
+            self.assertEqual({p['kind'] for p in pair},{'formula','graph'})
 
 if __name__=='__main__':unittest.main()

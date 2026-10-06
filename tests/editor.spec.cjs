@@ -604,10 +604,104 @@ test('Notebook combination selects native pages and sends their explicit reviewe
   await setup(page,'Apunte intacto');await page.click('[data-tab="save"]');await page.click('#mergeNotebooks');await page.click('#notebookImport');
   await page.evaluate(()=>{const id=bridgeCalls.filter(c=>c[0]==='notebook-import').at(-1)[1];onNotebookResult(id,JSON.stringify({sources:[{id:'semester',title:'Materia',pages:[{id:'p8',number:8},{id:'p9',number:9}]},{id:'class',title:'Clase',pages:[{id:'new',number:1}]}]}),null);});
   assert.equal(await page.locator('#notebookQueue li').count(),3);await page.locator('#notebookQueue li').first().getByRole('button',{name:/↓/}).click();
-  await page.getByLabel('Materia, página 8',{exact:true}).uncheck();await page.fill('#notebookName','Materia semestre');await page.click('#notebookExport');
+  await page.getByLabel('Materia, página 8',{exact:true}).uncheck();await page.fill('#notebookName','Materia semestre');await page.click('#notebookExport');await page.click('#notebookSkipCurrent');
   const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='notebook-action').at(-1));assert.equal(call[1],'merge');assert.deepEqual(JSON.parse(call[2]),{title:'Materia semestre',pages:[{source:'semester',page:'p9'},{source:'class',page:'new'}]});
   assert.equal(await page.isDisabled('#notebookClose'),true);await page.evaluate(id=>onNotebookResult(id-1,'{"fileSaved":true}',null),call[3]);assert.equal(await page.isDisabled('#notebookClose'),true);
   await page.evaluate(id=>onNotebookResult(id,'{"fileSaved":true}',null),call[3]);await page.screenshot({path:path.join(root,'test-results','notebooks-editor.png')});await page.click('#notebookClose');assert.deepEqual(await lines(page),['Apunte intacto']);
+});
+
+test('Formula help disappears on writing only and reappears when editing again',async page=>{
+  await setup(page);await openMath(page);
+  assert.match(await page.textContent('#mathMessage'),/^Toca una casilla/);
+  await page.click('[data-template="fraction"]');
+  assert.match(await page.textContent('#mathMessage'),/^Toca una casilla/);
+  await page.getByLabel('Numerador',{exact:true}).fill('12');
+  assert.equal(await page.isVisible('#mathMessage'),false);
+  await page.click('#mathDone');const warning=await page.textContent('#mathMessage');assert.match(warning,/Completa/);
+  await page.getByLabel('Denominador',{exact:true}).fill('3');
+  assert.equal(await page.textContent('#mathMessage'),warning);
+  await page.click('#mathDone');await page.click('.objectBlock button');
+  assert.match(await page.textContent('#mathMessage'),/^Toca una casilla/);
+  await page.getByLabel('Numerador',{exact:true}).click();await page.click('#mathDigits button:first-child');
+  assert.equal(await page.isVisible('#mathMessage'),false);
+});
+test('Mixed formula and graph rows fit automatically in both orders and undo restores widths',async page=>{
+  for(const first of ['formula','graph']){
+    await setup(page);await openMath(page,first);
+    if(first==='formula')await page.locator('.mathSlot').first().fill('x=2');
+    await page.click('#mathDone');const before=await page.evaluate(()=>serializeDocument().paragraphs[0].object);
+    await select(page,{line:1,offset:0});await openMath(page,first==='formula'?'graph':'formula');
+    if(first==='graph')await page.locator('.mathSlot').first().fill('y=3');
+    await page.check('#mathBeside');await page.click('#mathDone');
+    const objects=await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.type).map(p=>p.object));
+    assert.equal(objects.length,2);assert.notEqual(objects[0].kind,objects[1].kind);assert.equal(objects[1].beside,true);
+    assert.ok(objects[0].left+objects[0].width<=objects[1].left);assert.ok(objects[1].left+objects[1].width<=16);
+    assert.ok(objects.every(o=>o.width>=(o.kind==='graph'?4:2)));
+    await page.click('#undoBtn');assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object),before);
+    assert.equal(await page.locator('.objectBlock').count(),1);
+  }
+});
+test('Graph touch preserves free decimals and only attracts nearby divisions or halves',async page=>{
+  await setup(page);await openMath(page,'graph');
+  for(const [key,value] of [['xmax','100'],['ymax','100'],['xstep','20'],['ystep','10']]){await page.fill('#graph_'+key,value);await page.locator('#graph_'+key).blur();}
+  await graphPaste(page,'0; 0\n100; 100');await page.locator('#graphPoints').blur();await page.check('#graphTapAdd');
+  async function tap(x,y){
+    const at=await page.evaluate(({x,y})=>{
+      const svg=document.getElementById('graphSVG'),a=svg.querySelectorAll('.graphPoint')[0],b=svg.querySelectorAll('.graphPoint')[1],p=svg.createSVGPoint();
+      p.x=+a.getAttribute('cx')+(+b.getAttribute('cx')-+a.getAttribute('cx'))*x/100;
+      p.y=+a.getAttribute('cy')+(+b.getAttribute('cy')-+a.getAttribute('cy'))*y/100;
+      const q=p.matrixTransform(svg.getScreenCTM());return {x:q.x,y:q.y};
+    },{x,y});await page.touchscreen.tap(at.x,at.y);
+  }
+  await tap(12.223244,24.55434);await tap(55,21);await tap(90.12732,15.12732);
+  let points=await page.evaluate(()=>MathGraphEditor.state().pendingMath.object.series[0].points);
+  assert.equal(points.length,5);
+  assert.ok(Math.abs(points[2].x-12.223244)<.0001);assert.ok(Math.abs(points[2].y-24.55434)<.0001);
+  assert.ok(Math.abs(points[3].x-55)<.0001);assert.ok(Math.abs(points[3].y-21)<.0001);
+  assert.equal(points[4].x,90);assert.equal(points[4].y,15);
+  await page.uncheck('#graphSnap');await tap(70.123,75.123);
+  points=await page.evaluate(()=>MathGraphEditor.state().pendingMath.object.series[0].points);
+  assert.ok(Math.abs(points.at(-1).x-70.123)<.0001);assert.ok(Math.abs(points.at(-1).y-75.123)<.0001);
+  await page.click('#mathDone');await page.evaluate(()=>saveDraft());await page.reload();
+  assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points),points);
+});
+test('Formula cursor crosses every base and index character with physical and screen arrows',async page=>{
+  await setup(page);await openMath(page);await page.locator('.mathSlot').fill('ABC');await page.locator('.mathSlot').selectText();await page.click('[data-template="subscript"]');
+  await page.getByLabel('Subíndice',{exact:true}).fill('12');
+  const base=page.getByLabel('Base',{exact:true});await base.focus();await base.evaluate(n=>{n.setSelectionRange(0,0);n.dispatchEvent(new Event('select'));});
+  for(let i=1;i<=3;i++){await page.keyboard.press('ArrowRight');assert.equal(await base.evaluate(n=>n.selectionStart),i);}
+  await page.keyboard.press('ArrowRight');assert.equal(await page.getByLabel('Subíndice',{exact:true}).evaluate(n=>n===document.activeElement&&n.selectionStart===0),true);
+  await page.click('#mathNext');assert.equal(await page.getByLabel('Subíndice',{exact:true}).evaluate(n=>n.selectionStart),1);
+  await page.click('#mathNext');assert.equal(await page.getByLabel('Subíndice',{exact:true}).evaluate(n=>n.selectionStart),2);
+  await page.click('#mathPrevious');assert.equal(await page.getByLabel('Subíndice',{exact:true}).evaluate(n=>n.selectionStart),1);
+});
+test('Graph pinch zoom does not add points and preview drag does not pan the page',async page=>{
+  await setup(page);await openMath(page,'graph');await page.check('#graphTapAdd');
+  const r=await page.locator('#graphSVG').boundingBox(),session=await page.context().newCDPSession(page),cx=r.x+r.width/2,cy=r.y+r.height/2;
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx-30,y:cy},{x:cx+30,y:cy}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-60,y:cy},{x:cx+60,y:cy}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await page.locator('.graphPoint').count(),0);assert.ok(parseInt(await page.textContent('#graphZoomReset'))>150);
+  await page.click('#mathDone');
+  await page.evaluate(()=>{const o=serializeDocument().paragraphs[0].object;composition={snapshot:'drag-check',page_count:1,object_pages:[[{id:o.id,kind:o.kind,x:60,y:60,width:415,height:470}]]};previewRevision=revision;zoom=1.4;applyZoom();MathGraphEditor.mode(true);});
+  const scroll=await page.locator('#previewWrap').evaluate(n=>[n.scrollLeft,n.scrollTop]),b=await page.locator('.objectMove').boundingBox();
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:b.x+12,y:b.y+12}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:b.x+40,y:b.y+40}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.deepEqual(await page.locator('#previewWrap').evaluate(n=>[n.scrollLeft,n.scrollTop]),scroll);
+  assert.equal(await page.locator('#previewWrap').evaluate(n=>n.classList.contains('objectManipulating')),false);
+});
+test('Notebook current source uses fresh content and requires page review before merging',async page=>{
+  await setup(page,'Texto nuevo');await page.click('[data-tab="save"]');await page.click('#mergeNotebooks');await page.click('#notebookCurrent');
+  const current=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='notebook-action').at(-1));assert.equal(current[1],'current');
+  assert.equal(JSON.parse(current[2]).document.paragraphs[0].segments[0].text,'Texto nuevo');
+  await page.evaluate(id=>onNotebookResult(id,JSON.stringify({sources:[{id:'open1',current:true,title:'Documento abierto',pages:[{id:'p1',number:1},{id:'p2',number:2}]}]}),null),current[3]);
+  assert.equal(await page.locator('#notebookQueue li').count(),2);assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='notebook-action'&&c[1]==='merge').length),0);
+  await page.click('#notebookExport');const merge=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='notebook-action').at(-1));assert.equal(merge[1],'merge');
+  assert.deepEqual(JSON.parse(merge[2]).pages,[{source:'open1',page:'p1'},{source:'open1',page:'p2'}]);
+  await page.evaluate(id=>onNotebookResult(id,'{"fileSaved":true,"name":"Unido.hinote"}',null),merge[3]);await page.click('#notebookClose');
+  await setup(page,'Edición posterior');await page.click('[data-tab="save"]');await page.click('#mergeNotebooks');await page.click('#notebookCurrent');
+  const updated=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='notebook-action').at(-1));assert.equal(JSON.parse(updated[2]).document.paragraphs[0].segments[0].text,'Edición posterior');
 });
 
 (async () => {

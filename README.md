@@ -1,8 +1,20 @@
-# HiNote Studio Tablet — V30
+# HiNote Studio Tablet — V33
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
 
-V30 añade **Fórmulas y gráficas** y **Guardado → Combinar cuadernos .hinote**. Se conserva la selección acumulativa de filas y columnas de las tablas, el estándar de 60 % y los borradores anteriores.
+V33 parte de la reconstrucción del APK V32. El código recuperado se conserva en un commit separado; los cambios nuevos mantienen las funciones de V32, las calibraciones y el formato del borrador.
+
+## V33: correcciones de exportación y edición
+
+- **Tinta geométrica estable:** curvas, ejes, símbolos construidos y delimitadores estirados usan segmentos nativos con metadatos nuevos y grosor constante. Los delimitadores calibrados conservan el contorno de tu letra. Se evita reutilizar el estado de un gesto manuscrito para dibujar otra geometría.
+- **Márgenes de gráfica:** un cuadro a la izquierda y debajo del área de trazado, tanto en el editor como en la exportación.
+- **Ayuda de fórmula:** aparece al abrir el editor y desaparece al empezar a escribir; los mensajes de validación y recuperación se mantienen.
+- **Bloques mixtos:** «Al lado del anterior» combina fórmula/gráfica en ambos órdenes. Si se superponen las medidas iniciales, coloca el nuevo bloque a la derecha; cuando hace falta, reparte el ancho de la fila en medios cuadros. Deshacer recupera también los anchos anteriores.
+- **Puntos táctiles libres:** «Atraer a divisiones y mitades» solo aproxima un punto si está cerca de una división o de la mitad de su paso. La tolerancia es el menor valor entre 6 píxeles de pantalla y el 8 % del medio paso, calculada por eje y según el zoom. Fuera de esa zona conserva las coordenadas libres; desmarcarlo quita la atracción. Las coordenadas escritas manualmente se respetan.
+
+V32 recuperada conserva la navegación por cada carácter, el zoom/pan de gráfica, los marcadores rellenos, la colocación de etiquetas, el bloqueo del desplazamiento durante el arrastre y la opción de combinar las páginas del documento abierto con otros archivos. La combinación usa una composición nueva y respeta la carpeta de guardado elegida.
+
+La reconstrucción y sus comprobaciones están en `docs/V32_RECONSTRUCTION.md`; las pruebas específicas de V33 en `docs/V33_VALIDATION.md`. La apariencia del `.hinote` corregido en Huawei Notes necesita confirmación en la tablet.
 
 ## V30: fórmulas, gráficas y cuadernos
 
@@ -10,13 +22,13 @@ V30 añade **Fórmulas y gráficas** y **Guardado → Combinar cuadernos .hinote
 
 La previsualización final y la exportación usan los trazos de la calibración activa. Un signo matemático calibrado tiene prioridad; para los signos incluidos sin muestra se usan trazos geométricos y se muestra un aviso. Las barras de fracción, radicales y agrupadores se dimensionan con el contenido. Un carácter sin muestra ni forma incluida pide completar la calibración. Así, añadir signos a tu perfil mejora también las fórmulas.
 
-**Insertar gráfica** permite definir límites y pasos de ambos ejes, sus nombres y título. Añade puntos, segmentos o curvas suaves por coordenadas `X; Y; etiqueta opcional`, o activa Tocar para agregar puntos. Arrastra los puntos y ajusta a medio paso si lo deseas. Cada trazo tiene color, marcadores y guías punteadas; las curvas pasan por los puntos introducidos. No se calculan funciones. Hasta ocho trazos y cien puntos por trazo.
+**Insertar gráfica** permite definir límites y pasos de ambos ejes, sus nombres y título. Añade puntos, segmentos o curvas suaves por coordenadas `X; Y; etiqueta opcional`, o activa Tocar para agregar puntos. Arrastra los puntos y activa la atracción por cercanía si lo deseas. Cada trazo tiene color, marcadores y guías punteadas; las curvas pasan por los puntos introducidos. No se calculan funciones. Hasta ocho trazos y cien puntos por trazo.
 
-Izquierda, ancho, alto mínimo y espacio anterior se indican en **medios cuadros**. Letra y grosor son independientes del espacio ocupado. Ajustar al ancho reduce uniformemente una fórmula hasta el 40 % si hace falta; su altura puede crecer. Para dos gráficas juntas, usa **Al lado del anterior** y posiciones que no se superpongan (por ejemplo, izquierda 1/ancho 7 e izquierda 8.5/ancho 7). El conjunto pasa completo a la siguiente página. El texto normal posterior recupera su línea habitual. Los controles táctiles ↔ y ↘ permiten mover el bloque o cambiar su espacio en la vista previa.
+Izquierda, ancho, alto mínimo y espacio anterior se indican en **medios cuadros**. Letra y grosor son independientes del espacio ocupado. Ajustar al ancho reduce uniformemente una fórmula hasta el 40 % si hace falta; su altura puede crecer. Para fórmulas o gráficas juntas, usa **Al lado del anterior**. Puedes conservar posiciones manuales sin superposición; la app también ajusta automáticamente los anchos cuando las medidas iniciales se superponen. El conjunto pasa completo a la siguiente página. El texto normal posterior recupera su línea habitual. Los controles táctiles ↔ y ↘ permiten mover el bloque o cambiar su espacio en la vista previa.
 
 Las fórmulas y gráficas son editables en Studio, se incluyen en deshacer/rehacer y en el borrador, y recuperan una edición pendiente al reabrir la app. En Huawei Notes se reciben como **trazos nativos**, con líneas estructurales independientes, conservando color y geometría. No se convierten en una imagen ni en un editor de ecuaciones de Notes.
 
-Para incorporar apuntes al cuaderno del semestre, exporta ambos desde Huawei Notes como `.hinote`. Abre **Guardado → Combinar cuadernos .hinote**, agrega primero el cuaderno del semestre y después el apunte nuevo, marca páginas y revisa el orden. Ver muestra la miniatura original; ↑/↓ cambia el orden. **Guardar cuaderno combinado** prepara y comprueba los recursos antes de pedir el destino. Crea un archivo nuevo para importar en Notes; no modifica el cuaderno abierto allí ni los archivos originales.
+Para combinar apuntes, agrega archivos `.hinote` en **Guardado → Combinar cuadernos .hinote**. También puedes incorporar las **Páginas del documento abierto** sin exportarlas antes. Marca páginas y revisa el orden. Ver muestra la miniatura original; ↑/↓ cambia el orden. **Guardar cuaderno combinado** prepara y comprueba los recursos, usa la carpeta elegida en Guardado y pregunta el destino si no hay una configurada. Crea un archivo nuevo para importar en Notes; no modifica el cuaderno abierto allí ni los archivos originales.
 
 Se copian sin cambios los binarios de tinta y recursos de las páginas seleccionadas, incluyendo imágenes y papel. Se regeneran identificadores, numeración y hashes. También se admiten exportaciones parciales con numeración original, como las páginas 8 y 9 de la muestra. Hasta ocho archivos, 128 MiB por entrada, 256 MiB comprimidos en total y 500 páginas/512 MiB en la salida. La lista de archivos de combinación dura durante la sesión; al reiniciar la app se vuelven a seleccionar. Los límites generales del documento se comparten con texto y tablas: cien bloques matemáticos y 8192 caracteres por fórmula.
 
@@ -114,7 +126,7 @@ gradle testDebugUnitTest assembleDebug
 
 Consultar `docs/PRUEBA_TABLET.md` para verificar el resultado en Huawei Notes. Las pruebas del motor en Linux y del editor en Chromium no sustituyen la prueba en una tablet física ni garantizan compatibilidad con todas las versiones de Huawei Notes.
 
-Los APK de depuración pueden tener una firma distinta de la instalación anterior. Conserva tus notas, una copia del texto y respaldos de tus perfiles antes de desinstalar una versión: desinstalar borra el borrador, las imágenes privadas y las calibraciones añadidas.
+La firma del APK V33 entregado es distinta de V32 porque no se recuperó la clave privada anterior. Android no permite instalarlo encima de V32. Se ha guardado por separado un respaldo privado de la nueva firma; no debe publicarse en GitHub. Para futuras actualizaciones de V33, hay que reutilizar esa clave. Los APK de depuración generados sin restaurarla también tendrán otra firma. Conserva tus notas, una copia del texto y respaldos de tus perfiles antes de desinstalar una versión: desinstalar borra el borrador, las imágenes privadas y las calibraciones añadidas.
 ## V27 · Tablas manuscritas
 
 La pestaña **Tablas** inserta un bloque después del párrafo seleccionado (o en el párrafo vacío). Toca el bloque para editar las celdas. Admite hasta 12 columnas, 200 filas por tabla y 2000 celdas por nota, dentro del límite compartido de 200 000 caracteres.

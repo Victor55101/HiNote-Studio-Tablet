@@ -44,7 +44,7 @@ class NotebookTests(unittest.TestCase):
             d=Path(td);a=self.fixture(d,'Images',with_image=True);before=a.read_bytes();info=json.loads(inspect_notebook(a))
             out=d/'copy.hinote';plan={'pages':[{'source':'a','page':p['id']} for p in info['pages']]}
             merge_notebooks(json.dumps({'a':str(a)}),json.dumps(plan),out,d/'work')
-            self.assertEqual(a.read_bytes(),before);self.assertTrue(validate_hinote(out,quiet=True))
+            self.assertEqual(a.read_bytes(),before);self.assertTrue(validate_hinote(out,quiet=True));self.assertEqual(len(json.loads(inspect_notebook(out))["pages"]),2)
             with zipfile.ZipFile(a) as z,zipfile.ZipFile(out) as target:
                 native_bins=[z.read(n) for n in z.namelist() if n.endswith('.bin')]
                 copied_bins=[target.read(n) for n in target.namelist() if n.endswith('.bin')]

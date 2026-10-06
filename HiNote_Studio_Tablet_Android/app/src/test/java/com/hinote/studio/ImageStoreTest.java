@@ -141,4 +141,16 @@ public class ImageStoreTest {
         assertThrows(IllegalStateException.class,()->PageRenderer.renderPreview("{\"strokes\":[[\"#000000\",100,[[100,100,1],[300,100,1]]]]}",file,2,()->{if(++calls[0]>1)throw new IllegalStateException("cancelled");}));
         assertFalse(file.exists());assertFalse(new File(file.getPath()+".part").exists());
     }
+    @Test public void graphMarkerIsFilledAtBaseAndDoubleResolution()throws Exception{
+        double width=(2*4/.928)/3;
+        String json="{\"strokes\":[[\"#e53935\",100,[[199.99,300,.88],[200.01,300,.88]],"+width+"]]}";
+        for(int resolution:new int[]{1,2}){
+            File file=new File(directory,"marker-"+resolution+".png");PageRenderer.renderPreview(json,file,resolution,()->{});
+            Bitmap b=BitmapFactory.decodeFile(file.getPath());
+            int x=135*resolution,y=(int)(202.5*resolution);
+            assertTrue(Color.alpha(b.getPixel(x,y))>240);assertTrue(Color.red(b.getPixel(x,y))>200);
+            assertEquals(0,Color.alpha(b.getPixel(x+6*resolution,y)));b.recycle();
+        }
+    }
+
 }

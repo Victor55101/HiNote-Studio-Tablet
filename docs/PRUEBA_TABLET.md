@@ -1,5 +1,15 @@
 # Comprobación en la tablet
 
+## V33: comprobaciones pendientes en Huawei Notes
+
+1. Antes de cambiar la instalación, exporta notas y perfiles de V32 y conserva el texto y los recursos del borrador. La clave de firma anterior no se recuperó; el APK V33 no puede actualizar V32 directamente.
+2. Recrea la gráfica de la captura: puntos (10,5), (30,30), (40,50), (50,50), (60,20), (70,70), (80,50), (90,90), (100,40), curva suave, título Oferta y guías. Exporta e importa el archivo `.hinote`. Compara el grosor al inicio, mitad y final de cada tramo; prueba varios niveles de zoom y el lazo de Notes. Los segmentos de la curva son tinta nativa independiente.
+3. Exporta una fracción anidada con paréntesis y corchetes y compara con la vista previa. Repite con Original y con tu perfil personal. El contorno debe conservar la letra calibrada y los delimitadores estirados mantener un grosor uniforme.
+4. En la gráfica comprueba un cuadro entre el borde izquierdo y el comienzo del trazado, y un cuadro debajo. Revisa fórmulas junto a gráficas en los dos órdenes y deshaz la colocación para comprobar los anchos originales.
+5. Abre una fórmula: aparece la ayuda. Inserta un molde vacío: aún aparece. Escribe con teclado físico o botones: desaparece. Provoca un error de casilla incompleta: ese aviso debe seguir visible mientras escribes.
+6. Usa X 0–100/paso 20 e Y 0–100/paso 10. Con Tocar para agregar y Atraer a divisiones y mitades, toca puntos alejados de las divisiones y luego cerca de X=10/Y=15. Los primeros conservan decimales; los cercanos se aproximan. Repite con zoom, con la atracción desmarcada y escribiendo coordenadas exactas. Tocar un punto existente sigue seleccionándolo.
+7. Combina páginas del documento abierto (incluida una página solo con imágenes) con un cuaderno importado. Revisa el orden antes de guardar y comprueba que usa la carpeta recordada y crea otra copia si el nombre ya existe.
+
 ## V30: escritura matemática y combinación de páginas
 
 1. Abre el borrador anterior y comprueba texto, tablas, imágenes y perfil. En una tabla, selecciona dos columnas y después dos filas: la selección debe acumularse. Estándar sigue siendo 60 %.

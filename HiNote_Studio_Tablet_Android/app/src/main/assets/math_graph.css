@@ -15,3 +15,5 @@
 .objectTarget button{touch-action:none}.objectManipulating{overflow:hidden!important;touch-action:none!important;overscroll-behavior:none}
 .graphViewport{overflow:hidden;touch-action:none}.graphZoomTools{display:flex;gap:6px;align-items:center;justify-content:center;padding:5px}.graphZoomTools .btn{min-width:44px;min-height:40px}
 .notebookChoice{border:1px solid var(--accent);background:#f4f4ff;border-radius:10px;padding:14px;margin:12px 0}.notebookChoice .btn{margin:6px 6px 0 0}
+
+#mathMessage:empty{display:none}
