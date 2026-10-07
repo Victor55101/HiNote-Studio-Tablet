@@ -725,6 +725,20 @@ test('V34 copied math retains editable data independently and quick deletion is 
   objects=await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.object).map(p=>p.object));assert.equal(objects[0].expression.items[0].text,'x=2');assert.equal(objects[1].expression.items[0].text,'x=9');
   await mathPreview(page);await page.locator('.objectSelect').last().click();await page.click('.objectDelete');assert.equal(await page.locator('.objectBlock').count(),1);await page.click('#undoBtn');assert.equal(await page.locator('.objectBlock').count(),2);
 });
+test('V34 touch selects math while pinch and background dragging keep working over it',async page=>{
+  await setup(page);await openMath(page,'graph');await page.click('#mathDone');await mathPreview(page);
+  const session=await page.context().newCDPSession(page);let box=await page.locator('.objectSelect').boundingBox(),cx=box.x+box.width/2,cy=box.y+box.height/2;
+  const before=await page.evaluate(()=>zoom);
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx-25,y:cy,id:1},{x:cx+25,y:cy,id:2}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-40,y:cy,id:1},{x:cx+40,y:cy,id:2}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.ok(await page.evaluate(()=>zoom)>before);assert.equal(await page.locator('.objectTarget').count(),0);
+  box=await page.locator('.objectSelect').boundingBox();cx=box.x+box.width/2;cy=box.y+box.height/2;
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx,y:cy,id:3}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForSelector('.objectTarget');
+  const object=await page.evaluate(()=>serializeDocument().paragraphs[0].object),scroll=await page.locator('#previewWrap').evaluate(n=>n.scrollTop);
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx,y:cy,id:4}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx,y:cy-30,id:4}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.ok(await page.locator('#previewWrap').evaluate(n=>n.scrollTop)>scroll);assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object),object);
+});
 test('V34 direct save composes pending content and remains separate from notebook merging',async page=>{
   await setup(page,'Contenido pendiente');await page.click('[data-tab="save"]');assert.equal(await page.isVisible('#saveDirect'),true);assert.equal(await page.isVisible('#mergeNotebooks'),true);
   await page.click('#saveDirect');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.ok(call);assert.equal(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='save')),false);

@@ -409,6 +409,7 @@ const MathGraphEditor=(()=>{
             y:magnet(py,'y',Math.hypot(matrix.c,matrix.d)*40*geo.y.scale/g.ystep)};
   }
   function mode(on){active=on;render();}
+  function selectPreview(id){if(!objects[id]||working||drag||locked()||!composition||previewRevision!==revision)return;selectedId=id;render();}
   function positionTools(){toolsFrame=null;const wrap=el('previewWrap').getBoundingClientRect();el('objectOverlay').querySelectorAll('.objectTarget').forEach(box=>{const r=box.getBoundingClientRect(),bar=box.querySelector('.objectQuickActions'),resize=box.querySelector('.objectResize');const visible=r.right>wrap.left&&r.left<wrap.right&&r.bottom>wrap.top&&r.top<wrap.bottom;bar.style.visibility=resize.style.visibility=visible?'visible':'hidden';if(!visible)return;bar.style.left=`${clamp(r.left,wrap.left+6,Math.max(wrap.left+6,wrap.right-bar.offsetWidth-6))-r.left}px`;bar.style.top=`${clamp(r.top-bar.offsetHeight-4,wrap.top+6,Math.max(wrap.top+6,wrap.bottom-bar.offsetHeight-6))-r.top}px`;resize.style.left=`${clamp(r.right-44,wrap.left+6,wrap.right-50)-r.left}px`;resize.style.top=`${clamp(r.bottom-44,wrap.top+6,wrap.bottom-50)-r.top}px`;});}
   function render(){
     const layer=el('objectOverlay');if(!layer||drag)return;layer.replaceChildren();updateControls();
@@ -487,5 +488,5 @@ const MathGraphEditor=(()=>{
     dialog.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'&&!e.target.classList.contains('mathSlot')){const nodes=[...dialog.querySelectorAll('button,input,select,textarea')].filter(n=>!n.disabled&&n.getClientRects().length);const i=nodes.indexOf(document.activeElement);if((e.shiftKey&&i===0)||(!e.shiftKey&&i===nodes.length-1)){e.preventDefault();nodes[e.shiftKey?nodes.length-1:0].focus();}}};
     if(resume?.object){try{validate(resume.object);working=resume.object;originalId=resume.originalId;insertion=resume.insertion;activate();if(working.kind==='graph'){traceIndex=clamp(resume.traceIndex||0,0,working.series.length-1);selectedPoint=Number.isInteger(resume.selectedPoint)?resume.selectedPoint:-1;graphTools();if(typeof resume.pointsDraft==='string'){el('graphPoints').value=resume.pointsDraft;bulkDirty=true;}if(Array.isArray(resume.pointDraft))['graphPointX','graphPointY','graphPointLabel'].forEach((id,i)=>el(id).value=resume.pointDraft[i]||'');drawGraph();}message('Se recuperó el elemento que estabas editando. Revisa y aplica los cambios.');}catch(e){resume=null;}}
   }
-  return {init,open,get,block,isLine,state,restore,count,render,mode,updateControls,applyMeasurements,copyObject,pasteObject,isOpen:()=>!!working,isDragging:()=>!!drag};
+  return {init,open,get,block,isLine,state,restore,count,render,mode,updateControls,applyMeasurements,copyObject,pasteObject,selectPreview,isOpen:()=>!!working,isDragging:()=>!!drag};
 })();
