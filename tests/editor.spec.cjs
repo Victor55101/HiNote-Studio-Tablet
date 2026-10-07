@@ -265,7 +265,8 @@ test('Every calibration exposes found, missing, fallback and partial variants',a
 });
 test('Profile choice persists in draft and switching invalidates the old preview',async page=>{
   await calibrationBridge(page);await page.selectOption('#profileList','a'.repeat(32));await page.click('#useProfile');await page.click('#closeCalibration');
-  assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));assert.equal(await page.isDisabled('#exportBtn'),true);
+  assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));assert.equal(await page.isDisabled('#exportBtn'),false);
+  assert.equal(await page.evaluate(()=>previewRevision===revision),false);
   await page.evaluate(()=>saveDraft());await page.reload();await page.waitForFunction(()=>!CalibrationUI.isBusy());
   assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));
   await page.click('#refreshBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.equal(JSON.parse(call[2]).profile,'a'.repeat(32));

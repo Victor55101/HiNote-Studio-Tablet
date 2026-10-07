@@ -62,7 +62,8 @@ jobs:
       - name: Package local signing tool
         run: |
           mkdir -p signing-tools
-          signer_path="$(rg --files "$ANDROID_HOME/build-tools" -g apksigner.jar | sort -V | tail -n 1)"
+          signer_path="$(find "$ANDROID_HOME/build-tools" -name apksigner.jar -type f | sort -V | tail -n 1)"
+          test -n "$signer_path"
           cp "$signer_path" signing-tools/apksigner.jar
       - uses: actions/upload-artifact@v4
         with:
