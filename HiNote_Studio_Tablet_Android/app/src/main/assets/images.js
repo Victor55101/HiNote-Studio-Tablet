@@ -226,7 +226,7 @@ const ImageEditor = (() => {
   el('duplicateImage').onclick=()=>{if(images.length>=200||images.filter(im=>im.page===currentPage).length>=20){toast('Límite: 20 imágenes por página y 200 por nota');return;}edit(()=>{const im=selected();if(im){const copy=clone(im);copy.id=newId();copy.x+=25;copy.y+=25;fit(copy);images.push(copy);selectedId=copy.id;}});};
   el('imageNewPage').onclick=()=>{if(count()>=500)return;edit(()=>{minimumPages=count()+1;currentPage=minimumPages-1;selectedId=null;});drawCurrent();};
   el('previewWrap').addEventListener('pointerdown',pointerDown);
-  el('previewWrap').addEventListener('click',e=>{if(Date.now()<suppressMathClickUntil){suppressMathClickUntil=0;e.preventDefault();e.stopPropagation();}},true);
+  el('previewWrap').addEventListener('click',e=>{const suppress=Date.now()<suppressMathClickUntil&&(e.target===el('previewWrap')||e.target.closest('.objectSelect'));suppressMathClickUntil=0;if(suppress){e.preventDefault();e.stopPropagation();}},true);
   el('previewWrap').addEventListener('pointermove',pointerMove);
   for(const type of ['pointerup','pointercancel','lostpointercapture'])el('previewWrap').addEventListener(type,pointerUp);
   window.addEventListener('blur',()=>finishGesture(false));
