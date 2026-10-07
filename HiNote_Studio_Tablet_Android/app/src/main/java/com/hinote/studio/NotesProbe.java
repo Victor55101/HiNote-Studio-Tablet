@@ -176,7 +176,8 @@ final class NotesProbe {
             Uri uri=ProbeFileProvider.uri(activity,file);String mime=file.getName().endsWith(".png")?"image/png":"application/octet-stream";
             ClipData clip=ClipData.newUri(activity.getContentResolver(),"HiNote página "+(page+1),uri);
             if("page-share".equals(action)) {
-                Intent share=new Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).setClipData(clip).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent share=new Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                share.setClipData(clip);
                 activity.startActivity(Intent.createChooser(share,"Probar página en Huawei Notes"));
             } else clipboard().setPrimaryClip(clip);
             String message="page-png".equals(action)?"Página copiada como PNG. Pega en Notes y comprueba si aparece como imagen.":"page-share".equals(action)?"Se abrió Compartir con un .hinote de una página. Abrir un cuaderno no equivale a pegar trazos con el lazo.":"URI del .hinote copiada. Mantén pulsado en Notes y prueba Pegar; la compatibilidad con trazos no está confirmada.";
