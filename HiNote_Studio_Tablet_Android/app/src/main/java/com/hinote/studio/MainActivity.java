@@ -52,6 +52,7 @@ public class MainActivity extends Activity {
     private final AtomicBoolean calibrating=new AtomicBoolean(),calibrationCancelled=new AtomicBoolean();
     private volatile int calibrationTicket;
     private NotebookTasks notebookTasks;
+    private NotesProbe notesProbe;
     private final AtomicBoolean notebookBusy=new AtomicBoolean(),notebookCancelled=new AtomicBoolean();
     private volatile int notebookTicket;
 
@@ -113,7 +114,12 @@ public class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient());webView.addJavascriptInterface(new Bridge(),"AndroidBridge");
-        setContentView(webView);webView.loadUrl("file:///android_asset/index.html");
+        setContentView(webView);
+        if(BuildConfig.NOTES_PROBE){
+            notesProbe=new NotesProbe(this,(ticket,data,error)->send("onNotesProbeResult",ticket+","+(data==null?"null":quote(data))+","+(error==null?"null":quote(error))));
+            notesProbe.receive(getIntent());
+        }
+        webView.loadUrl("file:///android_asset/index.html");
     }
     private void copyEngineAsset(String name)throws Exception{
         File out=new File(getFilesDir(),name);if(out.isFile()&&out.length()>0)return;
@@ -137,6 +143,21 @@ public class MainActivity extends Activity {
     }
     private void removeQueued(Future<?> job){if(job!=null){job.cancel(false);if(job instanceof Runnable)worker.remove((Runnable)job);}}
     public final class Bridge{
+        @JavascriptInterface public boolean isNotesProbe(){return BuildConfig.NOTES_PROBE;}
+        @JavascriptInterface public boolean hasProbeShare(){return BuildConfig.NOTES_PROBE&&notesProbe!=null&&notesProbe.hasShared();}
+        @JavascriptInterface public void requestProbeAction(String action,String raw,int ticket){
+            if(!BuildConfig.NOTES_PROBE||notesProbe==null||destroyed)return;
+            if(action==null||raw==null||raw.length()>(action.startsWith("page-")?16000000:12000)){
+                send("onNotesProbeResult",ticket+",null,"+quote("Solicitud de prueba inválida"));return;
+            }
+            if(!action.startsWith("page-")){notesProbe.request(action,raw,ticket);return;}
+            if(!(action.equals("page-png")||action.equals("page-hinote")||action.equals("page-share"))
+                    ||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true)){
+                send("onNotesProbeResult",ticket+",null,"+quote("Espera a que termine la operación actual"));return;
+            }
+            removeQueued(composeJob);removeQueued(pageJob);
+            worker.execute(()->prepareProbePage(action,raw,ticket));
+        }
         @JavascriptInterface public void requestNotebookImport(int ticket){
             if(!beginNotebook(ticket))return;
             runOnUiThread(()->{try{notebookTasks.beginImport(ticket);}catch(Exception e){notebookTasks.failed(ticket,e);}});
@@ -297,6 +318,7 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int code,int result,Intent data){
         super.onActivityResult(code,result,data);
+        if(notesProbe!=null&&notesProbe.activityResult(code,result,data))return;
         if(code==NotebookTasks.IMPORT||code==NotebookTasks.SAVE){
             if(!notebookBusy.get())return;
             if(result!=RESULT_OK||data==null){notebookTasks.cancelled();return;}
@@ -369,6 +391,32 @@ public class MainActivity extends Activity {
         }
         token.check();backend.callAttr("export_snapshot",getFilesDir().getPath(),sessionDir.getPath(),snapshot,title,true,output.getPath(),token,images.toString(),count,work.getPath());
     }
+    private void prepareProbePage(String action,String raw,int ticket){
+        File work=new File(sessionDir,"export-probe-"+UUID.randomUUID().toString().replace("-",""));
+        File output=null;String snapshot=null;TaskToken token=new TaskToken("probe",ticket,new AtomicBoolean());
+        try{
+            token.check();ready();JSONObject args=new JSONObject(raw);
+            JSONObject info=new JSONObject(backend.callAttr("compose",getFilesDir().getPath(),sessionDir.getPath(),args.getJSONObject("document").toString(),args.getJSONObject("settings").toString(),token).toString());
+            snapshot=info.getString("snapshot");token.check();
+            JSONArray all=args.getJSONArray("images");int count=Math.max(info.getInt("page_count"),args.optInt("pages",1));
+            for(int i=0;i<all.length();i++)count=Math.max(count,all.getJSONObject(i).getInt("page")+1);
+            int page=args.getInt("page");if(count<1||count>500||page<0||page>=count)throw new IOException("Página fuera de rango");
+            if(!work.mkdirs())throw new IOException("No se pudo preparar la página de prueba");
+            JSONArray selected=new JSONArray();
+            for(int i=0;i<all.length();i++)if(all.getJSONObject(i).getInt("page")==page){JSONObject image=new JSONObject(all.getJSONObject(i).toString());image.put("page",0);selected.put(image);}
+            JSONArray images=imageStore.prepareExport(selected.toString(),work,1,token::check);
+            String json=page<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),snapshot,page).toString():"{\"strokes\":[]}";
+            output=ProbeFileProvider.create(this,"page-png".equals(action)?"png":"hinote");
+            if("page-png".equals(action))PageRenderer.render(json,output,args.optBoolean("grid",true),40.0/.675,images,false,token::check);
+            else{
+                PageRenderer.renderForExport(json,new File(work,"page-0-native.jpg"),images,new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
+                backend.callAttr("export_probe_page",getFilesDir().getPath(),sessionDir.getPath(),snapshot,page,args.optString("title","Prueba")+" · Página "+(page+1),output.getPath(),token,images.toString(),count,work.getPath());
+            }
+            token.check();notesProbe.publishPage(action,output,page,ticket);output=null;
+        }catch(OutOfMemoryError error){send("onNotesProbeResult",ticket+",null,"+quote("No hay memoria suficiente para esta página"));}
+        catch(Exception error){send("onNotesProbeResult",ticket+",null,"+quote(message(error)));}
+        finally{if(output!=null)output.delete();deleteTree(work);if(snapshot!=null)backend.callAttr("remove_snapshot",sessionDir.getPath(),snapshot);exporting.set(false);}
+    }
     private void startExport(ExportJob job,Uri pickedDestination){
         worker.execute(()->{
             Uri uri=pickedDestination;
@@ -404,5 +452,6 @@ public class MainActivity extends Activity {
     private static void deleteTree(File file){if(file==null)return;File[] children=file.listFiles();if(children!=null)for(File child:children)deleteTree(child);file.delete();}
     private static void disposeWebView(WebView view){view.removeJavascriptInterface("AndroidBridge");if(view.getParent() instanceof ViewGroup)((ViewGroup)view.getParent()).removeView(view);view.destroy();}
     @Override protected void onPause(){if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
-    @Override protected void onDestroy(){destroyed=true;if(worker!=null)worker.shutdownNow();if(webView!=null){disposeWebView(webView);webView=null;}super.onDestroy();}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(notesProbe!=null){notesProbe.receive(intent);send("onNotesProbeShared","");}}
+    @Override protected void onDestroy(){destroyed=true;if(notesProbe!=null)notesProbe.close();if(worker!=null)worker.shutdownNow();if(webView!=null){disposeWebView(webView);webView=null;}super.onDestroy();}
 }

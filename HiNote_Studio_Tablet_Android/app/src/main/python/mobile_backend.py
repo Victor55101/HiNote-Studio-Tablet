@@ -196,6 +196,34 @@ def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_pat
         output.unlink(missing_ok=True)
         raise
 
+def export_probe_page(project_dir, cache_dir, snapshot_id, index, title, output_path, token=None,
+                      images_json="[]", page_count=0, export_dir=None):
+    """Public transport experiment: one actual native page, never a fake lasso payload."""
+    work = _snapshot(cache_dir, snapshot_id)
+    info = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+    count = max(info["page_count"], int(page_count))
+    if not 1 <= count <= MAX_PAGES or not isinstance(index, int) or not 0 <= index < count:
+        raise ValueError("Página de prueba fuera de rango")
+    if not export_dir or Path(export_dir).resolve().parent != Path(cache_dir).resolve():
+        raise ValueError("Directorio de exportación inválido")
+    rendered = Path(export_dir)
+    images = _export_images(images_json, 1, rendered)
+    counts = info["stroke_counts"]
+    binary = work / f"page-{index}.bin" if index < info["page_count"] and counts[index] else None
+    output = Path(output_path)
+    try:
+        _check(token)
+        build_hinote_multi(Path(project_dir) / "template_1stroke.hinote", [binary], output,
+            title=title or "Prueba de una página", thumbnails=[rendered / "page-0-native.jpg"],
+            images=images, check_cancelled=lambda: _check(token))
+        if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
+            raise RuntimeError("La página de prueba no pasó la validación local")
+        _check(token)
+        return str(output)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+
 def _export_images(raw, count, directory):
     """Only native-prepared image files inside this isolated export are trusted."""
     records = json.loads(raw)

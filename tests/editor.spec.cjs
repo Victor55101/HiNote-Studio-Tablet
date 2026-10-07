@@ -743,9 +743,32 @@ test('V34 formula auto width reflects native measurements and manual resizing re
   assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),2.5);await page.click('.objectBlock button');await page.fill('#mathWidth','6');await page.locator('#mathWidth').blur();assert.equal(await page.isChecked('#mathAutoWidth'),false);await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),6);
 });
 
+test('V34 stable keeps Notes experiments out of its interface',async page=>{
+  assert.equal(await page.evaluate(()=>NotesProbeUI.isEnabled()),false);assert.equal(await page.locator('#openNotesProbe').count(),0);assert.equal(await page.locator('#notesProbeDialog').count(),0);
+});
+async function enableNotesProbe(page){await page.evaluate(()=>localStorage.setItem('test-probe-enabled','true'));await page.reload();await page.waitForSelector('#editor .line');await setup(page,'Contenido nuevo para Notes');}
+async function finishProbe(page,result={message:'Listo'}){const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));await page.evaluate(({id,result})=>onNotesProbeResult(id,JSON.stringify(result),null),{id:call[3],result});return call;}
+test('V34 Pruebas guides the control test and ignores outdated diagnostic replies',async page=>{
+  await enableNotesProbe(page);await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);
+  await page.click('#probeSeedA');const control=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));assert.equal(control[1],'seed-a');assert.equal(await page.isDisabled('#probeClose'),true);
+  await page.evaluate(id=>onNotesProbeResult(id-1,'{"message":"respuesta vieja"}',null),control[3]);assert.equal(await page.isDisabled('#probeClose'),true);
+  await finishProbe(page,{message:'PRUEBA-A copiado',report:{events:[{kind:'seed-a'}]}});assert.match(await page.textContent('#probeReport'),/seed-a/);
+  await page.click('#probeInspect');assert.equal((await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1)))[1],'inspect');await finishProbe(page,{message:'El control sigue intacto'});await page.click('#probeClose');assert.equal(await page.evaluate(()=>document.querySelector('.app').inert),false);
+});
+test('V34 Pruebas exports fresh editable math and recovers controls after failure',async page=>{
+  await enableNotesProbe(page);await select(page,{line:0,offset:0});await openMath(page);await page.locator('.mathSlot').first().fill('x=9');await page.click('#mathDone');
+  await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);await page.click('#probeCopyHinote');
+  const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1)),args=JSON.parse(call[2]);assert.equal(call[1],'page-hinote');assert.equal(args.page,0);assert.equal(args.document.paragraphs.find(p=>p.object).object.expression.items[0].text,'x=9');assert.match(args.document.paragraphs.map(p=>p.segments?.map(s=>s.text).join('')||'').join(''),/Contenido nuevo/);
+  assert.equal(await page.evaluate(()=>exporting),true);await page.evaluate(id=>onNotesProbeResult(id,null,'Prueba de error'),call[3]);assert.equal(await page.evaluate(()=>exporting),false);assert.equal(await page.isDisabled('#probeClose'),false);assert.equal(await page.textContent('#probeStatus'),'Prueba de error');await page.click('#probeClose');assert.equal(await page.getAttribute('#editor','contenteditable'),'true');
+});
+test('V34 Pruebas preserves observations in the exported diagnostic request',async page=>{
+  await enableNotesProbe(page);await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);await page.selectOption('#probePngResult',{label:'Pega como imagen'});await page.selectOption('#probeHinoteResult',{label:'No pega el contenido de HiNote'});await page.fill('#probeObservations','Notes conserva las rayas del lazo');await page.click('#probeSaveReport');
+  const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));assert.equal(call[1],'save-report');assert.deepEqual(JSON.parse(call[2]),{png_paste:'Pega como imagen',hinote_paste:'No pega el contenido de HiNote',shared_page:'No probado',notes:'Notes conserva las rayas del lazo'});await finishProbe(page,{message:'Informe guardado'});await page.screenshot({path:path.join(root,'test-results/notes-probe.png')});await page.click('#probeClose');
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
@@ -760,7 +783,8 @@ test('V34 formula auto width reflects native measurements and manual resizing re
         requestPage:(...a)=>bridgeCalls.push(['page',...a]),requestPageHD:(...a)=>bridgeCalls.push(['pageHD',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
         requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
         getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder']),
-        requestNotebookImport:(...a)=>bridgeCalls.push(['notebook-import',...a]),requestNotebookAction:(...a)=>bridgeCalls.push(['notebook-action',...a]),cancelNotebook:()=>bridgeCalls.push(['notebook-cancel'])}; });
+        requestNotebookImport:(...a)=>bridgeCalls.push(['notebook-import',...a]),requestNotebookAction:(...a)=>bridgeCalls.push(['notebook-action',...a]),cancelNotebook:()=>bridgeCalls.push(['notebook-cancel']),
+        isNotesProbe:()=>localStorage.getItem('test-probe-enabled')==='true',hasProbeShare:()=>false,requestProbeAction:(...a)=>bridgeCalls.push(['probe-action',...a])}; });
       const page = await context.newPage(); page.setDefaultTimeout(10000); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       try {
         await page.goto(`http://127.0.0.1:${server.address().port}`); await page.waitForSelector('#editor .line'); await fn(page);

@@ -106,8 +106,8 @@ La compilación genera `glyphs_v24.json` combinando el banco original archivado 
 
 1. Instalar JDK 17, Python 3.11, Gradle 8.13 y Android SDK 35.
 2. Desde la raíz: `python .github/scripts/prepare_assets.py`.
-3. Abrir `HiNote_Studio_Tablet_Android` en Android Studio o ejecutar dentro de esa carpeta `gradle assembleDebug`.
-4. APK en `app/build/outputs/apk/debug/app-debug.apk`.
+3. Abrir `HiNote_Studio_Tablet_Android` en Android Studio o ejecutar dentro de esa carpeta `gradle assembleStableDebug assembleProbeDebug`.
+4. APK estable en `app/build/outputs/apk/stable/debug/app-stable-debug.apk`; pruebas en `app/build/outputs/apk/probe/debug/app-probe-debug.apk`.
 
 El ZIP original se conserva como fuente de los dos recursos de calibración. El código editable está en `HiNote_Studio_Tablet_Android`; no se vuelve a extraer ni se parchea durante la compilación. El workflow de GitHub Actions verifica las pruebas y genera el APK al publicarse los cambios.
 
@@ -121,7 +121,7 @@ npx playwright install chromium
 node tests/editor.spec.cjs
 python tools/benchmark_engine.py --paragraphs 100
 # Desde HiNote_Studio_Tablet_Android:
-gradle testDebugUnitTest assembleDebug
+gradle testStableDebugUnitTest testProbeDebugUnitTest assembleStableDebug assembleProbeDebug
 ```
 
 Consultar `docs/PRUEBA_TABLET.md` para verificar el resultado en Huawei Notes. Las pruebas del motor en Linux y del editor en Chromium no sustituyen la prueba en una tablet física ni garantizan compatibilidad con todas las versiones de Huawei Notes.

@@ -2,6 +2,8 @@
 
 Este directorio es el proyecto Android editable. Instrucciones completas, cambios y pruebas en `../README.md` y `../docs/PRUEBA_TABLET.md`.
 
+V34 tiene dos variantes que comparten las correcciones 1–4: `stable` (`com.hinote.studio`) y `probe` (`com.hinote.studio.probe`, «HiNote Studio Pruebas»). Se pueden instalar juntas. Compilar ambas con `gradle assembleStableDebug assembleProbeDebug`. El laboratorio está en Guardado → Pruebas Huawei Notes, únicamente en `probe`. Sus pasos y límites están en `../docs/V34_PRUEBAS_NOTES.md`.
+
 Antes de abrirlo en Android Studio, ejecutar desde la raíz del repositorio:
 
 ```sh

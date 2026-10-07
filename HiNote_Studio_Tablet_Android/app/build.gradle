@@ -25,6 +25,23 @@ android {
         }
     }
 
+    buildFeatures { buildConfig true }
+    flavorDimensions 'edition'
+    productFlavors {
+        stable {
+            dimension 'edition'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'false'
+            manifestPlaceholders = [appLabel: 'HiNote Studio']
+        }
+        probe {
+            dimension 'edition'
+            applicationIdSuffix '.probe'
+            versionNameSuffix '-pruebas'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'true'
+            manifestPlaceholders = [appLabel: 'HiNote Studio Pruebas']
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

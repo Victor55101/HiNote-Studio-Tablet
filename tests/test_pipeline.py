@@ -83,6 +83,41 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError): backend.export_snapshot(str(ASSETS), str(self.cache), result['snapshot'], 'test', True, str(output))
         self.assertFalse(output.exists())
 
+    def test_probe_exports_only_selected_page_and_preserves_its_binary(self):
+        result = self.compose(('Hola mi nota. ' * 30 + '\n') * 8)
+        self.assertGreater(result['page_count'], 1)
+        rendered = self.cache / 'export-probe'; rendered.mkdir()
+        (rendered / 'page-0-native.jpg').write_bytes((ROOT / 'tests/thumbnail.jpg').read_bytes())
+        output = self.cache / 'probe.hinote'
+        backend.export_probe_page(str(ASSETS), str(self.cache), result['snapshot'], 1, 'Solo página 2', str(output), export_dir=str(rendered))
+        self.assertTrue(validate_hinote(output, quiet=True))
+        with zipfile.ZipFile(output) as archive:
+            pages = [n for n in archive.namelist() if n.startswith('pages/') and n.endswith('.jhinote')]
+            self.assertEqual(len(pages), 1)
+            meta = loadj(archive.read(pages[0]))
+            self.assertEqual(meta['customNotePageContent']['pageNumber'], 1)
+            binary = next(f['name'] for f in meta['fileList'] if f['name'].endswith('.bin'))
+            self.assertEqual(archive.read('files/' + binary), (self.cache / result['snapshot'] / 'page-1.bin').read_bytes())
+        for index in (-1, result['page_count'], 1.5):
+            with self.assertRaises(ValueError):
+                backend.export_probe_page(str(ASSETS), str(self.cache), result['snapshot'], index, 'Fuera', str(self.cache / 'invalid.hinote'), export_dir=str(rendered))
+
+    def test_probe_image_only_page_keeps_native_images_without_unrelated_writing(self):
+        result = self.compose('Texto de la primera página')
+        rendered = self.cache / 'export-probe'; rendered.mkdir()
+        jpeg = (ROOT / 'tests/thumbnail.jpg').read_bytes()
+        (rendered / 'page-0-native.jpg').write_bytes(jpeg)
+        image = rendered / 'image.jpg'; image.write_bytes(jpeg)
+        output = self.cache / 'probe-images.hinote'
+        record = dict(id='selected', path=str(image), page=0, x=20, y=30, width=200, height=300, angle=0)
+        backend.export_probe_page(str(ASSETS), str(self.cache), result['snapshot'], 2, 'Solo imagen', str(output),
+            images_json=json.dumps([record]), page_count=3, export_dir=str(rendered))
+        self.assertTrue(validate_hinote(output, quiet=True))
+        with zipfile.ZipFile(output) as archive:
+            self.assertFalse(any(n.endswith('.bin') for n in archive.namelist()))
+            page = loadj(archive.read(next(n for n in archive.namelist() if n.startswith('pages/') and n.endswith('.jhinote'))))
+            self.assertEqual(len(page['customNotePageContent']['pageElement']), 1)
+
     def test_oversize_word_wraps_within_page(self):
         doc = document_from_plain_text('W' * 1800, scale=2)
         composed = compose_document(GLYPHS, doc)
