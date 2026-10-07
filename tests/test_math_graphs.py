@@ -14,7 +14,7 @@ ASSETS=APP/'assets'
 sys.path.insert(0,str(APP/'python'))
 import mobile_backend as backend
 from handwriting_composer import compose_document,load_library,_Warnings
-from math_graph_composer import validate_object,plan_object,smooth_points,Ink,graph_geometry
+from math_graph_composer import validate_object,plan_object,smooth_points,Ink,graph_geometry,LabelSpace,trace_label_pose
 from pencilengine_width import native_width
 from table_composer import GRID,HALF
 from pencilengine_reader import validate_pencilengine,read_pencilengine
@@ -33,6 +33,54 @@ def graph(**options):
             'points':[{'x':1,'y':9,'label':'A'},{'x':4,'y':5,'label':'B'},{'x':9,'y':2,'label':'C'}]}],**options}
 
 class MathGraphTests(unittest.TestCase):
+    def test_script_letters_keep_the_same_native_width_at_different_sizes(self):
+        expr={'type':'scripts','base':row('Q'),'sup':row('2'),'sub':row('1')}
+        for size in (1, .6, .4):
+            page=self.compose([formula(row(expr),size=size)])['pages'][0]
+            widths=[native_width(s) for s in page['strokes'] if s.get('char') in ('Q','2','1')]
+            self.assertTrue(widths)
+            self.assertTrue(all(abs(width-2/3)<1e-6 for width in widths))
+
+    def test_new_formula_width_follows_content_and_can_grow_after_editing(self):
+        obj=formula(row('x=2'),autoWidth=True)
+        lib=load_library(ASSETS/'glyphs_v24.json')
+        small=plan_object(obj,lib,123,_Warnings(),lambda:None)
+        self.assertLess(small.width,5*GRID)
+        self.assertEqual(small.width,obj['width']*GRID)
+        obj['expression']=row('x=2+3+4+5+6')
+        larger=plan_object(obj,lib,123,_Warnings(),lambda:None)
+        self.assertGreater(larger.width,small.width)
+        obj['autoWidth']=False;obj['width']=15
+        self.assertEqual(plan_object(obj,lib,123,_Warnings(),lambda:None).width,15*GRID)
+
+    def test_trace_names_rotate_calibrated_editable_ink_and_stay_inside_graph(self):
+        g=graph(series=[{'type':'line','color':'#245BCE','label':'Oferta','points':[{'x':1,'y':2},{'x':8,'y':9}]}])
+        result=self.compose([g]);page=result['pages'][0];placed=page['objects'][0]
+        names=[p for p in page['placements'] if p.get('trace_label')]
+        self.assertEqual(''.join(p['char'] for p in names),'Oferta')
+        self.assertTrue(all(-90<=p['rotation_degrees']<=90 and abs(p['rotation_degrees'])>10 for p in names))
+        strokes=[s for s in page['strokes'] if s.get('trace_label')]
+        self.assertTrue(strokes)
+        for s in strokes:
+            self.assertAlmostEqual(native_width(s),2/3,places=6)
+            for p in s['points']:
+                self.assertTrue(placed['x']<=p['x']<=placed['x']+placed['width'])
+                self.assertTrue(placed['y']<=p['y']<=placed['y']+placed['height'])
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/'labels.bin'
+            write_pencilengine(page,ASSETS/'template_1stroke.hinote',output)
+            count,_=validate_pencilengine(output)
+            self.assertEqual(count,len(page['strokes']))
+
+    def test_trace_name_uses_the_end_when_point_labels_already_exist(self):
+        points=[(100,200),(700,500)]
+        middle=trace_label_pose(points,45,20,'auto',False,LabelSpace(1000,1000))
+        end=trace_label_pose(points,45,20,'auto',True,LabelSpace(1000,1000))
+        self.assertLess(middle['fraction'],.7)
+        self.assertGreater(end['fraction'],.7)
+        for pose in (middle,end):
+            self.assertAlmostEqual(pose['angle'],math.atan2(300,600))
+
     def compose(self,objects,before=None,after=None):
         doc=backend._document(json.dumps({'paragraphs':(before or [])+[{'type':o['kind'],'object':o} for o in objects]+(after or [])}))
         return compose_document(ASSETS/'glyphs_v24.json',doc)
@@ -173,8 +221,8 @@ class MathGraphTests(unittest.TestCase):
         top,bottom=bounds('Q');height=bottom-top
         sup_top,sup_bottom=bounds('2');sub_top,sub_bottom=bounds('1')
         self.assertLess(sup_bottom-sup_top,height*.65)
-        self.assertGreaterEqual(sup_bottom,top+height*.3)
-        self.assertLessEqual(sup_bottom,top+height*.5)
+        self.assertGreaterEqual(sup_bottom,top+height*.1)
+        self.assertLessEqual(sup_bottom,top+height*.25)
         self.assertLessEqual(sub_top,bottom)
         self.assertGreaterEqual(sub_top,top+height*.65)
 

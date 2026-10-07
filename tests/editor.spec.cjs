@@ -88,7 +88,7 @@ test('Stale composition cannot export; a fresh snapshot is immutable during expo
   await setup(page,'Hola'); await page.click('#refreshBtn');
   const old = await page.evaluate(() => bridgeCalls.filter(c => c[0]==='compose').at(-1)[3]);
   await paste(page,'Otro'); await page.evaluate(id => onComposeResult(id,JSON.stringify({snapshot:'old',page_count:2,warnings:[]})),old);
-  assert.equal(await page.isDisabled('#exportBtn'),true);
+  assert.equal(await page.isDisabled('#exportBtn'),false);
   await page.click('#refreshBtn'); await page.evaluate(() => { const id=bridgeCalls.filter(c=>c[0]==='compose').at(-1)[3]; onComposeResult(id,JSON.stringify({snapshot:'current',page_count:2,warnings:[]})); });
   assert.equal(await page.isDisabled('#exportBtn'),false); await page.click('#exportBtn');
   assert.deepEqual(await page.evaluate(() => bridgeCalls.filter(c=>c[0]==='save').at(-1)),['save','current','Nueva nota',true,'[]',2]);
@@ -517,6 +517,7 @@ test('Side by side graph blocks remove intervening empty lines and retain indepe
 test('Math preview handles stay visible while zooming and moving blocks',async page=>{
   await setup(page);await openMath(page,'graph');await page.click('#mathDone');
   await page.evaluate(()=>{const o=serializeDocument().paragraphs[0].object;composition={snapshot:'math-mock',page_count:1,object_pages:[[{id:o.id,kind:o.kind,x:60,y:60,width:415,height:470}]]};previewRevision=revision;zoom=.6;applyZoom();MathGraphEditor.mode(true);});
+  await page.locator('.objectSelect').click();
   const b=await page.locator('.objectMove').boundingBox();await page.mouse.move(b.x+10,b.y+10);await page.mouse.down();await page.mouse.move(b.x+34,b.y+34);await page.mouse.up();
   assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.gap),1);
   await page.evaluate(()=>{previewRevision=revision;zoom=1.2;applyZoom();});await page.locator('#previewWrap').evaluate(n=>n.scrollTop=300);await page.waitForTimeout(50);
@@ -684,6 +685,7 @@ test('Graph pinch zoom does not add points and preview drag does not pan the pag
   assert.equal(await page.locator('.graphPoint').count(),0);assert.ok(parseInt(await page.textContent('#graphZoomReset'))>150);
   await page.click('#mathDone');
   await page.evaluate(()=>{const o=serializeDocument().paragraphs[0].object;composition={snapshot:'drag-check',page_count:1,object_pages:[[{id:o.id,kind:o.kind,x:60,y:60,width:415,height:470}]]};previewRevision=revision;zoom=1.4;applyZoom();MathGraphEditor.mode(true);});
+  await page.locator('.objectSelect').click();
   const scroll=await page.locator('#previewWrap').evaluate(n=>[n.scrollLeft,n.scrollTop]),b=await page.locator('.objectMove').boundingBox();
   await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:b.x+12,y:b.y+12}]});
   await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:b.x+40,y:b.y+40}]});
@@ -702,6 +704,42 @@ test('Notebook current source uses fresh content and requires page review before
   await page.evaluate(id=>onNotebookResult(id,'{"fileSaved":true,"name":"Unido.hinote"}',null),merge[3]);await page.click('#notebookClose');
   await setup(page,'Edición posterior');await page.click('[data-tab="save"]');await page.click('#mergeNotebooks');await page.click('#notebookCurrent');
   const updated=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='notebook-action').at(-1));assert.equal(JSON.parse(updated[2]).document.paragraphs[0].segments[0].text,'Edición posterior');
+});
+
+async function mathPreview(page){await page.evaluate(()=>{const objects=serializeDocument().paragraphs.filter(p=>p.object).map(p=>p.object);composition={snapshot:'selection-mock',page_count:1,object_pages:[objects.map((o,i)=>({id:o.id,kind:o.kind,x:60+i*220,y:75,width:200,height:220}))]};previewRevision=revision;zoom=.8;applyZoom();});}
+test('V34 math controls appear only on the tapped object in every tab',async page=>{
+  await setup(page);await openMath(page,'graph');await page.click('#mathDone');await select(page,{line:1,offset:0});await openMath(page,'graph');await page.click('#mathDone');await mathPreview(page);
+  assert.equal(await page.locator('.objectTarget').count(),0);
+  for(const tab of ['text','lists','page','images','tables','math','save','calibration']){
+    await page.click('[data-tab="'+tab+'"]');await page.locator('.objectSelect').first().click();
+    assert.equal(await page.locator('.objectTarget').count(),1);assert.equal(await page.locator('.objectMove').count(),1);
+    const first=await page.locator('.objectTarget').getAttribute('data-id');await page.locator('.objectSelect').last().click();
+    assert.equal(await page.locator('.objectTarget').count(),1);assert.notEqual(await page.locator('.objectTarget').getAttribute('data-id'),first);
+  }
+});
+test('V34 copied math retains editable data independently and quick deletion is undoable',async page=>{
+  await setup(page);await openMath(page);await page.locator('.mathSlot').first().fill('x=2');await page.click('#mathDone');await mathPreview(page);await page.locator('.objectSelect').click();await page.click('.objectCopy');
+  await select(page,{line:1,offset:0});await page.click('#pasteMath');let objects=await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.object).map(p=>p.object));assert.equal(objects.length,2);assert.notEqual(objects[0].id,objects[1].id);assert.deepEqual(objects[0].expression,objects[1].expression);
+  await page.locator('.objectBlock button').last().click();await page.locator('.mathSlot').first().fill('x=9');await page.click('#mathDone');
+  objects=await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.object).map(p=>p.object));assert.equal(objects[0].expression.items[0].text,'x=2');assert.equal(objects[1].expression.items[0].text,'x=9');
+  await mathPreview(page);await page.locator('.objectSelect').last().click();await page.click('.objectDelete');assert.equal(await page.locator('.objectBlock').count(),1);await page.click('#undoBtn');assert.equal(await page.locator('.objectBlock').count(),2);
+});
+test('V34 direct save composes pending content and remains separate from notebook merging',async page=>{
+  await setup(page,'Contenido pendiente');await page.click('[data-tab="save"]');assert.equal(await page.isVisible('#saveDirect'),true);assert.equal(await page.isVisible('#mergeNotebooks'),true);
+  await page.click('#saveDirect');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.ok(call);assert.equal(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='save')),false);
+  await page.evaluate(id=>onComposeResult(id,JSON.stringify({snapshot:'quick-save',page_count:1,warnings:[]})),call[3]);assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='save').at(-1)[1]),'quick-save');assert.equal(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='notebook-action')),false);
+  await page.evaluate(()=>onExportComplete(true,'Guardado'));
+});
+test('V34 graph names follow the trace and help stays collapsed until requested',async page=>{
+  await setup(page);await openMath(page,'graph');assert.equal(await page.locator('#graphHelp').getAttribute('open'),null);assert.equal(await page.isVisible('#graphGridInfo'),false);assert.equal(await page.getAttribute('#graphUndo','aria-label'),'Deshacer gráfica');
+  await page.locator('#graphBulk summary').click();await page.fill('#graphPoints','1; 9; A\n8; 2; B');await page.fill('#graphTraceLabel','Demanda');await page.locator('#graphTraceLabel').blur();
+  assert.equal(await page.locator('[data-trace-label]').count(),1);assert.match(await page.locator('[data-trace-label]').getAttribute('transform'),/rotate\(/);await page.click('#mathDone');
+  const trace=await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0]);assert.equal(trace.label,'Demanda');assert.equal(trace.labelPosition,'auto');await page.click('.objectBlock button');assert.equal(await page.inputValue('#graphTraceLabel'),'Demanda');await page.click('#mathCancel');
+});
+test('V34 formula auto width reflects native measurements and manual resizing remains explicit',async page=>{
+  await setup(page);await openMath(page);assert.equal(await page.isChecked('#mathAutoWidth'),true);await page.locator('.mathSlot').first().fill('x=2');await page.click('#mathDone');
+  await page.evaluate(()=>{const o=serializeDocument().paragraphs[0].object;MathGraphEditor.applyMeasurements({object_pages:[[{id:o.id,width:40/.675*2.5}]]});});
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),2.5);await page.click('.objectBlock button');await page.fill('#mathWidth','6');await page.locator('#mathWidth').blur();assert.equal(await page.isChecked('#mathAutoWidth'),false);await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),6);
 });
 
 (async () => {

@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V33
+name: Build HiNote Studio Tablet V34
 on:
   workflow_dispatch:
   push:
@@ -57,5 +57,14 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V33
+          name: HiNote-Studio-Tablet-APK-V34
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Package local signing tool
+        run: |
+          mkdir -p signing-tools
+          signer_path="$(rg --files "$ANDROID_HOME/build-tools" -g apksigner.jar | sort -V | tail -n 1)"
+          cp "$signer_path" signing-tools/apksigner.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-signing-tool
+          path: signing-tools/apksigner.jar

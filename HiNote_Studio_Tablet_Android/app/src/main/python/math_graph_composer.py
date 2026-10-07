@@ -89,6 +89,10 @@ def validate_object(obj, kind=None):
         series = obj.get("series", [])
         if not isinstance(series, list) or len(series) > 8: raise ValueError("Cada gráfica admite hasta 8 trazos")
         for trace in series:
+            if not isinstance(trace.get('label', ''), str) or len(trace.get('label', '')) > 60:
+                raise ValueError('El nombre del trazo admite hasta 60 caracteres')
+            if trace.get('labelPosition', 'auto') not in ('auto', 'middle', 'end'):
+                raise ValueError('Posición del nombre del trazo inválida')
             color(trace.get("color", obj["color"]))
             for key in ("pointColor", "guideColor", "labelColor"):
                 if key in trace: color(trace[key])
@@ -113,6 +117,7 @@ def object_text(obj):
     if obj["kind"] == "graph":
         yield from (obj.get(key, "") for key in ("title", "xlabel", "ylabel"))
         for trace in obj.get("series", []):
+            yield trace.get('label', '')
             for p in trace["points"]: yield p.get("label", "")
         return
     def visit(node):
@@ -222,18 +227,17 @@ class Ink:
             self.check()
             if ch.isspace(): out.width += 14 * size; continue
             if ch not in self.lib["glyphs"]:
-                b = self.sign(ch, size, ink, thickness * size)
+                b = self.sign(ch, size, ink, thickness)
             else:
                 items = list(_choose_char_items([{"ch": ch, "scale": size, "color": ink, "opacity": 100,
                                                   "thickness": thickness}], self.lib["glyphs"], self.rng, 14, self.warnings))
                 p = {"strokes": [], "placements": []}
                 _place_glyph_sequence(items, 0, 0, p, self.lib.get("placement_y_offsets", {}), 0, 0, 0, self.rng)
-                # Nested scripts may be smaller than the body's scale controls.
-                # Materialize their scaled width in native metadata; the user
-                # thickness remains an integer and pressure remains unchanged.
+                # Letter size changes geometry, independently of the selected
+                # pen width. Subscripts and superscripts keep the body's ink.
                 for stroke in p['strokes']:
                     metadata=bytearray.fromhex(stroke['metadata_hex'])
-                    struct.pack_into('>f',metadata,96,native_width(stroke)*size)
+                    struct.pack_into('>f',metadata,96,native_width(stroke))
                     stroke.update(metadata_hex=metadata.hex(),thickness=0,width_scale=1)
                 pts = [pt for s in p["strokes"] for pt in s["points"]]
                 left, right = min(pt["x"] for pt in pts), max(pt["x"] for pt in pts)
@@ -301,7 +305,7 @@ class Ink:
             side_gap = 2.5 * size
             out = Box(base.width+max(sup.width,sub.width)+(side_gap if sup.width or sub.width else 0)); out.put(base)
             height = max(base.bottom-base.top, em*.6)
-            if sup.width: out.put(sup,base.width+side_gap,base.top+height*.4-sup.bottom)
+            if sup.width: out.put(sup,base.width+side_gap,base.top+height*.2-sup.bottom)
             if sub.width: out.put(sub,base.width+side_gap,max(base.top+height*.7,base.bottom-em*.25)-sub.top)
             return out
         if typ == "root":
@@ -441,6 +445,72 @@ class LabelSpace:
         self.boxes.append(best[1]);return best[1]
 
 
+def trace_label_pose(points, width, height, position, has_point_labels, space):
+    """Place a readable, straight handwritten name along the local tangent."""
+    segments = [(a, b, math.dist(a, b)) for a, b in zip(points, points[1:]) if math.dist(a, b) > 1e-8]
+    total = sum(length for _, _, length in segments)
+    if not total:
+        return None
+    at_end = position == 'end' or (position == 'auto' and has_point_labels)
+    fractions = (.85, .72, .95) if at_end else (.5, .35, .65, .2, .8)
+    best = None
+    for fraction in fractions:
+        remaining = total * fraction
+        for a, b, length in segments:
+            if remaining <= length:
+                break
+            remaining -= length
+        t = max(0, min(1, remaining / length))
+        px, py = a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t
+        angle = math.atan2(b[1]-a[1], b[0]-a[0])
+        if angle > math.pi/2: angle -= math.pi
+        if angle < -math.pi/2: angle += math.pi
+        c, sn = math.cos(angle), math.sin(angle)
+        bw, bh = abs(c)*width+abs(sn)*height, abs(sn)*width+abs(c)*height
+        if bw > space.width-6 or bh > space.height-6:
+            continue
+        for gap in (.14, .35, .6):
+            cx, cy = px+sn*(height/2+space.unit*gap), py-c*(height/2+space.unit*gap)
+            ox, oy = cx, cy
+            cx = max(bw/2+3, min(space.width-bw/2-3, cx))
+            cy = max(bh/2+3, min(space.height-bh/2-3, cy))
+            rect = (cx-bw/2, cy-bh/2, bw, bh)
+            indices = {i for key in space.keys(rect) for i in space.cells.get(key, [])}
+            hits = sum(space.crosses(a,b,rect,pad+space.unit*.025) for a,b,pad in (space.segments[i] for i in indices))
+            x,y,w,h = rect
+            overlap = sum(max(0,min(x+w,bx+bw)-max(x,bx))*max(0,min(y+h,by+bh)-max(y,by)) for bx,by,bw,bh in space.boxes)
+            score = hits*1000+overlap*100+math.hypot(cx-ox,cy-oy)*30+abs(fraction-fractions[0])*space.unit+gap*space.unit
+            candidate = {'score':score, 'cx':cx, 'cy':cy, 'angle':angle, 'rect':rect, 'fraction':fraction}
+            if best is None or score < best['score']:
+                best = candidate
+    if best:
+        space.boxes.append(best['rect'])
+    return best
+
+
+def rotated_label(box, pose):
+    x,y,w,h = pose['rect']
+    out = Box(w, 0, h)
+    c,sn = math.cos(pose['angle']), math.sin(pose['angle'])
+    center_y = (box.top+box.bottom)/2
+    def point(px, py):
+        px,py = px-box.width/2, py-center_y
+        return pose['cx']+c*px-sn*py-x, pose['cy']+sn*px+c*py-y
+    for source in box.strokes:
+        stroke = copy.deepcopy(source)
+        for p in stroke['points']:
+            p['x'],p['y'] = point(p['x'],p['y'])
+        stroke['trace_label'] = True
+        out.strokes.append(stroke)
+    for source in box.placements:
+        p = copy.deepcopy(source)
+        p['x'],p['baseline_y'] = point(p['x'],p['baseline_y'])
+        p['rotation_degrees'] = math.degrees(pose['angle'])
+        p['trace_label'] = True
+        out.placements.append(p)
+    return out
+
+
 def draw_graph(obj, painter):
     w,h=obj["width"]*GRID,obj["height"]*GRID
     if w < 4*GRID or h < 4*GRID:raise ValueError("Una gráfica necesita al menos 4 × 4 cuadros para sus ejes y etiquetas")
@@ -450,7 +520,7 @@ def draw_graph(obj, painter):
     left,right,top,bottom,ax,ay=(geometry[k] for k in ('left','right','top','bottom','ax','ay'))
     arrow_right=right+HALF if obj.get('arrows',True) and right+HALF<=w-3 else right
     arrow_top=top-HALF if obj.get('arrows',True) and top-HALF>=3 else top
-    labels=[]
+    labels=[];trace_labels=[]
     xzero=max(obj["xmin"],min(obj["xmax"],0));yzero=max(obj["ymin"],min(obj["ymax"],0))
     def line(coords,c=ink,width=thickness,dashed=False):
         if not dashed:return painter.path(out,coords,c,width,straight=len(coords)==2)
@@ -517,11 +587,13 @@ def draw_graph(obj, painter):
     for trace in obj["series"]:
         painter.check();c=trace.get("color",ink);width=trace.get('width',thickness)
         coords=[xy(p["x"],p["y"]) for p in trace["points"]]
+        rendered=[xy(x,y) for x,y in smooth_points([(p['x'],p['y']) for p in trace['points']])] if trace['type']=='curve' else coords
         if trace["type"]!="points" and len(coords)>1:
-            rendered=smooth_points([(p["x"],p["y"]) for p in trace["points"]]) if trace["type"]=="curve" else [(p["x"],p["y"]) for p in trace["points"]]
-            rendered=[xy(x,y) for x,y in rendered]
             if trace.get('dashed'): line(rendered,c,width,True)
             else: painter.path(out,rendered,c,width)
+        if trace.get('label') and len(rendered)>1:
+            b=painter.text(trace['label'],size,trace.get('labelColor',c),thickness)
+            trace_labels.append((b,rendered,trace.get('labelPosition','auto'),any(p.get('label') for p in trace['points'])))
         for p,(x,y) in zip(trace["points"],coords):
             if trace.get("markers",True) or trace["type"]=="points":
                 radius=trace.get('pointSize',2.5)
@@ -536,6 +608,11 @@ def draw_graph(obj, painter):
     for b,x,y,radius in labels:
         xx,yy,_,_=space.place(x,y,b.width,b.bottom-b.top,radius)
         out.put(b,xx,yy-b.top)
+    for b,points,position,has_point_labels in trace_labels:
+        pose=trace_label_pose(points,b.width,b.bottom-b.top,position,has_point_labels,space)
+        if not pose:
+            raise ValueError('El nombre del trazo no cabe: acórtalo o reduce el tamaño de letra')
+        out.put(rotated_label(b,pose),pose['rect'][0],pose['rect'][1])
     return out
 
 
@@ -543,7 +620,7 @@ def plan_object(obj, lib, seed, warnings, check):
     obj=validate_object(obj);painter=Ink(lib,seed,warnings,check)
     if obj["kind"]=="graph":return draw_graph(obj,painter)
     # Fit retries reuse the same variants. Never stretch individual glyphs.
-    size=obj["size"];width=obj["width"]*GRID;pad=GRID*.1
+    size=obj["size"];width=(16-obj['left'] if obj.get('autoWidth') is True else obj['width'])*GRID;pad=GRID*.1
     while True:
         painter=Ink(lib,seed,warnings,check)
         b=painter.expression(obj["expression"],size,obj["color"],obj["thickness"])
@@ -552,6 +629,9 @@ def plan_object(obj, lib, seed, warnings, check):
         size=max(.4,min(size-.05,size*(width-2*pad)/max(b.width,1)))
     # Baselines (or the main fraction bar) land on a half-square, rather than
     # floating a fixed padding distance below the block's upper edge.
+    if obj.get('autoWidth') is True:
+        width=max(2*GRID,min(width,math.ceil((b.width+2*pad)/HALF-1e-9)*HALF))
+        obj['width']=width/GRID
     anchor=getattr(b,'grid_anchor',0)
     shift=math.ceil((pad-b.top+anchor)/HALF-1e-9)*HALF-anchor
     out=Box(width,0,max(obj["height"]*GRID,math.ceil((shift+b.bottom+pad)/HALF)*HALF))

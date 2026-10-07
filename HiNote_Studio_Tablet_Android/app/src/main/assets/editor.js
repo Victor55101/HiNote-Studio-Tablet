@@ -11,6 +11,7 @@ let qualityTimer, requestedPreview=null, shownPreview=null;
 const previewResolution=()=>Math.min(2,Math.max(1,Math.ceil(zoom*(window.devicePixelRatio||1))));
 let history = [], historyIndex = -1;
 let folderBusy = false, exportFolderState = {configured:false,label:''};
+let saveRequested = false;
 let activeProfile = 'original';
 const isBlockLine=line=>TableEditor.isLine(line)||MathGraphEditor.isLine(line);
 
@@ -330,8 +331,9 @@ function restoreDraft() {
 function controls() {
   const calibrationBusy=CalibrationUI.isBusy()||NotebookUI.isBusy();
   $('charCount').textContent = `${characterCount().toLocaleString('es')} caracteres`;
-  $('exportBtn').disabled = calibrationBusy || folderBusy || exporting || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision;
-  $('refreshBtn').disabled = exporting || calibrationBusy || folderBusy; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
+  $('exportBtn').disabled = calibrationBusy || folderBusy || exporting || saveRequested || ImageEditor.isBusy();
+  $('saveDirect').disabled = $('exportBtn').disabled;
+  $('refreshBtn').disabled = exporting || saveRequested || calibrationBusy || folderBusy; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
   $('prevPage').disabled = exporting || composing || !composition || currentPage <= 0;
   $('nextPage').disabled = exporting || composing || currentPage >= ImageEditor.count() - 1;
   editor.contentEditable = String(!exporting && !calibrationBusy); $('noteTitle').disabled = exporting || calibrationBusy;
@@ -342,6 +344,7 @@ function controls() {
   $('clearFolder').disabled = exporting || ImageEditor.isBusy() || !exportFolderState.configured;
   if(calibrationBusy || folderBusy)document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el=>el.disabled=true);
   CalibrationUI.controls();
+  MathGraphEditor.updateControls();
 }
 function showExportFolder(raw) {
   const data=JSON.parse(raw || '{}');
@@ -362,7 +365,7 @@ window.onExportFolder=(raw,error)=>{
   controls();if(error)toast(error);
 };
 function changed() {
-  clearTimeout(refreshTimer); clearTimeout(qualityTimer); revision++; composing = false;
+  saveRequested=false;clearTimeout(refreshTimer); clearTimeout(qualityTimer); revision++; composing = false;
   if (window.AndroidBridge) AndroidBridge.invalidateCompose(revision);
   $('status').textContent = 'Vista pendiente…'; controls(); queueDraft();
   const n = characterCount();
@@ -381,12 +384,14 @@ window.onComposeResult = (id, json) => {
   try {
     const result = JSON.parse(json); if (result.error) throw new Error(result.error);
     composition = result; previewRevision = id; currentPage = Math.min(currentPage, ImageEditor.count() - 1);
+    MathGraphEditor.applyMeasurements(result);
     const warnings = result.warnings || []; $('warnings').replaceChildren();
     warnings.forEach(message => { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); });
     $('warningPanel').classList.toggle('hidden', warnings.length === 0); $('warningCount').textContent = `${warnings.length} avisos de escritura`;
     $('status').textContent = 'Cargando página…'; drawCurrent();
-  } catch (e) { $('status').textContent = 'No se pudo generar'; toast(e.message); }
+  } catch (e) { saveRequested=false;$('status').textContent = 'No se pudo generar'; toast(e.message); }
   controls();
+  if(saveRequested){saveRequested=false;exportNote();}
 };
 window.onWorkProgress = (kind, id, page) => {
   if (kind === 'compose' && id === revision && composing) $('status').textContent = `Preparando página ${page}…`;
@@ -437,7 +442,9 @@ function applyZoom() {
   schedulePreviewQuality();
 }
 function exportNote() {
-  if (exporting || CalibrationUI.isBusy() || NotebookUI.isBusy() || MathGraphEditor.isOpen() || TableEditor.isOpen() || folderBusy || composing || ImageEditor.isBusy() || !composition || previewRevision !== revision) { toast('Actualiza la vista antes de guardar'); return; }
+  if (exporting || CalibrationUI.isBusy() || NotebookUI.isBusy() || MathGraphEditor.isOpen() || TableEditor.isOpen() || folderBusy || ImageEditor.isBusy() || ime) return;
+  if(!window.AndroidBridge){toast('Guarda desde la app Android.');return;}
+  if(composing||!composition||previewRevision!==revision){saveRequested=true;if(!composing)refreshPreview();if(!composing)saveRequested=false;controls();return;}
   clearTimeout(refreshTimer); saveDraft(); exporting = true; controls(); $('status').textContent = exportFolderState.configured?'Guardando en la carpeta elegida…':'Elige dónde guardar…';
   try { AndroidBridge.requestSave(composition.snapshot, $('noteTitle').value || 'Nueva nota', $('gridCheck').checked,ImageEditor.exportJSON(),ImageEditor.count()); }
   catch (e) { window.onExportComplete(false, e.message); }
@@ -488,9 +495,10 @@ editor.addEventListener('paste', event => { event.preventDefault(); insertText((
 editor.addEventListener('drop', event => event.preventDefault());
 ['letterSpacing','wordSpacing','lineRows','listIndent','autoPreview'].forEach(id => $(id).addEventListener('change', changed));
 $('gridCheck').addEventListener('change', () => { queueDraft(); drawCurrent(); }); $('noteTitle').addEventListener('input', queueDraft);
-$('refreshBtn').onclick = refreshPreview; $('exportBtn').onclick = exportNote;
+$('refreshBtn').onclick = refreshPreview; $('exportBtn').onclick = exportNote; $('saveDirect').onclick=exportNote;
 $('chooseFolder').onclick=()=>changeExportFolder();$('clearFolder').onclick=()=>changeExportFolder(true);
 $('cancelBtn').onclick = () => {
+  saveRequested=false;
   if (exporting) { AndroidBridge.cancelExport(); $('status').textContent = 'Cancelando…'; }
   else { clearTimeout(refreshTimer); revision++; AndroidBridge.invalidateCompose(revision); composing = false; $('status').textContent = 'Generación cancelada'; controls(); }
 };
