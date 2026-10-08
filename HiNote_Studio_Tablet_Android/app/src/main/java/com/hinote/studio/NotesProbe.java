@@ -124,7 +124,7 @@ final class NotesProbe {
         }
     }
     private synchronized JSONObject record(String kind,JSONObject value) throws Exception {
-        report.put("app","HiNote Studio V34 Pruebas").put("device",device()).put("manual_baseline","PRUEBA-A permaneció en Chrome después de copiar tres rayas con el lazo. Notes pudo pegarlas aunque después se copió PRUEBA-B en Chrome.");
+        report.put("app","HiNote Studio V"+BuildConfig.VERSION_CODE+" Pruebas").put("device",device()).put("manual_baseline","PRUEBA-A permaneció en Chrome después de copiar tres rayas con el lazo. Notes pudo pegarlas aunque después se copió PRUEBA-B en Chrome.");
         JSONArray events=report.optJSONArray("events");if(events==null)events=new JSONArray();
         JSONArray keep=new JSONArray();for(int i=Math.max(0,events.length()-23);i<events.length();i++)keep.put(events.get(i));
         keep.put(new JSONObject().put("time_ms",System.currentTimeMillis()).put("kind",kind).put("data",value));report.put("events",keep);
@@ -188,7 +188,7 @@ final class NotesProbe {
     private void saveReport(String raw,int ticket)throws Exception {
         JSONObject observations=new JSONObject(raw);reportTicket=ticket;
         worker.execute(()->{try {pendingReport=record("observations",observations).toString(2).getBytes(StandardCharsets.UTF_8);
-            activity.runOnUiThread(()->{if(closed)return;try {Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE,"HiNote-V34-Prueba-Notes.json");activity.startActivityForResult(intent,SAVE_REPORT);}catch(Exception error){reply(ticket,null,error.getMessage());}});
+            activity.runOnUiThread(()->{if(closed)return;try {Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE,"HiNote-V"+BuildConfig.VERSION_CODE+"-Prueba-Notes.json");activity.startActivityForResult(intent,SAVE_REPORT);}catch(Exception error){reply(ticket,null,error.getMessage());}});
         }catch(Exception error){reply(ticket,null,error.getMessage());}});
     }
     boolean activityResult(int code,int result,Intent intent) {

@@ -1,8 +1,8 @@
-# HiNote Studio Tablet V34
+# HiNote Studio Tablet V35
 
 Este directorio es el proyecto Android editable. Instrucciones completas, cambios y pruebas en `../README.md` y `../docs/PRUEBA_TABLET.md`.
 
-V34 tiene dos variantes que comparten las correcciones 1–4: `stable` (`com.hinote.studio`) y `probe` (`com.hinote.studio.probe`, «HiNote Studio Pruebas»). Se pueden instalar juntas. Compilar ambas con `gradle assembleStableDebug assembleProbeDebug`. El laboratorio está en Guardado → Pruebas Huawei Notes, únicamente en `probe`. Sus pasos y límites están en `../docs/V34_PRUEBAS_NOTES.md`.
+V35 tiene dos variantes que comparten las correcciones 1–4 y los ajustes nuevos de grosor y cinta: `stable` (`com.hinote.studio`) y `probe` (`com.hinote.studio.probe35`, «HiNote Studio Pruebas V35»). Se pueden instalar juntas. La variante de pruebas también se instala junto a V34 Pruebas, sin borrar sus datos; mantiene su propio borrador y calibraciones. Compilar ambas con `gradle assembleStableDebug assembleProbeDebug`. El laboratorio está en Guardado → Pruebas Huawei Notes, únicamente en `probe`. Los pasos de `../docs/V34_PRUEBAS_NOTES.md` se mantienen, eligiendo «HiNote Studio Pruebas V35» al compartir. Los cambios y resultados están en `../docs/V35.md`.
 
 Antes de abrirlo en Android Studio, ejecutar desde la raíz del repositorio:
 

@@ -1,8 +1,10 @@
-# HiNote Studio Tablet — V34
+# HiNote Studio Tablet — V35
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
 
-V34 añade selección individual de fórmulas y gráficas desde cualquier apartado, copiado de elementos, nombres de trazos, grosor uniforme en índices, ancho automático de fórmulas y guardado directo. Detalles en [docs/V34.md](docs/V34.md). Conserva las correcciones de V33 y la reconstrucción de V32, las calibraciones y el formato del borrador.
+V35 recupera el grosor de V33 en los números y etiquetas de las gráficas, manteniendo el grosor de V34 en las fórmulas. Deshacer y Rehacer quedan fijos a la izquierda de la cinta. Pegar usa solo un icono y se ancla después de copiar hasta el primer pegado; la copia se puede reutilizar. Detalles y resultados de la prueba con Huawei Notes en [docs/V35.md](docs/V35.md).
+
+Conserva las funciones de [V34](docs/V34.md): selección individual de fórmulas y gráficas desde cualquier apartado, copiado de elementos, nombres de trazos, grosor uniforme en índices, ancho automático de fórmulas y guardado directo. También conserva las correcciones de V33 y la reconstrucción de V32, las calibraciones y el formato del borrador.
 
 ## V33: correcciones de exportación y edición
 

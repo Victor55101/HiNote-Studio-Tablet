@@ -11,8 +11,8 @@ android {
         applicationId 'com.hinote.studio'
         minSdk 24
         targetSdk 35
-        versionCode 34
-        versionName '3.4-tablet'
+        versionCode 35
+        versionName '3.5-tablet'
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -35,10 +35,12 @@ android {
         }
         probe {
             dimension 'edition'
-            applicationIdSuffix '.probe'
+            // V34 CI builds used an ephemeral signing key. Install alongside
+            // them so the user's existing diagnostic draft is never removed.
+            applicationIdSuffix '.probe35'
             versionNameSuffix '-pruebas'
             buildConfigField 'boolean', 'NOTES_PROBE', 'true'
-            manifestPlaceholders = [appLabel: 'HiNote Studio Pruebas']
+            manifestPlaceholders = [appLabel: 'HiNote Studio Pruebas V35']
         }
     }
 

@@ -33,6 +33,25 @@ def graph(**options):
             'points':[{'x':1,'y':9,'label':'A'},{'x':4,'y':5,'label':'B'},{'x':9,'y':2,'label':'C'}]}],**options}
 
 class MathGraphTests(unittest.TestCase):
+    def test_graph_numbers_keep_v33_scaled_width_in_preview_and_native_export(self):
+        for size,thickness in ((.4,2),(.6,2),(1,5)):
+            with self.subTest(size=size,thickness=thickness):
+                page=self.compose([graph(size=size,thickness=thickness,series=[])])['pages'][0]
+                numbers=[i for i,s in enumerate(page['strokes']) if s.get('char','').isdigit()]
+                labels=[i for i,s in enumerate(page['strokes']) if s.get('char','').isalpha()]
+                self.assertTrue(numbers)
+                self.assertTrue(labels)
+                expected={**{i:thickness/3*size*.72 for i in numbers},**{i:thickness/3*size for i in labels}}
+                for i,width in expected.items():
+                    self.assertAlmostEqual(native_width(page['strokes'][i]),width,places=6)
+                with tempfile.TemporaryDirectory() as directory:
+                    output=Path(directory)/'graph.bin'
+                    write_pencilengine(page,ASSETS/'template_1stroke.hinote',output)
+                    strokes=read_pencilengine(output).strokes
+                    self.assertEqual(len(strokes),len(page['strokes']))
+                    for i,width in expected.items():
+                        self.assertAlmostEqual(struct.unpack_from('>f',bytes.fromhex(strokes[i].metadata_hex),96)[0],width,places=6)
+
     def test_script_letters_keep_the_same_native_width_at_different_sizes(self):
         expr={'type':'scripts','base':row('Q'),'sup':row('2'),'sub':row('1')}
         for size in (1, .6, .4):
@@ -62,7 +81,7 @@ class MathGraphTests(unittest.TestCase):
         strokes=[s for s in page['strokes'] if s.get('trace_label')]
         self.assertTrue(strokes)
         for s in strokes:
-            self.assertAlmostEqual(native_width(s),2/3,places=6)
+            self.assertAlmostEqual(native_width(s),2/3*g['size'],places=6)
             for p in s['points']:
                 self.assertTrue(placed['x']<=p['x']<=placed['x']+placed['width'])
                 self.assertTrue(placed['y']<=p['y']<=placed['y']+placed['height'])

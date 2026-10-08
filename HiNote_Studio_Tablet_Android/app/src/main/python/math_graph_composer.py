@@ -151,8 +151,9 @@ class Box:
 
 
 class Ink:
-    def __init__(self, lib, seed, warnings, check):
+    def __init__(self, lib, seed, warnings, check, scale_text_width=False):
         self.lib, self.rng, self.warnings, self.check = lib, random.Random(seed), warnings, check
+        self.scale_text_width = scale_text_width
     def path(self, box, coords, color="#000000", thickness=2, straight=False):
         """Geometry uses fresh native line records with a constant pen width.
 
@@ -223,21 +224,22 @@ class Ink:
     def text(self, text, size, ink="#000000", thickness=2):
         from handwriting_composer import _choose_char_items, _place_glyph_sequence
         out = Box()
+        width_scale = size if self.scale_text_width else 1
         for ch in unicodedata.normalize("NFC", text):
             self.check()
             if ch.isspace(): out.width += 14 * size; continue
             if ch not in self.lib["glyphs"]:
-                b = self.sign(ch, size, ink, thickness)
+                b = self.sign(ch, size, ink, thickness * width_scale)
             else:
                 items = list(_choose_char_items([{"ch": ch, "scale": size, "color": ink, "opacity": 100,
                                                   "thickness": thickness}], self.lib["glyphs"], self.rng, 14, self.warnings))
                 p = {"strokes": [], "placements": []}
                 _place_glyph_sequence(items, 0, 0, p, self.lib.get("placement_y_offsets", {}), 0, 0, 0, self.rng)
-                # Letter size changes geometry, independently of the selected
-                # pen width. Subscripts and superscripts keep the body's ink.
+                # Formula scripts keep the body's pen width (V34). Graph labels
+                # retain V33's proportional width, including smaller tick numbers.
                 for stroke in p['strokes']:
                     metadata=bytearray.fromhex(stroke['metadata_hex'])
-                    struct.pack_into('>f',metadata,96,native_width(stroke))
+                    struct.pack_into('>f',metadata,96,native_width(stroke)*width_scale)
                     stroke.update(metadata_hex=metadata.hex(),thickness=0,width_scale=1)
                 pts = [pt for s in p["strokes"] for pt in s["points"]]
                 left, right = min(pt["x"] for pt in pts), max(pt["x"] for pt in pts)
@@ -617,7 +619,7 @@ def draw_graph(obj, painter):
 
 
 def plan_object(obj, lib, seed, warnings, check):
-    obj=validate_object(obj);painter=Ink(lib,seed,warnings,check)
+    obj=validate_object(obj);painter=Ink(lib,seed,warnings,check,scale_text_width=obj['kind']=='graph')
     if obj["kind"]=="graph":return draw_graph(obj,painter)
     # Fit retries reuse the same variants. Never stretch individual glyphs.
     size=obj["size"];width=(16-obj['left'] if obj.get('autoWidth') is True else obj['width'])*GRID;pad=GRID*.1

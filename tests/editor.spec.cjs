@@ -708,6 +708,52 @@ test('Notebook current source uses fresh content and requires page review before
 });
 
 async function mathPreview(page){await page.evaluate(()=>{const objects=serializeDocument().paragraphs.filter(p=>p.object).map(p=>p.object);composition={snapshot:'selection-mock',page_count:1,object_pages:[objects.map((o,i)=>({id:o.id,kind:o.kind,x:60+i*220,y:75,width:200,height:220}))]};previewRevision=revision;zoom=.8;applyZoom();});}
+async function assertPinnedVisible(page,id){
+  const box=await page.locator(id).boundingBox(),ribbon=await page.locator('.toolbar').boundingBox();
+  assert.ok(box&&box.x>=ribbon.x&&box.x+box.width<=ribbon.x+ribbon.width);
+  assert.ok(box.y>=ribbon.y&&box.y+box.height<=ribbon.y+ribbon.height);
+  assert.ok(box.width>=44&&box.height>=44);
+}
+async function scrollRibbonRight(page){
+  const scroll=await page.locator('#toolbarScroll').evaluate(n=>{n.scrollLeft=n.scrollWidth;return n.scrollLeft;});
+  assert.ok(scroll>100,'The ribbon must overflow and actually scroll');
+}
+test('V35 undo and redo stay visible while only the other ribbon controls scroll',async page=>{
+  await setup(page,'Texto');await select(page,{line:0,offset:5});await paste(page,' nuevo');
+  for(const width of [1280,960,390]){
+    await page.setViewportSize({width,height:850});await page.click('[data-tab="text"]');
+    const before=await page.locator('#undoBtn').boundingBox();await scrollRibbonRight(page);
+    await assertPinnedVisible(page,'#undoBtn');await assertPinnedVisible(page,'#redoBtn');
+    assert.equal((await page.locator('#undoBtn').boundingBox()).x,before.x);
+    await page.click('#undoBtn');assert.deepEqual(await lines(page),['Texto']);
+    await page.click('#redoBtn');assert.deepEqual(await lines(page),['Texto nuevo']);
+    assert.ok(await page.locator('#toolbarScroll').evaluate(n=>n.scrollLeft)>100);
+  }
+});
+test('V35 paste icon pins after each copy, unpins on success and keeps the reusable element',async page=>{
+  for(const kind of ['formula','graph']){
+    await setup(page);await openMath(page,kind);if(kind==='formula')await page.locator('.mathSlot').first().fill('x=2');await page.click('#mathDone');
+    await mathPreview(page);await page.locator('.objectSelect').first().click();await page.click('.objectCopy');
+    await page.click('[data-tab="text"]');await scrollRibbonRight(page);
+    await assertPinnedVisible(page,'#pasteMath');await assertPinnedVisible(page,'#undoBtn');await assertPinnedVisible(page,'#redoBtn');
+    assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);
+    assert.equal((await page.textContent('#pasteMath')).trim(),'');assert.equal(await page.locator('#pasteMath svg').count(),1);
+    assert.equal(await page.getAttribute('#pasteMath','aria-label'),'Pegar fórmula o gráfica');
+    fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results','v35-pinned-paste-'+kind+'.png')});
+    await select(page,{line:1,offset:0});await page.click('#pasteMath');
+    assert.equal(await page.locator('.objectBlock').count(),2);assert.equal(await page.locator('#toolbarScroll #pasteMath').count(),1);assert.equal(await page.isDisabled('#pasteMath'),false);
+    await page.click('#pasteMath');assert.equal(await page.locator('.objectBlock').count(),3);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),0);
+    await page.click('#undoBtn');assert.equal(await page.locator('.objectBlock').count(),2);await page.click('#redoBtn');assert.equal(await page.locator('.objectBlock').count(),3);
+    await mathPreview(page);await page.locator('.objectSelect').first().click();await page.click('.objectCopy');
+    await page.click('[data-tab="images"]');await scrollRibbonRight(page);await assertPinnedVisible(page,'#pasteMath');
+    await page.evaluate(()=>{exporting=true;controls();MathGraphEditor.pasteObject();});
+    assert.equal(await page.locator('.objectBlock').count(),3);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);assert.equal(await page.isDisabled('#pasteMath'),true);
+    await page.evaluate(()=>{exporting=false;controls();});await page.click('#pasteMath');
+    assert.equal(await page.locator('.objectBlock').count(),4);assert.equal(await page.locator('#toolbarScroll #pasteMath').count(),1);
+    const objects=await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.object).map(p=>p.object));
+    assert.equal(new Set(objects.map(o=>o.id)).size,4);for(const o of objects.slice(1))assert.deepEqual(o[kind==='formula'?'expression':'series'],objects[0][kind==='formula'?'expression':'series']);
+  }
+});
 test('V34 math controls appear only on the tapped object in every tab',async page=>{
   await setup(page);await openMath(page,'graph');await page.click('#mathDone');await select(page,{line:1,offset:0});await openMath(page,'graph');await page.click('#mathDone');await mathPreview(page);
   assert.equal(await page.locator('.objectTarget').count(),0);
