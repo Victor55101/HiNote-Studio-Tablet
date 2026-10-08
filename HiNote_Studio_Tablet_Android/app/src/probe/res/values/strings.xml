@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notes_transfer_description">Pruebas iniciadas por ti en Huawei Notes: dibujar trazos mediante gestos o trazar un lazo y pulsar Copiar. Puede consultar los controles visibles de Notes y enviar toques en la zona que marques. No se inicia al activarse. Usa Detener / cerrar para terminar. No envía datos a Internet ni lee el portapapeles privado de Notes. Puedes desactivar este servicio al acabar.</string>
+</resources>

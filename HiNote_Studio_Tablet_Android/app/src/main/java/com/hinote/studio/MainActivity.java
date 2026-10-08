@@ -151,7 +151,7 @@ public class MainActivity extends Activity {
                 send("onNotesProbeResult",ticket+",null,"+quote("Solicitud de prueba inválida"));return;
             }
             if(!action.startsWith("page-")){notesProbe.request(action,raw,ticket);return;}
-            if(!(action.equals("page-png")||action.equals("page-hinote")||action.equals("page-share"))
+            if(!(action.equals("page-png")||action.equals("page-hinote")||action.equals("page-share")||action.equals("page-redraw")||action.equals("page-bridge")||action.equals("page-sample-bridge"))
                     ||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true)){
                 send("onNotesProbeResult",ticket+",null,"+quote("Espera a que termine la operación actual"));return;
             }
@@ -396,23 +396,36 @@ public class MainActivity extends Activity {
         File output=null;String snapshot=null;TaskToken token=new TaskToken("probe",ticket,new AtomicBoolean());
         try{
             token.check();ready();JSONObject args=new JSONObject(raw);
+            if("page-sample-bridge".equals(action)){
+                if(!work.mkdirs())throw new IOException("No se pudo preparar el temporal");
+                output=ProbeFileProvider.create(this,"hinote");
+                PageRenderer.renderForExport(TransferInk.SAMPLE,new File(work,"page-0-native.jpg"),new JSONArray(),new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
+                backend.callAttr("export_transfer_sample",getFilesDir().getPath(),sessionDir.getPath(),TransferInk.SAMPLE,output.getPath(),work.getPath(),token);
+                token.check();notesProbe.openBridge(output,ticket);output=null;return;
+            }
             JSONObject info=new JSONObject(backend.callAttr("compose",getFilesDir().getPath(),sessionDir.getPath(),args.getJSONObject("document").toString(),args.getJSONObject("settings").toString(),token).toString());
             snapshot=info.getString("snapshot");token.check();
             JSONArray all=args.getJSONArray("images");int count=Math.max(info.getInt("page_count"),args.optInt("pages",1));
             for(int i=0;i<all.length();i++)count=Math.max(count,all.getJSONObject(i).getInt("page")+1);
             int page=args.getInt("page");if(count<1||count>500||page<0||page>=count)throw new IOException("Página fuera de rango");
+            String json=page<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),snapshot,page).toString():"{\"strokes\":[]}";
+            if("page-redraw".equals(action)){
+                for(int i=0;i<all.length();i++)if(all.getJSONObject(i).getInt("page")==page)throw new IOException("Esta página contiene imágenes. Para esta prueba usa una página solo con trazos, fórmulas o gráficas.");
+                TransferInk ink=TransferInk.parse(json);token.check();notesProbe.startRedraw(ink,ticket);return;
+            }
+            if("page-bridge".equals(action))for(int i=0;i<all.length();i++)if(all.getJSONObject(i).getInt("page")==page)throw new IOException("El modo de trazos necesita una página sin imágenes. Elige otra página.");
+            if("page-bridge".equals(action)&&new JSONObject(json).getJSONArray("strokes").length()==0)throw new IOException("Esta página no tiene trazos para copiar");
             if(!work.mkdirs())throw new IOException("No se pudo preparar la página de prueba");
             JSONArray selected=new JSONArray();
             for(int i=0;i<all.length();i++)if(all.getJSONObject(i).getInt("page")==page){JSONObject image=new JSONObject(all.getJSONObject(i).toString());image.put("page",0);selected.put(image);}
             JSONArray images=imageStore.prepareExport(selected.toString(),work,1,token::check);
-            String json=page<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),snapshot,page).toString():"{\"strokes\":[]}";
             output=ProbeFileProvider.create(this,"page-png".equals(action)?"png":"hinote");
             if("page-png".equals(action))PageRenderer.render(json,output,args.optBoolean("grid",true),40.0/.675,images,false,token::check);
             else{
                 PageRenderer.renderForExport(json,new File(work,"page-0-native.jpg"),images,new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
                 backend.callAttr("export_probe_page",getFilesDir().getPath(),sessionDir.getPath(),snapshot,page,args.optString("title","Prueba")+" · Página "+(page+1),output.getPath(),token,images.toString(),count,work.getPath());
             }
-            token.check();notesProbe.publishPage(action,output,page,ticket);output=null;
+            token.check();if("page-bridge".equals(action))notesProbe.openBridge(output,ticket);else notesProbe.publishPage(action,output,page,ticket);output=null;
         }catch(OutOfMemoryError error){send("onNotesProbeResult",ticket+",null,"+quote("No hay memoria suficiente para esta página"));}
         catch(Exception error){send("onNotesProbeResult",ticket+",null,"+quote(message(error)));}
         finally{if(output!=null)output.delete();deleteTree(work);if(snapshot!=null)backend.callAttr("remove_snapshot",sessionDir.getPath(),snapshot);exporting.set(false);}

@@ -38,9 +38,11 @@ android {
             // V34 CI builds used an ephemeral signing key. Install alongside
             // them so the user's existing diagnostic draft is never removed.
             applicationIdSuffix '.probe35'
+            versionCode 36
+            versionName '3.6-tablet'
             versionNameSuffix '-pruebas'
             buildConfigField 'boolean', 'NOTES_PROBE', 'true'
-            manifestPlaceholders = [appLabel: 'HiNote Studio Pruebas V35']
+            manifestPlaceholders = [appLabel: 'HiNote Studio Pruebas V36']
         }
     }
 

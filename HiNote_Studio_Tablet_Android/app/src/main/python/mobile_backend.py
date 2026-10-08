@@ -13,7 +13,7 @@ from pencilengine_writer import write_pencilengine
 from validate_hinote import validate_hinote
 from pencilengine_width import width_level, native_width
 import calibration
-from table_composer import validate_table, cell_segments
+from table_composer import validate_table, cell_segments, border_stroke
 from math_graph_composer import validate_object, object_text
 MAX_CHARACTERS = 200_000
 MAX_PAGES = 500
@@ -218,6 +218,37 @@ def export_probe_page(project_dir, cache_dir, snapshot_id, index, title, output_
             images=images, check_cancelled=lambda: _check(token))
         if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
             raise RuntimeError("La página de prueba no pasó la validación local")
+        _check(token)
+        return str(output)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+
+def export_transfer_sample(project_dir, cache_dir, preview_json, output_path, export_dir, token=None):
+    """Three genuine native strokes, from the exact preview used by the Android test."""
+    if Path(export_dir).resolve().parent != Path(cache_dir).resolve():
+        raise ValueError("Directorio de exportación inválido")
+    records = json.loads(preview_json)["strokes"]
+    if len(records) != 3:
+        raise ValueError("La muestra requiere tres trazos")
+    strokes = []
+    for color, opacity, points, width in records:
+        if len(points) != 2 or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            raise ValueError("Muestra no válida")
+        coords = [(float(p[0]), float(p[1])) for p in points]
+        if any(not math.isfinite(x+y) or not 0 <= x <= 1000 or not 0 <= y <= 1600 for x, y in coords):
+            raise ValueError("Coordenadas de muestra inválidas")
+        strokes.append(border_stroke(coords, {"color": color, "border": _number(width, .1, 10)}))
+    output, rendered = Path(output_path), Path(export_dir)
+    try:
+        _check(token)
+        binary = rendered / "sample.bin"
+        write_pencilengine({"strokes": strokes}, Path(project_dir)/"template_1stroke.hinote", binary)
+        build_hinote_multi(Path(project_dir)/"template_1stroke.hinote", [binary], output,
+            title="HiNote · Temporal de tres rayas", thumbnails=[rendered/"page-0-native.jpg"],
+            check_cancelled=lambda: _check(token))
+        if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
+            raise RuntimeError("La muestra no pasó la validación")
         _check(token)
         return str(output)
     except BaseException:

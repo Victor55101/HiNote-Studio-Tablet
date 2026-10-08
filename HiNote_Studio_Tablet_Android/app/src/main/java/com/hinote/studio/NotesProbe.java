@@ -11,6 +11,7 @@ import android.content.pm.ProviderInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.AtomicFile;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -24,7 +25,7 @@ import java.util.concurrent.Executors;
 
 /** Foreground, user-initiated inspection of public clipboard and shared streams. */
 final class NotesProbe {
-    static final int SAVE_REPORT = 3101, MAX_STREAM = 2 * 1024 * 1024;
+    static final int SAVE_REPORT = 3101, SAVE_TEMPORARY=3102, MAX_STREAM = 2 * 1024 * 1024;
     interface Host { void result(int ticket, String data, String error); }
     private final Activity activity;
     private final Host host;
@@ -35,6 +36,8 @@ final class NotesProbe {
     private JSONObject report;
     private byte[] pendingReport;
     private int reportTicket;
+    private File pendingTemporary;
+    private int temporaryTicket;
 
     NotesProbe(Activity activity, Host host) {
         this.activity=activity; this.host=host;reportFile=new AtomicFile(new File(activity.getFilesDir(),"notes-probe-report.json"));
@@ -124,7 +127,8 @@ final class NotesProbe {
         }
     }
     private synchronized JSONObject record(String kind,JSONObject value) throws Exception {
-        report.put("app","HiNote Studio V"+BuildConfig.VERSION_CODE+" Pruebas").put("device",device()).put("manual_baseline","PRUEBA-A permaneció en Chrome después de copiar tres rayas con el lazo. Notes pudo pegarlas aunque después se copió PRUEBA-B en Chrome.");
+        report.put("app","HiNote Studio V"+BuildConfig.VERSION_CODE+" Pruebas").put("device",device()).put("manual_baseline","PRUEBA-A permaneció en Chrome después de copiar tres rayas con el lazo. Notes pudo pegarlas aunque después se copió PRUEBA-B en Chrome.")
+            .put("transfer_tests",TransferJournal.read(activity)).put("transfer_service_connected",NotesTransferService.available());
         JSONArray events=report.optJSONArray("events");if(events==null)events=new JSONArray();
         JSONArray keep=new JSONArray();for(int i=Math.max(0,events.length()-23);i<events.length();i++)keep.put(events.get(i));
         keep.put(new JSONObject().put("time_ms",System.currentTimeMillis()).put("kind",kind).put("data",value));report.put("events",keep);
@@ -137,6 +141,17 @@ final class NotesProbe {
             if(closed)return;
             try {
                 if("save-report".equals(action)) {saveReport(raw,ticket);return;}
+                if("transfer-settings".equals(action)){
+                    activity.startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    transferReply(ticket,"Activa «HiNote · Pruebas de trazos», vuelve aquí y pulsa la prueba. Activar el servicio por sí solo no dibuja nada.");return;
+                }
+                if("transfer-stop".equals(action)){NotesTransferService.stopFromApp();transferReply(ticket,"Prueba detenida. El último gesto iniciado puede terminar.");return;}
+                if("transfer-sample-redraw".equals(action)){startRedraw(TransferInk.parse(TransferInk.SAMPLE),ticket);return;}
+                if("transfer-resume".equals(action)){
+                    try{NotesTransferService.arm("bridge",null);launchNotes();transferReply(ticket,"Abre el cuaderno temporal, activa el lazo de Notes y usa el panel flotante.");}
+                    catch(Exception error){NotesTransferService.stopFromApp();throw error;}return;
+                }
+                if("transfer-save".equals(action)){saveTemporary(ticket);return;}
                 if("seed-a".equals(action)||"seed-b".equals(action)) {
                     String text="seed-a".equals(action)?"PRUEBA-A":"PRUEBA-B";ClipData clip=ClipData.newPlainText("Control HiNote",text);clipboard().setPrimaryClip(clip);
                     JSONObject descriptor=describeClip(clip);activity.getSharedPreferences("notes-probe",0).edit().putString("baseline",descriptor.getString("fingerprint")).apply();
@@ -166,10 +181,49 @@ final class NotesProbe {
                     }catch(Exception error){reply(ticket,null,error.getMessage());}});return;
                 }
                 if("observations".equals(action)) {JSONObject values=new JSONObject(raw);worker.execute(()->{try{reply(ticket,new JSONObject().put("report",record(action,values)).put("message","Resultado registrado en el informe."),null);}catch(Exception error){reply(ticket,null,error.getMessage());}});return;}
-                if("report".equals(action)) {worker.execute(()->{try{reply(ticket,new JSONObject().put("report",record("opened",new JSONObject())).put("message","Las pruebas usan el portapapeles y Compartir de Android. La compatibilidad con el pegado nativo de Notes está por comprobar."),null);}catch(Exception error){reply(ticket,null,error.getMessage());}});return;}
+                if("report".equals(action)) {transferReply(ticket,NotesTransferService.available()?"Accesibilidad conectada. Elige una prueba; después marca la zona e inicia desde el panel flotante de Notes.":"Primero activa el servicio con el botón Accesibilidad. Los dos modos son experimentales; su compatibilidad se verifica en tu tablet.");return;}
                 throw new IOException("Prueba desconocida");
             }catch(Exception error){reply(ticket,null,error.getMessage());}
         });
+    }
+    private void transferReply(int ticket,String message){
+        worker.execute(()->{try{reply(ticket,new JSONObject().put("report",record("transfer_status",new JSONObject())).put("message",message),null);}catch(Exception error){reply(ticket,null,error.getMessage());}});
+    }
+    private void launchNotes() throws IOException {
+        Intent launch=activity.getPackageManager().getLaunchIntentForPackage(NotesTransferService.NOTES);
+        if(launch==null)throw new IOException("No se encontró Huawei Notes (com.huawei.hinote) en la tablet");activity.startActivity(launch);
+    }
+    void startRedraw(TransferInk ink,int ticket){
+        activity.runOnUiThread(()->{if(closed)return;try{
+            NotesTransferService.arm("redraw",ink);launchNotes();
+            transferReply(ticket,"Prueba preparada con "+ink.strokes.size()+" trazos. En Notes activa escritura con dedo y lápiz, marca la zona vacía y pulsa Dibujar.");
+        }catch(Exception error){NotesTransferService.stopFromApp();reply(ticket,null,error.getMessage());}});
+    }
+    static Intent temporaryIntent(Uri uri,boolean send){
+        Intent intent=send?new Intent(Intent.ACTION_SEND).setType("application/octet-stream").putExtra(Intent.EXTRA_STREAM,uri):new Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/octet-stream");
+        intent.setPackage(NotesTransferService.NOTES).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.setClipData(ClipData.newRawUri("HiNote temporal de trazos",uri));return intent;
+    }
+    void openBridge(File file,int ticket){
+        activity.runOnUiThread(()->{if(closed)return;try{
+            Uri uri=ProbeFileProvider.uri(activity,file);
+            activity.getSharedPreferences("notes-probe",0).edit().putString("last_temporary",uri.toString()).apply();
+            TransferJournal.event(activity,"bridge","native_notebook_created",0,1,"Archivo .hinote de una página; no es una imagen ni un portapapeles privado simulado");
+            if(!NotesTransferService.available()){transferReply(ticket,"Temporal listo. Activa Accesibilidad; después usa Guardar temporal para importarlo en Notes y Continuar con el lazo.");return;}
+            Intent intent=temporaryIntent(uri,false);
+            if(intent.resolveActivity(activity.getPackageManager())==null)intent=temporaryIntent(uri,true);
+            if(intent.resolveActivity(activity.getPackageManager())==null){transferReply(ticket,"Notes no anunció una apertura directa compatible. Pulsa Guardar temporal, impórtalo con Notes y después Continuar con el lazo.");return;}
+            NotesTransferService.arm("bridge",null);activity.startActivity(intent);
+            TransferJournal.event(activity,"bridge","public_open_requested",0,1,intent.getAction());
+            transferReply(ticket,"Completa la importación en Notes y abre el temporal. Activa su lazo; marca la zona y pulsa Trazar lazo. Si no se abrió, vuelve y usa Guardar temporal.");
+        }catch(Exception error){NotesTransferService.stopFromApp();reply(ticket,null,"No se pudo abrir automáticamente: "+error.getMessage()+". Usa Guardar temporal y Continuar con el lazo.");}});
+    }
+    private void saveTemporary(int ticket)throws Exception{
+        String uri=activity.getSharedPreferences("notes-probe",0).getString("last_temporary","");
+        if(uri.isEmpty())throw new IOException("Primero prepara las tres rayas o la página actual del modo 2");
+        pendingTemporary=ProbeFileProvider.resolve(activity,Uri.parse(uri));temporaryTicket=ticket;
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE,"HiNote-Temporal-Trazos.hinote");
+        activity.startActivityForResult(intent,SAVE_TEMPORARY);
     }
     void publishPage(String action,File file,int page,int ticket) {
         activity.runOnUiThread(()->{if(closed)return;try {
@@ -192,6 +246,14 @@ final class NotesProbe {
         }catch(Exception error){reply(ticket,null,error.getMessage());}});
     }
     boolean activityResult(int code,int result,Intent intent) {
+        if(code==SAVE_TEMPORARY){
+            final File file=pendingTemporary;pendingTemporary=null;final int ticket=temporaryTicket;
+            if(result!=Activity.RESULT_OK||intent==null||intent.getData()==null||file==null){reply(ticket,null,"Guardado del temporal cancelado");return true;}
+            worker.execute(()->{try(InputStream in=new FileInputStream(file);OutputStream out=activity.getContentResolver().openOutputStream(intent.getData(),"wt")){
+                if(out==null)throw new IOException("No se pudo abrir el destino");byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1){if(closed||Thread.currentThread().isInterrupted())throw new IOException("Guardado cancelado");out.write(buffer,0,n);}
+                TransferJournal.event(activity,"bridge","temporary_saved",0,1,"Importación manual disponible");reply(ticket,new JSONObject().put("message","Temporal guardado. Impórtalo desde Huawei Notes y abre su página. Vuelve aquí y pulsa Continuar con el lazo."),null);
+            }catch(Exception error){reply(ticket,null,error.getMessage());}});return true;
+        }
         if(code!=SAVE_REPORT)return false;final byte[] bytes=pendingReport;pendingReport=null;final int ticket=reportTicket;
         if(result!=Activity.RESULT_OK||intent==null||intent.getData()==null||bytes==null) {reply(ticket,new JSONObject(),"Guardado del informe cancelado");return true;}
         worker.execute(()->{try(OutputStream out=activity.getContentResolver().openOutputStream(intent.getData(),"wt")) {if(out==null)throw new IOException("No se pudo abrir el destino");out.write(bytes);reply(ticket,new JSONObject().put("message","Informe guardado. Puedes enviarlo junto con lo que haya pegado Notes."),null);}catch(Exception error){reply(ticket,null,error.getMessage());}});return true;

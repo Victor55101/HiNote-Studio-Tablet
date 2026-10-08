@@ -810,20 +810,39 @@ async function enableNotesProbe(page){await page.evaluate(()=>localStorage.setIt
 async function finishProbe(page,result={message:'Listo'}){const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));await page.evaluate(({id,result})=>onNotesProbeResult(id,JSON.stringify(result),null),{id:call[3],result});return call;}
 test('V34 Pruebas guides the control test and ignores outdated diagnostic replies',async page=>{
   await enableNotesProbe(page);await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);
-  await page.click('#probeSeedA');const control=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));assert.equal(control[1],'seed-a');assert.equal(await page.isDisabled('#probeClose'),true);
+  await page.locator('#probeLegacy summary').click();await page.click('#probeSeedA');const control=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));assert.equal(control[1],'seed-a');assert.equal(await page.isDisabled('#probeClose'),true);
   await page.evaluate(id=>onNotesProbeResult(id-1,'{"message":"respuesta vieja"}',null),control[3]);assert.equal(await page.isDisabled('#probeClose'),true);
   await finishProbe(page,{message:'PRUEBA-A copiado',report:{events:[{kind:'seed-a'}]}});assert.match(await page.textContent('#probeReport'),/seed-a/);
   await page.click('#probeInspect');assert.equal((await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1)))[1],'inspect');await finishProbe(page,{message:'El control sigue intacto'});await page.click('#probeClose');assert.equal(await page.evaluate(()=>document.querySelector('.app').inert),false);
 });
 test('V34 Pruebas exports fresh editable math and recovers controls after failure',async page=>{
   await enableNotesProbe(page);await select(page,{line:0,offset:0});await openMath(page);await page.locator('.mathSlot').first().fill('x=9');await page.click('#mathDone');
-  await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);await page.click('#probeCopyHinote');
+  await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);await page.locator('#probeLegacy summary').click();await page.click('#probeCopyHinote');
   const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1)),args=JSON.parse(call[2]);assert.equal(call[1],'page-hinote');assert.equal(args.page,0);assert.equal(args.document.paragraphs.find(p=>p.object).object.expression.items[0].text,'x=9');assert.match(args.document.paragraphs.map(p=>p.segments?.map(s=>s.text).join('')||'').join(''),/Contenido nuevo/);
   assert.equal(await page.evaluate(()=>exporting),true);await page.evaluate(id=>onNotesProbeResult(id,null,'Prueba de error'),call[3]);assert.equal(await page.evaluate(()=>exporting),false);assert.equal(await page.isDisabled('#probeClose'),false);assert.equal(await page.textContent('#probeStatus'),'Prueba de error');await page.click('#probeClose');assert.equal(await page.getAttribute('#editor','contenteditable'),'true');
 });
 test('V34 Pruebas preserves observations in the exported diagnostic request',async page=>{
-  await enableNotesProbe(page);await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);await page.selectOption('#probePngResult',{label:'Pega como imagen'});await page.selectOption('#probeHinoteResult',{label:'No pega el contenido de HiNote'});await page.fill('#probeObservations','Notes conserva las rayas del lazo');await page.click('#probeSaveReport');
-  const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));assert.equal(call[1],'save-report');assert.deepEqual(JSON.parse(call[2]),{png_paste:'Pega como imagen',hinote_paste:'No pega el contenido de HiNote',shared_page:'No probado',notes:'Notes conserva las rayas del lazo'});await finishProbe(page,{message:'Informe guardado'});await page.screenshot({path:path.join(root,'test-results/notes-probe.png')});await page.click('#probeClose');
+  await enableNotesProbe(page);await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);await page.locator('#probeLegacy summary').click();await page.selectOption('#probePngResult',{label:'Pega como imagen'});await page.selectOption('#probeHinoteResult',{label:'No pega el contenido de HiNote'});await page.fill('#probeObservations','Notes conserva las rayas del lazo');await page.click('#probeSaveReport');
+  const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));assert.equal(call[1],'save-report');assert.deepEqual(JSON.parse(call[2]),{redraw_test:'No probado',temporary_notebook_test:'No probado',png_paste:'Pega como imagen',hinote_paste:'No pega el contenido de HiNote',shared_page:'No probado',notes:'Notes conserva las rayas del lazo'});await finishProbe(page,{message:'Informe guardado'});await page.screenshot({path:path.join(root,'test-results/notes-probe.png')});await page.click('#probeClose');
+});
+
+test('V36 offers both native transfer experiments and exports current page for each',async page=>{
+  await enableNotesProbe(page);await select(page,{line:0,offset:0});await openMath(page);await page.locator('.mathSlot').first().fill('x=36');await page.click('#mathDone');
+  await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);
+  assert.equal(await page.locator('#transferModes > section').count(),2);assert.equal(await page.locator('#probeCopyPng').isVisible(),false);
+  for(const [id,action] of [['probeDrawSample','transfer-sample-redraw'],['probeDrawPage','page-redraw'],['probeBridgeSample','page-sample-bridge'],['probeBridgePage','page-bridge'],['probeResumeBridge','transfer-resume'],['probeSaveTemporary','transfer-save'],['probeAccess','transfer-settings'],['probeStop','transfer-stop']]){
+    await page.click('#'+id);const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1));assert.equal(call[1],action);
+    if(action.startsWith('page-')){const args=JSON.parse(call[2]);assert.equal(args.page,0);assert.equal(args.document.paragraphs.find(p=>p.object).object.expression.items[0].text,'x=36');assert.equal(await page.evaluate(()=>exporting),true);}
+    await finishProbe(page,{message:'Esperando verificación en Notes'});assert.equal(await page.evaluate(()=>exporting),false);
+  }
+  await page.screenshot({path:path.join(root,'test-results/notes-transfer-v36.png')});
+});
+test('V36 saves both transfer outcomes across reload and includes them in its report',async page=>{
+  await enableNotesProbe(page);await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);
+  await page.selectOption('#probeRedrawResult',{label:'Puedo seleccionar y mover cada raya'});await page.selectOption('#probeBridgeResult',{label:'Copié manualmente y pegué trazos editables'});await page.fill('#probeObservations','La copia manual funciona; revisar el botón Copiar.');
+  await page.reload();await page.waitForSelector('#editor .line');await page.click('[data-tab="save"]');await page.click('#openNotesProbe');await finishProbe(page);await page.click('#probeSaveReport');
+  const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='probe-action').at(-1)),data=JSON.parse(call[2]);assert.equal(data.redraw_test,'Puedo seleccionar y mover cada raya');assert.equal(data.temporary_notebook_test,'Copié manualmente y pegué trazos editables');assert.match(data.notes,/copia manual/);
+  await finishProbe(page,{message:'Guardado'});
 });
 
 (async () => {

@@ -118,6 +118,42 @@ class PipelineTests(unittest.TestCase):
             page = loadj(archive.read(next(n for n in archive.namelist() if n.startswith('pages/') and n.endswith('.jhinote'))))
             self.assertEqual(len(page['customNotePageContent']['pageElement']), 1)
 
+    def test_transfer_sample_contains_three_native_colored_strokes_not_an_image(self):
+        # Read the same fixture supplied by the app, then inspect the generated BIN.
+        import re
+        source = (APP / 'java/com/hinote/studio/TransferInk.java').read_text()
+        preview = json.loads('"' + re.search(r'static final String SAMPLE="(.*)";', source)[1] + '"')
+        rendered = self.cache / 'export-sample'; rendered.mkdir()
+        (rendered / 'page-0-native.jpg').write_bytes((ROOT / 'tests/thumbnail.jpg').read_bytes())
+        output = self.cache / 'sample.hinote'
+        backend.export_transfer_sample(str(ASSETS), str(self.cache), preview, str(output), str(rendered))
+        self.assertTrue(validate_hinote(output, quiet=True))
+        self.assertEqual(validate_pencilengine(rendered / 'sample.bin'), (3, 6))
+        records = read_pencilengine(rendered / 'sample.bin')
+        import struct
+        for stroke, source in zip(records.strokes, json.loads(preview)['strokes']):
+            self.assertEqual([(p.x, p.y) for p in stroke.points], [(p[0], p[1]) for p in source[2]])
+            rgb = tuple(int(source[0][i:i+2], 16) / 255 for i in (1,3,5))
+            bgr = struct.unpack_from('>fff', bytes.fromhex(stroke.metadata_hex), 76)
+            for actual, expected in zip(bgr, reversed(rgb)): self.assertAlmostEqual(actual, expected, places=6)
+        with zipfile.ZipFile(output) as archive:
+            native = [name for name in archive.namelist() if name.endswith('.bin')]
+            self.assertEqual(len(native), 1)
+            self.assertEqual(archive.read(native[0]), (rendered / 'sample.bin').read_bytes())
+            page = loadj(archive.read(next(n for n in archive.namelist() if n.startswith('pages/') and n.endswith('.jhinote'))))
+            elements = page['customNotePageContent']['pageElement']
+            self.assertEqual(elements, [])
+
+    def test_transfer_sample_cancellation_does_not_leave_a_notebook(self):
+        rendered = self.cache / 'export-sample'; rendered.mkdir()
+        output = self.cache / 'sample.hinote'
+        preview = json.dumps({'strokes': [['#000000', 100, [[10,10,1],[20,20,1]],2]] * 3})
+        class Token:
+            def isCancelled(self): return True
+        with self.assertRaises(InterruptedError):
+            backend.export_transfer_sample(str(ASSETS), str(self.cache), preview, str(output), str(rendered), Token())
+        self.assertFalse(output.exists())
+
     def test_oversize_word_wraps_within_page(self):
         doc = document_from_plain_text('W' * 1800, scale=2)
         composed = compose_document(GLYPHS, doc)
