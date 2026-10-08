@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Looper;
+import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -15,6 +16,7 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.util.ReflectionHelpers;
 import java.time.Duration;
 import static org.junit.Assert.*;
 import static org.junit.Assume.assumeTrue;
@@ -77,5 +79,25 @@ public class NotesTransferTest {
             JSONObject last=TransferJournal.read(context).getJSONObject("last");assertEquals("stopped",last.getString("stage"));assertEquals(0,last.getInt("completed_gestures"));
         }finally{controller.destroy();}
         assertFalse(NotesTransferService.available());
+    }
+    private static void touch(NotesTransferService.AreaPicker picker,int action,float x,float y){
+        MotionEvent event=MotionEvent.obtain(0,0,action,x,y,0);try{picker.onTouchEvent(event);}finally{event.recycle();}
+    }
+    @Test public void coordinateConfirmationWaitsForReleaseAndCancelledTouchesNeverConfirm(){
+        var controller=Robolectric.buildService(NotesTransferService.class).create();NotesTransferService service=controller.get();
+        try{
+            NotesTransferService.AreaPicker picker=service.new AreaPicker(true);picker.layout(0,0,1000,1000);
+            ReflectionHelpers.setField(service,"picker",picker);
+            touch(picker,MotionEvent.ACTION_DOWN,300,400);touch(picker,MotionEvent.ACTION_UP,300,400);
+            touch(picker,MotionEvent.ACTION_DOWN,900,990);
+            assertSame(picker,ReflectionHelpers.getField(service,"picker"));
+            touch(picker,MotionEvent.ACTION_CANCEL,900,990);
+            touch(picker,MotionEvent.ACTION_UP,900,990);
+            assertSame(picker,ReflectionHelpers.getField(service,"picker"));
+            touch(picker,MotionEvent.ACTION_DOWN,900,990);touch(picker,MotionEvent.ACTION_UP,300,400);
+            assertSame(picker,ReflectionHelpers.getField(service,"picker"));
+            touch(picker,MotionEvent.ACTION_DOWN,900,990);touch(picker,MotionEvent.ACTION_UP,900,990);
+            assertNull(ReflectionHelpers.getField(service,"picker"));
+        }finally{controller.destroy();}
     }
 }
