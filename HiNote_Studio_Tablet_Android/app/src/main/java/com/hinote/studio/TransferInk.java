@@ -39,7 +39,8 @@ final class TransferInk {
         float scale=Math.min(target.width()/Math.max(1,bounds.width()),target.height()/Math.max(1,bounds.height()));
         float ox=target.centerX()-bounds.width()*scale/2,oy=target.centerY()-bounds.height()*scale/2;
         float[] out=new float[line.length];
-        for(int i=0;i<line.length;i+=2){out[i]=ox+(line[i]-bounds.left)*scale;out[i+1]=oy+(line[i+1]-bounds.top)*scale;}
+        // Float rounding at the far edge must never place a gesture outside the chosen area.
+        for(int i=0;i<line.length;i+=2){out[i]=Math.max(target.left,Math.min(target.right,ox+(line[i]-bounds.left)*scale));out[i+1]=Math.max(target.top,Math.min(target.bottom,oy+(line[i+1]-bounds.top)*scale));}
         return out;
     }
     Path path(int index,RectF target){return path(fit(strokes.get(index),target));}
