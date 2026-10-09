@@ -25,9 +25,13 @@
 .tableActions{border-top:1px solid var(--line);border-bottom:0;flex-wrap:wrap}.tableActions small{color:var(--muted);flex:1;min-width:180px}
 #tableMessage{margin:0;padding:8px 16px;background:#eef2ff;color:#394975;font-size:13px;white-space:normal}
 #tableOverlay{position:absolute;inset:0;pointer-events:none;z-index:4}
-.tableTarget{position:absolute;border:2px dashed #5b6df7;pointer-events:none;box-sizing:border-box}
-.tableTarget button{position:absolute;pointer-events:auto;min-width:44px;min-height:44px;border:1px solid #5365db;border-radius:8px;background:#eef1ff;color:#243890;touch-action:none;font-size:18px}
+.tableHit{position:absolute;pointer-events:none;box-sizing:border-box}
+.tableTarget{border:2px dashed #5b6df7}
+.tableTarget button:not(.tableSelect){position:absolute;pointer-events:auto;min-width:44px;min-height:44px;border:1px solid #5365db;border-radius:8px;background:#eef1ff;color:#243890;touch-action:none;font-size:18px}
+.tableHit .tableSelect{position:absolute;inset:0;width:100%;height:100%;background:transparent;border:0;padding:0;pointer-events:auto;touch-action:pan-x pan-y;cursor:pointer}
+.tableSelect:focus-visible{outline:2px solid #5b6df7}
+.tableTarget .tableDelete{color:var(--danger)}
 .tableQuickActions{position:absolute;display:flex;gap:4px;width:max-content;pointer-events:auto}
-.tableQuickActions button{position:relative;white-space:nowrap;padding:4px 10px;height:44px;box-sizing:border-box}
+.tableTarget .tableQuickActions button{position:relative;white-space:nowrap;padding:4px 10px;height:44px;box-sizing:border-box}
 .tableTarget .tableMove{cursor:move}.tableTarget .tableOpen{font-size:14px;touch-action:manipulation}.tableTarget .tableResize{width:44px;height:44px;cursor:nwse-resize}
 @media(max-width:700px){.tableDialog{padding:4px}.tableHeading{padding:10px}.tableTools{max-height:35vh;padding:6px}.tableHeading p{display:none}.tableCard{border-radius:10px}.tableTools .btn{font-size:12px;padding:8px}}

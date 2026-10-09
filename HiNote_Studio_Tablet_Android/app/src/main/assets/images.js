@@ -139,16 +139,16 @@ const ImageEditor = (() => {
       scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function pointerDown(e){
-    if(e.target.closest('.tableTarget,.objectQuickActions,.objectResize')||MathGraphEditor.isDragging())return;
+    if(e.target.closest('.tableQuickActions,.tableResize,.objectQuickActions,.objectResize')||MathGraphEditor.isDragging())return;
     if(exporting||CalibrationUI.isBusy()||busy||e.button>0||!el('cropDialog').classList.contains('hidden'))return;
     if(pointers.size>=2){e.preventDefault();return;}
     e.preventDefault();pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);
     if(pointers.size>2)return;
     if(pointers.size===2){if(gesture)gesture.mathTap=false;startPair();return;}
-    const math=e.target.closest('.objectSelect'),p=point(e),handle=e.target.dataset.handle;const im=active&&!math?(handle?selected():hit(p)):null;
+    const math=e.target.closest('.objectSelect,.tableSelect'),p=point(e),handle=e.target.dataset.handle;const im=active&&!math?(handle?selected():hit(p)):null;
     if(active)select(im?.id||null);
     if(im){checkpoint();gesture={type:handle==='rotate'?'rotate':handle?'resize':'move',image:true,handle,base:clone(im),original:state(),start:p,angle:Math.atan2(p.y-im.y-im.height/2,p.x-im.x-im.width/2)*180/Math.PI};}
-    else gesture={type:'pan',image:false,start:pointerData(e),scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop,mathObject:math?.closest('.objectHit')?.dataset.id,mathTap:!!math};
+    else gesture={type:'pan',image:false,start:pointerData(e),scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop,mathObject:math?.closest('.objectHit,.tableHit')?.dataset.id,tableTap:!!math?.classList.contains('tableSelect'),mathTap:!!math};
   }
   function pointerMove(e){
     if(!pointers.has(e.pointerId)||!gesture)return;e.preventDefault();pointers.set(e.pointerId,pointerData(e));
@@ -185,7 +185,7 @@ const ImageEditor = (() => {
   function pointerUp(e){
     if(!pointers.has(e.pointerId))return;pointers.delete(e.pointerId);
     if(e.type==='pointercancel'){finishGesture(true);return;}
-    if(pointers.size===0){const math=gesture?.mathTap?gesture.mathObject:null;if(gesture?.mathObject)suppressMathClickUntil=Date.now()+500;finishGesture(false);if(math)MathGraphEditor.selectPreview(math);return;}
+    if(pointers.size===0){const math=gesture?.mathTap?gesture.mathObject:null,table=gesture?.tableTap;if(gesture?.mathObject)suppressMathClickUntil=Date.now()+500;finishGesture(false);if(math){if(table)TableEditor.selectPreview(math);else MathGraphEditor.selectPreview(math);}return;}
     // After a two-finger gesture, the remaining finger pans/moves from its new position.
     const a=[...pointers.values()][0],im=selected();
     if(gesture?.image&&im)gesture={...gesture,type:'move',base:clone(im),start:point(a)};
@@ -226,7 +226,7 @@ const ImageEditor = (() => {
   el('duplicateImage').onclick=()=>{if(images.length>=200||images.filter(im=>im.page===currentPage).length>=20){toast('Límite: 20 imágenes por página y 200 por nota');return;}edit(()=>{const im=selected();if(im){const copy=clone(im);copy.id=newId();copy.x+=25;copy.y+=25;fit(copy);images.push(copy);selectedId=copy.id;}});};
   el('imageNewPage').onclick=()=>{if(count()>=500)return;edit(()=>{minimumPages=count()+1;currentPage=minimumPages-1;selectedId=null;});drawCurrent();};
   el('previewWrap').addEventListener('pointerdown',pointerDown);
-  el('previewWrap').addEventListener('click',e=>{const suppress=Date.now()<suppressMathClickUntil&&(e.target===el('previewWrap')||e.target.closest('.objectSelect'));suppressMathClickUntil=0;if(suppress){e.preventDefault();e.stopPropagation();}},true);
+  el('previewWrap').addEventListener('click',e=>{const suppress=Date.now()<suppressMathClickUntil&&(e.target===el('previewWrap')||e.target.closest('.objectSelect,.tableSelect'));suppressMathClickUntil=0;if(suppress){e.preventDefault();e.stopPropagation();}},true);
   el('previewWrap').addEventListener('pointermove',pointerMove);
   for(const type of ['pointerup','pointercancel','lostpointercapture'])el('previewWrap').addEventListener(type,pointerUp);
   window.addEventListener('blur',()=>finishGesture(false));

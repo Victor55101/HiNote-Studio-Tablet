@@ -5,6 +5,7 @@ const CalibrationUI = (() => {
   function current(){return review?.detail || profiles.find(p=>p.id===selected);}
   function status(text){el('calibrationStatus').textContent=text;}
   function controls(){
+    el('activeProfileSelect').disabled=busy||exporting||folderBusy||NotebookUI.isBusy()||!!review||!profiles.length;
     document.querySelectorAll('.calibrationCard button,.calibrationCard input,.calibrationCard select,.calibrationCard textarea').forEach(e=>e.disabled=busy||exporting||folderBusy);
     el('cancelCalibration').classList.toggle('hidden',!busy);el('cancelCalibration').disabled=!busy;
     if(busy)return;
@@ -50,13 +51,14 @@ const CalibrationUI = (() => {
     el('profileWarnings').textContent=p.incomplete.length?`Variantes incompletas: ${p.incomplete.map(c=>`${c} (${p.variants[c]}/8)`).join(', ')}`:'';
     el('importReview').classList.toggle('hidden',!review);
     if(review)el('importReviewText').textContent=(review.copiesOriginal?'Se guardará como Original ampliada. ':'')+(review.replaced?`Se reemplazarán ${review.replaced} caracteres del perfil con las muestras importadas. `:'')+'Las filas vacías no borran caracteres existentes. Guardar el perfil no cambia automáticamente la letra de tu nota.';
-    el('activeProfileLabel').textContent=profiles.find(x=>x.id===activeProfile)?.name||'Original';
+    el('activeProfileSelect').value=activeProfile;
     drawCharacters();controls();
   }
   function updateCatalog(data){
     profiles=data.profiles;groups=data.groups||{};
     const list=el('profileList');list.replaceChildren();
-    for(const p of profiles){const opt=document.createElement('option');opt.value=p.id;opt.textContent=p.name+(p.id===activeProfile?' · activa':'');list.append(opt);}
+    const quick=el('activeProfileSelect');quick.replaceChildren();
+    for(const p of profiles){const opt=document.createElement('option');opt.value=p.id;opt.textContent=p.name+(p.id===activeProfile?' · activa':'');list.append(opt);quick.add(new Option(p.name,p.id));}
     if(!profiles.some(p=>p.id===activeProfile)){activeProfile='original';changed();toast('El perfil del borrador no está disponible. Se seleccionó Original.');}
     if(!profiles.some(p=>p.id===selected))selected='original';list.value=selected;draw();templateCount();
     if(data.problems?.length)status(data.problems.join('\n'));
@@ -88,7 +90,7 @@ const CalibrationUI = (() => {
     el('templateCount').textContent=`${count} caracteres · ${count*8} celdas · ${Math.ceil(count/12)} páginas (máximo 256 caracteres)`;
   }
   function use(identity){
-    if(busy||review||exporting)return;activeProfile=identity;changed();draw();saveDraft();toast('Letra activa: '+(profiles.find(p=>p.id===identity)?.name||'Original'));
+    if(busy||review||exporting||folderBusy||NotebookUI.isBusy()||!profiles.some(p=>p.id===identity))return;activeProfile=identity;changed();draw();saveDraft();toast('Letra activa: '+(profiles.find(p=>p.id===identity)?.name||'Original'));
   }
   function open(){
     if(exporting||ImageEditor.isBusy()||folderBusy)return;returnFocus=document.activeElement;
@@ -98,6 +100,7 @@ const CalibrationUI = (() => {
   function close(){if(busy)return;el('calibrationDialog').classList.add('hidden');returnFocus?.focus?.();}
   function init(){
     el('manageCalibration').onclick=open;el('originalCalibration').onclick=()=>use('original');el('closeCalibration').onclick=close;
+    el('activeProfileSelect').onchange=()=>use(el('activeProfileSelect').value);
     el('profileList').onchange=()=>{selected=el('profileList').value;review=null;view='found';el('characterSearch').value='';el('profilePreview').classList.add('hidden');el('deleteProfileConfirm').classList.add('hidden');draw();};
     el('useProfile').onclick=()=>use(selected);
     el('showFound').onclick=()=>{view='found';drawCharacters();};el('showMissing').onclick=()=>{view='missing';drawCharacters();};

@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V37 Pruebas
+name: Build HiNote Studio Tablet V38
 on:
   workflow_dispatch:
   push:
@@ -47,7 +47,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - run: gradle --no-daemon testStableDebugUnitTest testProbeDebugUnitTest assembleStableDebug assembleProbeDebug
+      - run: gradle --no-daemon testStableDebugUnitTest testProbeDebugUnitTest assembleStableDebug
         working-directory: HiNote_Studio_Tablet_Android
       - uses: actions/upload-artifact@v4
         if: always()
@@ -57,12 +57,8 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V35
+          name: HiNote-Studio-Tablet-APK-V38
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/stable/debug/app-stable-debug.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: HiNote-Studio-Tablet-APK-V37-Pruebas
-          path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/probe/debug/app-probe-debug.apk
       - name: Package local signing tool
         run: |
           mkdir -p signing-tools

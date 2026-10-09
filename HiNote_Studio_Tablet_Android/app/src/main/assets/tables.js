@@ -4,11 +4,12 @@ const TableEditor = (() => {
   const snap=n=>Math.round(n*2)/2, clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
   let tables={}, working=null, originalId=null, insertion=null, selectedRow=0, selectedCol=0, cellSelection=null, active=false, drag=null, resume=null;
   let selecting=false, selectedCells=new Set(['0:0']), selectionAnchor=[0,0], toolsFrame=null;
+  let selectedId=null;
   const cellKey=(r,c)=>`${r}:${c}`;
   const currentCell=()=>working?.rows[selectedRow]?.cells[selectedCol];
   const chosenCells=()=>[...selectedCells].map(key=>{const [r,c]=key.split(':').map(Number);return working?.rows[r]?.cells[c];}).filter(Boolean);
   function singleCell(r=selectedRow,c=selectedCol){selectedRow=r;selectedCol=c;selectedCells=new Set([cellKey(r,c)]);selectionAnchor=[r,c];cellSelection=null;}
-  const locked=()=>exporting||CalibrationUI.isBusy()||ImageEditor.isBusy()||MathGraphEditor.isOpen()||NotebookUI.isBusy();
+  const locked=()=>exporting||folderBusy||CalibrationUI.isBusy()||ImageEditor.isBusy()||MathGraphEditor.isOpen()||NotebookUI.isBusy();
   const newId=()=> 'table_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
   const blank=()=>({segments:[],align:'left',valign:'top',size:0});
   const isLine=line=>Boolean(line?.[0]?.tableId);
@@ -172,6 +173,21 @@ const TableEditor = (() => {
   }
   function remove(){const id=originalId;if(!id||!confirm('¿Eliminar la tabla y su contenido de esta nota? Puedes deshacerlo.'))return;const lines=readLines().filter(l=>l[0]?.tableId!==id);delete tables[id];close();renderLines(lines.length?lines:[[]]);checkpoint();changed();}
   function mode(value){active=value;render();}
+  function clearSelection(){selectedId=null;render();}
+  function selectPreview(id){if(locked()||working||drag||!tables[id])return;selectedId=id;MathGraphEditor.clearSelection();render();}
+  function copyObject(id){if(locked()||working||drag)return;elementClipboard={kind:'table',table:get(id)};MathGraphEditor.updateControls();toast('Tabla copiada. Coloca el cursor y pulsa el icono Pegar.');}
+  function pasteObject(){
+    if(elementClipboard?.kind!=='table'||locked()||working||drag||ime)return;
+    captureSelection();const table=clone(elementClipboard.table),all=[...Object.values(live()),table];
+    const cells=all.reduce((n,t)=>n+t.rows.length*t.widths.length,0),chars=table.rows.reduce((n,r)=>n+r.cells.reduce((m,c)=>m+lineText(c.segments).length,0),0);
+    if(all.length>50||cells>2000||characterCount()+chars>MAX_CHARS)return toast('La nota admite hasta 50 tablas, 2000 celdas y 200000 caracteres.');
+    const lines=readLines();if(lines.length>9998)return toast('La nota admite hasta 10000 párrafos.');
+    checkpoint();table.id=newId();validate(table);const point=bookmark()?.start;let at=clamp(point?.line??lines.length-1,0,lines.length-1);
+    if(!lineText(lines[at])&&!isBlockLine(lines[at]))lines.splice(at,1,[{text:'\uFFFC',tableId:table.id}],[]);
+    else{at++;lines.splice(at,0,[{text:'\uFFFC',tableId:table.id}],[]);}
+    tables[table.id]=table;selectedId=null;renderLines(lines);const caret={line:at+1,offset:0};restoreSelection({start:caret,end:{...caret}});checkpoint();changed();toast('Tabla pegada. Puedes moverla o editarla.');
+  }
+  function quickRemove(id){if(locked()||working||drag||!tables[id])return;checkpoint();const lines=readLines().filter(l=>l[0]?.tableId!==id);delete tables[id];selectedId=null;renderLines(lines.length?lines:[[]]);checkpoint();changed();render();toast('Tabla eliminada. Deshacer la recupera.');}
   function positionTools(){
     toolsFrame=null;
     const wrap=el('previewWrap').getBoundingClientRect(),shell=el('canvasShell').getBoundingClientRect();
@@ -190,11 +206,15 @@ const TableEditor = (() => {
   function scheduleTools(){if(toolsFrame===null)toolsFrame=requestAnimationFrame(positionTools);}
   function render(){
     const layer=el('tableOverlay');if(!layer)return;if(drag){scheduleTools();return;}layer.replaceChildren();
-    if(!active||!composition||previewRevision!==revision||exporting||working)return;
+    if(!composition||previewRevision!==revision||locked()||working)return;
+    if(!(composition.table_pages?.[currentPage]||[]).some(t=>t.id===selectedId))selectedId=null;
     for(const t of composition.table_pages?.[currentPage]||[]){
-      const box=document.createElement('div'),k=.675*zoom;box.className='tableTarget';box.dataset.id=t.id;Object.assign(box.style,{left:`${t.x*k}px`,top:`${t.y*k}px`,width:`${t.width*k}px`,height:`${t.height*k}px`});
+      if(!tables[t.id])continue;
+      const box=document.createElement('div'),k=.675*zoom;box.className='tableHit'+(selectedId===t.id?' tableTarget':'');box.dataset.id=t.id;Object.assign(box.style,{left:`${t.x*k}px`,top:`${t.y*k}px`,width:`${t.width*k}px`,height:`${t.height*k}px`});
+      const choose=document.createElement('button');choose.type='button';choose.className='tableSelect';choose.setAttribute('aria-label','Seleccionar tabla');choose.setAttribute('aria-pressed',String(selectedId===t.id));choose.onclick=e=>{e.stopPropagation();selectPreview(t.id);};box.append(choose);layer.append(box);
+      if(selectedId!==t.id)continue;
       const bar=document.createElement('div');bar.className='tableQuickActions';box.append(bar);
-      for(const [action,label] of [['tableMove','↔'],['tableOpen','Editar tabla'],['tableResize','↘']]){const b=document.createElement('button');b.className=action;b.textContent=label;b.setAttribute('aria-label',action==='tableMove'?'Mover tabla por medios cuadros':action==='tableResize'?'Redimensionar tabla':'Editar tabla');(action==='tableResize'?box:bar).append(b);}
+      for(const [action,label,help] of [['tableMove','↔','Mover tabla'],['tableOpen','✎','Editar tabla'],['tableCopy','⧉','Copiar tabla'],['tableDelete','×','Eliminar tabla'],['tableResize','↘','Redimensionar tabla']]){const b=document.createElement('button');b.type='button';b.className=action;b.textContent=label;b.setAttribute('aria-label',help);b.title=help;(action==='tableResize'?box:bar).append(b);b.onclick=e=>{e.stopPropagation();if(action==='tableCopy')copyObject(t.id);if(action==='tableDelete')quickRemove(t.id);};}
       const edit=box.querySelector('.tableOpen');let tap=null;
       edit.onclick=()=>{if(!working)open(t.id);};
       // Touch browsers can omit the compatibility click immediately after a drag.
@@ -202,7 +222,6 @@ const TableEditor = (() => {
       edit.onpointerdown=e=>{if(e.pointerType!=='mouse')tap={id:e.pointerId,x:e.clientX,y:e.clientY};};
       edit.onpointercancel=()=>tap=null;
       edit.onpointerup=e=>{const start=tap;tap=null;if(start?.id===e.pointerId&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<12){e.preventDefault();e.stopPropagation();if(!working)open(t.id);}};
-      layer.append(box);
     }
     positionTools();
   }
@@ -236,6 +255,7 @@ const TableEditor = (() => {
     if(cancel)tables[d.id]=d.before;else{renderLines(readLines());checkpoint();changed();}render();
   }
   function init(){
+    document.addEventListener('click',e=>{if(selectedId&&!drag&&!e.target.closest('#tableOverlay,#tableDialog,#pasteMath'))clearSelection();});
     el('insertTable').onclick=()=>open();el('tableDone').onclick=commit;el('tableCancel').onclick=close;el('tableRemove').onclick=remove;
     el('tableMoveUp').onclick=()=>move(-1);el('tableMoveDown').onclick=()=>move(1);
     for(const [id,kind] of [['tableAddRow','addRow'],['tableDelRow','delRow'],['tableAddCol','addCol'],['tableDelCol','delCol']])el(id).onclick=()=>structure(kind);
@@ -256,5 +276,5 @@ const TableEditor = (() => {
     el('tableDialog').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'&&!e.target.closest('.cellEditor')){const focus=[...el('tableDialog').querySelectorAll('button,input,select,[contenteditable=true]')].filter(n=>!n.disabled&&n.getClientRects().length);const i=focus.indexOf(document.activeElement);if((e.shiftKey&&i===0)||(!e.shiftKey&&i===focus.length-1)){e.preventDefault();focus[e.shiftKey?focus.length-1:0].focus();}}});
     if(resume?.table){try{validate(resume.table);working=resume.table;originalId=resume.originalId;insertion=resume.insertion;activate();show('Se recuperó la tabla que estabas editando. Aplica los cambios o cancela para conservar la versión anterior.');}catch(e){resume=null;}}
   }
-  return {init,open,get,block,isLine,state,restore,count,mode,render,isOpen:()=>!!working};
+  return {init,open,get,block,isLine,state,restore,count,mode,render,clearSelection,selectPreview,pasteObject,isOpen:()=>!!working};
 })();

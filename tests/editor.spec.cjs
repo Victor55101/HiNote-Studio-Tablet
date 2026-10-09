@@ -46,7 +46,7 @@ test('Lists continue, terminate empty items and advance alphabetic markers', asy
 test('Repeated size, color, opacity and list operations preserve formatting', async page => {
   await setup(page,'Texto importante'); await select(page,{line:0,offset:0},{line:0,offset:16});
   await page.selectOption('#sizeSel','150'); await page.selectOption('#sizeSel','200');
-  await page.fill('#hexInput','#336699'); await page.fill('#opacity','45'); await page.click('#applyFormat');
+  await page.fill('#hexInput','#336699'); await page.fill('#opacity','45');
   await page.selectOption('#sizeSel','100');
   assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
   await page.click('[data-tab="lists"]'); await page.click('#applyList'); await page.click('#indentBtn'); await page.click('#outdentBtn'); await page.click('#removeList');
@@ -345,7 +345,7 @@ test('Table block survives text formatting and Enter inserts text after it',asyn
 });
 test('Preview table controls move and resize without changing text or images',async page=>{
   await setup(page);await openTable(page);await fillCell(page,0,0,'Tabla');await page.click('#tableDone');
-  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);});
+  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);TableEditor.selectPreview(t.id);});
   const b=await page.locator('.tableMove').boundingBox();await page.mouse.move(b.x+20,b.y+20);await page.mouse.down();await page.mouse.move(b.x+20,b.y+50);await page.mouse.up();
   assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),1.5);
   await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.gap),0);
@@ -407,7 +407,7 @@ test('Named table move buttons change document order and respect ends',async pag
 });
 test('Table preview tools stay inside the page and viewport while zooming and panning',async page=>{
   await setup(page);await openTable(page);await page.click('#tableDone');
-  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:59,width:888,height:950,rows:[0,1,2,3]}]]};previewRevision=revision;TableEditor.mode(true);});
+  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:59,width:888,height:950,rows:[0,1,2,3]}]]};previewRevision=revision;TableEditor.mode(true);TableEditor.selectPreview(t.id);});
   for(const view of [[.74,0,0],[1.84,80,40],[1.84,220,520],[.3,0,0]]){
     await page.evaluate(([z,x,y])=>{zoom=z;applyZoom();$('previewWrap').scrollLeft=x;$('previewWrap').scrollTop=y;},view);
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
@@ -433,7 +433,7 @@ test('Preview sharpness is bounded debounced and rejects stale pages without com
 
 test('Touch table handles keep pointer capture and allow opening the editor',async page=>{
   await setup(page);await openTable(page);await fillCell(page,0,0,'Táctil');await page.click('#tableDone');
-  const preview=()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);};
+  const preview=()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'mock',page_count:1,table_pages:[[{id:t.id,x:59,y:200,width:888,height:500,rows:[0,1,2,3]}]]};previewRevision=revision;zoom=.6;applyZoom();TableEditor.mode(true);TableEditor.selectPreview(t.id);};
   await page.evaluate(preview);
   const b=await page.locator('.tableMove').boundingBox(),session=await page.context().newCDPSession(page);
   const scroll=await page.locator('#previewWrap').evaluate(e=>[e.scrollLeft,e.scrollTop]);
@@ -730,7 +730,7 @@ test('V35 undo and redo stay visible while only the other ribbon controls scroll
     assert.ok(await page.locator('#toolbarScroll').evaluate(n=>n.scrollLeft)>100);
   }
 });
-test('V35 paste icon pins after each copy, unpins on success and keeps the reusable element',async page=>{
+test('V38 paste stays pinned after every paste and keeps the reusable element',async page=>{
   for(const kind of ['formula','graph']){
     await setup(page);await openMath(page,kind);if(kind==='formula')await page.locator('.mathSlot').first().fill('x=2');await page.click('#mathDone');
     await mathPreview(page);await page.locator('.objectSelect').first().click();await page.click('.objectCopy');
@@ -738,18 +738,18 @@ test('V35 paste icon pins after each copy, unpins on success and keeps the reusa
     await assertPinnedVisible(page,'#pasteMath');await assertPinnedVisible(page,'#undoBtn');await assertPinnedVisible(page,'#redoBtn');
     assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);
     assert.equal((await page.textContent('#pasteMath')).trim(),'');assert.equal(await page.locator('#pasteMath svg').count(),1);
-    assert.equal(await page.getAttribute('#pasteMath','aria-label'),'Pegar fórmula o gráfica');
+    assert.equal(await page.getAttribute('#pasteMath','aria-label'),'Pegar tabla, fórmula o gráfica');
     fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results','v35-pinned-paste-'+kind+'.png')});
     await select(page,{line:1,offset:0});await page.click('#pasteMath');
-    assert.equal(await page.locator('.objectBlock').count(),2);assert.equal(await page.locator('#toolbarScroll #pasteMath').count(),1);assert.equal(await page.isDisabled('#pasteMath'),false);
-    await page.click('#pasteMath');assert.equal(await page.locator('.objectBlock').count(),3);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),0);
+    assert.equal(await page.locator('.objectBlock').count(),2);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);assert.equal(await page.isDisabled('#pasteMath'),false);
+    await page.click('#pasteMath');assert.equal(await page.locator('.objectBlock').count(),3);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);
     await page.click('#undoBtn');assert.equal(await page.locator('.objectBlock').count(),2);await page.click('#redoBtn');assert.equal(await page.locator('.objectBlock').count(),3);
     await mathPreview(page);await page.locator('.objectSelect').first().click();await page.click('.objectCopy');
     await page.click('[data-tab="images"]');await scrollRibbonRight(page);await assertPinnedVisible(page,'#pasteMath');
     await page.evaluate(()=>{exporting=true;controls();MathGraphEditor.pasteObject();});
     assert.equal(await page.locator('.objectBlock').count(),3);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);assert.equal(await page.isDisabled('#pasteMath'),true);
     await page.evaluate(()=>{exporting=false;controls();});await page.click('#pasteMath');
-    assert.equal(await page.locator('.objectBlock').count(),4);assert.equal(await page.locator('#toolbarScroll #pasteMath').count(),1);
+    assert.equal(await page.locator('.objectBlock').count(),4);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);
     const objects=await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.object).map(p=>p.object));
     assert.equal(new Set(objects.map(o=>o.id)).size,4);for(const o of objects.slice(1))assert.deepEqual(o[kind==='formula'?'expression':'series'],objects[0][kind==='formula'?'expression':'series']);
   }
@@ -786,8 +786,8 @@ test('V34 touch selects math while pinch and background dragging keep working ov
   assert.ok(await page.locator('#previewWrap').evaluate(n=>n.scrollTop)>scroll);assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object),object);
 });
 test('V34 direct save composes pending content and remains separate from notebook merging',async page=>{
-  await setup(page,'Contenido pendiente');await page.click('[data-tab="save"]');assert.equal(await page.isVisible('#saveDirect'),true);assert.equal(await page.isVisible('#mergeNotebooks'),true);
-  await page.click('#saveDirect');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.ok(call);assert.equal(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='save')),false);
+  await setup(page,'Contenido pendiente');await page.click('[data-tab="save"]');assert.equal(await page.locator('#saveDirect').count(),0);assert.equal(await page.isVisible('#mergeNotebooks'),true);
+  await page.click('#exportBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.ok(call);assert.equal(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='save')),false);
   await page.evaluate(id=>onComposeResult(id,JSON.stringify({snapshot:'quick-save',page_count:1,warnings:[]})),call[3]);assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='save').at(-1)[1]),'quick-save');assert.equal(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='notebook-action')),false);
   await page.evaluate(()=>onExportComplete(true,'Guardado'));
 });
@@ -845,6 +845,65 @@ test('V36 saves both transfer outcomes across reload and includes them in its re
   await finishProbe(page,{message:'Guardado'});
 });
 
+test('V38 text controls follow each selection and reapply 90 percent without an intermediate value',async page=>{
+  await setup(page,'primero segundo');await select(page,{line:0,offset:0},{line:0,offset:7});await page.selectOption('#sizeSel','90');
+  await select(page,{line:0,offset:8},{line:0,offset:15});assert.equal(await page.inputValue('#sizeSel'),'100');await page.selectOption('#sizeSel','90');
+  await page.fill('#opacity','75');await page.fill('#hexInput','#2468AC');await page.selectOption('#thicknessSel','3');
+  const segments=await page.evaluate(()=>readLines()[0]);assert.equal(segments.at(-1).scale,.9);assert.equal(segments.at(-1).opacity,75);assert.equal(segments.at(-1).color,'#2468AC');assert.equal(segments.at(-1).thickness,3);
+  await select(page,{line:0,offset:0},{line:0,offset:7});assert.equal(await page.inputValue('#opacity'),'100');assert.equal(await page.inputValue('#hexInput'),'#000000');assert.equal(await page.inputValue('#thicknessSel'),'0');
+  await select(page,{line:0,offset:0},{line:0,offset:15});assert.equal(await page.inputValue('#sizeSel'),'mixed');assert.equal(await page.inputValue('#opacity'),'');
+  await select(page,{line:0,offset:8},{line:0,offset:15});await page.fill('#opacity','80');await page.press('#opacity','ArrowUp');assert.equal(await page.inputValue('#opacity'),'81');assert.equal(await page.evaluate(()=>readLines()[0].at(-1).opacity),81);
+  await page.fill('#opacity','');await page.keyboard.type('85');assert.equal(await page.inputValue('#opacity'),'85');assert.equal(await page.evaluate(()=>readLines()[0].at(-1).opacity),85);
+  assert.equal(await page.locator('#applyFormat').count(),0);
+});
+test('V38 list indentation reaches zero, follows paragraphs, and migrates old drafts once',async page=>{
+  await setup(page,'• uno\n• dos');await select(page,{line:0,offset:5});await page.click('[data-tab="lists"]');
+  await page.click('#indentBtn');assert.equal(await page.inputValue('#listIndent'),'1');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),1);
+  await page.click('#outdentBtn');assert.equal(await page.inputValue('#listIndent'),'0');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.base_indent_squares),0);
+  await select(page,{line:1,offset:5});await page.fill('#listIndent','3');await page.press('#listIndent','Tab');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[1].list.level),3);assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),0);
+  const oldDraft=await page.evaluate(()=>{saveDraft();const data=JSON.parse(AndroidBridge.getDraft());data.version=32;data.lines=[[{text:'• antiguo',...DEFAULT_STYLE}]];data.settings.list_indent_squares=2;return JSON.stringify(data);});
+  // Seed after the outgoing document's pagehide autosave, only on the first load.
+  await page.addInitScript(raw=>{if(!sessionStorage.getItem('old-list-draft-seeded')){localStorage.setItem('native-draft',raw);sessionStorage.setItem('old-list-draft-seeded','true');}},oldDraft);
+  await page.reload();await page.waitForSelector('#editor .line');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),2);await page.evaluate(()=>saveDraft());
+  await page.reload();await page.waitForSelector('#editor .line');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),2);
+});
+test('V38 tables select one at a time in all tabs, copy independently and delete with undo',async page=>{
+  await setup(page);assert.equal(await page.isDisabled('#pasteMath'),true);await openTable(page);await fillCell(page,0,0,'Original');await page.click('#tableDone');
+  const preview=()=>{const tables=serializeDocument().paragraphs.filter(p=>p.table).map(p=>p.table);composition={snapshot:'tables',page_count:1,table_pages:[tables.map((t,i)=>({id:t.id,x:59,y:150+i*220,width:500,height:180}))]};previewRevision=revision;zoom=.6;applyZoom();};
+  await page.evaluate(preview);assert.equal(await page.locator('.tableTarget').count(),0);await page.locator('.tableSelect').tap();await page.click('.tableCopy');
+  await select(page,{line:1,offset:0});await page.click('#pasteMath');assert.equal(await page.locator('.tableBlock').count(),2);
+  await page.locator('.tableBlock button').last().click();await fillCell(page,0,0,'Copia');await page.click('#tableDone');
+  assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.table).map(p=>lineText(p.table.rows[0].cells[0].segments))),['Original','Copia']);
+  await page.evaluate(preview);
+  for(const tab of ['text','lists','page','images','tables','math','save','calibration']){
+    await page.click('[data-tab="'+tab+'"]');await page.locator('.tableSelect').first().tap();assert.equal(await page.locator('.tableTarget').count(),1);
+    const id=await page.locator('.tableTarget').getAttribute('data-id');await page.locator('.tableSelect').last().tap();assert.equal(await page.locator('.tableTarget').count(),1);assert.notEqual(await page.locator('.tableTarget').getAttribute('data-id'),id);
+  }
+  await page.click('.tableDelete');assert.equal(await page.locator('.tableBlock').count(),1);await page.click('#undoBtn');assert.equal(await page.locator('.tableBlock').count(),2);
+});
+test('V38 quick calibration changes the note and survives reload without opening the manager',async page=>{
+  await calibrationBridge(page);await page.click('#closeCalibration');await page.selectOption('#activeProfileSelect','a'.repeat(32));
+  assert.equal(await page.evaluate(()=>settings().profile),'a'.repeat(32));assert.equal(await page.isVisible('#calibrationDialog'),false);
+  await page.reload();await page.waitForFunction(()=>!CalibrationUI.isBusy());assert.equal(await page.inputValue('#activeProfileSelect'),'a'.repeat(32));
+  await page.click('[data-tab="calibration"]');await page.selectOption('#activeProfileSelect','original');assert.equal(await page.evaluate(()=>settings().profile),'original');
+});
+test('V38 direct Notes export composes fresh content and never invokes save or accessibility',async page=>{
+  await setup(page,'Exportación completa');await page.click('#exportNotesBtn');assert.equal(await page.isDisabled('#exportNotesBtn'),true);
+  const id=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1)[3]);await page.evaluate(id=>onComposeResult(id,JSON.stringify({snapshot:'to-notes',page_count:3,warnings:[]})),id);
+  assert.deepEqual(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='open-notes').at(-1)),['open-notes','to-notes','Nueva nota',true,'[]',3]);
+  assert.equal(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='save'||c[0]==='probe-action')),false);
+  await page.evaluate(()=>onExportComplete(false,'Notes no disponible'));assert.equal(await page.isDisabled('#exportBtn'),false);assert.equal(await page.isDisabled('#exportNotesBtn'),false);
+});
+test('V38 physical keyboard keeps input editable and restores virtual hints in all editors',async page=>{
+  await setup(page,'Texto');await page.evaluate(()=>onKeyboardState('{"mode":"auto","hardware":true,"suppress":true}'));
+  assert.equal(await page.getAttribute('#editor','inputmode'),'none');assert.equal(await page.getAttribute('#noteTitle','inputmode'),'none');
+  await select(page,{line:0,offset:5});await page.keyboard.type(' fisico');assert.deepEqual(await lines(page),['Texto fisico']);
+  await openMath(page,'graph');assert.equal(await page.getAttribute('#graphPointX','inputmode'),'none');
+  await page.evaluate(()=>onKeyboardState('{"mode":"auto","hardware":false,"suppress":false}'));assert.equal(await page.getAttribute('#graphPointX','inputmode'),'decimal');assert.equal(await page.getAttribute('#editor','inputmode'),null);await page.click('#mathCancel');
+  await page.evaluate(()=>{onKeyboardState('{"mode":"auto","hardware":true,"suppress":true}');});await openTable(page);assert.equal(await page.locator('.cellEditor').first().getAttribute('inputmode'),'none');
+  await page.evaluate(()=>onKeyboardState('{"mode":"virtual","hardware":true,"suppress":false}'));assert.equal(await page.locator('.cellEditor').first().getAttribute('inputmode'),null);assert.equal(await page.getAttribute('#editor','contenteditable'),'true');
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
     const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
@@ -859,7 +918,7 @@ test('V36 saves both transfer outcomes across reload and includes them in its re
       await context.route('https://hinote.local/images/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect x="10" y="10" width="620" height="460" fill="#21bca8"/><circle cx="320" cy="240" r="140" fill="#273c75"/></svg>'}));
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
-        requestPage:(...a)=>bridgeCalls.push(['page',...a]),requestPageHD:(...a)=>bridgeCalls.push(['pageHD',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
+        requestPage:(...a)=>bridgeCalls.push(['page',...a]),requestPageHD:(...a)=>bridgeCalls.push(['pageHD',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]),requestOpenNotes:(...a)=>bridgeCalls.push(['open-notes',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
         requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
         getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder']),
         requestNotebookImport:(...a)=>bridgeCalls.push(['notebook-import',...a]),requestNotebookAction:(...a)=>bridgeCalls.push(['notebook-action',...a]),cancelNotebook:()=>bridgeCalls.push(['notebook-cancel']),

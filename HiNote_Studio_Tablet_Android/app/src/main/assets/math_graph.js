@@ -6,7 +6,7 @@ const MathGraphEditor=(()=>{
   const slots={fraction:['num','den'],root:['index','body'],scripts:['base','sup','sub'],group:['body'],operator:['lower','upper','body']};
   let objects={},working=null,originalId=null,insertion=null,resume=null,active=false,drag=null,category='basic',field=null,fields=[],traceIndex=0,graphDrag=null;
   let formulaHistory=[],formulaIndex=-1,toolsFrame=null,selectedPoint=-1,bulkDirty=false,graphHistory=[],graphIndex=-1;
-  let selectedId=null,mathClipboard=null;
+  let selectedId=null;
   let graphZoom=1,graphView={x:0,y:0},graphPointers=new Map(),graphGesture=null;
   const isLine=line=>Boolean(line?.[0]?.objectId);
   const locked=()=>exporting||folderBusy||CalibrationUI.isBusy()||ImageEditor.isBusy()||TableEditor.isOpen()||NotebookUI.isBusy();
@@ -82,13 +82,14 @@ const MathGraphEditor=(()=>{
   }
   function remove(){if(!originalId||!confirm('¿Eliminar este elemento? Puedes deshacerlo.'))return;const id=originalId,lines=readLines().filter(l=>l[0]?.objectId!==id);delete objects[id];close();renderLines(lines.length?lines:[[]]);checkpoint();changed();}
   function quickRemove(id){if(locked()||working||drag||!objects[id])return;checkpoint();const lines=readLines().filter(l=>l[0]?.objectId!==id);delete objects[id];selectedId=null;renderLines(lines.length?lines:[[]]);checkpoint();changed();render();toast('Elemento eliminado. Deshacer lo recupera.');}
-  function updateControls(){if(el('pasteMath'))el('pasteMath').disabled=!mathClipboard||locked()||!!working||!!drag;}
-  function pinPaste(pinned){const button=el('pasteMath'),home=el(pinned?'toolbarPinned':'toolbarScroll');if(button&&home&&button.parentElement!==home)home.append(button);}
-  function copyObject(id){if(locked()||working||drag)return;mathClipboard=get(id);pinPaste(true);updateControls();toast((mathClipboard.kind==='formula'?'Fórmula':'Gráfica')+' copiada. Coloca el cursor y pulsa el icono Pegar.');}
+  function updateControls(){if(el('pasteMath'))el('pasteMath').disabled=!elementClipboard||locked()||!!working||!!drag;}
+  function pinPaste(pinned){const button=el('pasteMath'),home=el('toolbarPinned');if(button&&home&&button.parentElement!==home)home.append(button);}
+  function copyObject(id){if(locked()||working||drag)return;elementClipboard=get(id);pinPaste(true);updateControls();toast((elementClipboard.kind==='formula'?'Fórmula':'Gráfica')+' copiada. Coloca el cursor y pulsa el icono Pegar.');}
   function pasteObject(){
-    if(!mathClipboard||locked()||working||drag||ime)return;captureSelection();
-    if(Object.keys(live()).length>=100||characterCount()+objectCount(mathClipboard)>MAX_CHARS)return toast('La nota no admite más elementos.');
-    checkpoint();const obj=clone(mathClipboard),lines=readLines(),point=bookmark()?.start;
+    if(elementClipboard?.kind==='table'){TableEditor.pasteObject();return;}
+    if(!elementClipboard||locked()||working||drag||ime)return;captureSelection();
+    if(Object.keys(live()).length>=100||characterCount()+objectCount(elementClipboard)>MAX_CHARS)return toast('La nota no admite más elementos.');
+    checkpoint();const obj=clone(elementClipboard),lines=readLines(),point=bookmark()?.start;
     obj.id=make(obj.kind).id;obj.beside=false;obj.gap=0;validate(obj);
     let at=clamp(point?.line??lines.length-1,0,lines.length-1);
     if(!lineText(lines[at])&&!isBlockLine(lines[at]))lines.splice(at,1,[{text:'\uFFFC',objectId:obj.id}],[]);
@@ -410,14 +411,14 @@ const MathGraphEditor=(()=>{
             y:magnet(py,'y',Math.hypot(matrix.c,matrix.d)*40*geo.y.scale/g.ystep)};
   }
   function mode(on){active=on;render();}
-  function selectPreview(id){if(!objects[id]||working||drag||locked()||!composition||previewRevision!==revision)return;selectedId=id;render();}
+  function selectPreview(id){if(!objects[id]||working||drag||locked()||!composition||previewRevision!==revision)return;selectedId=id;TableEditor.clearSelection();render();}
   function positionTools(){toolsFrame=null;const wrap=el('previewWrap').getBoundingClientRect();el('objectOverlay').querySelectorAll('.objectTarget').forEach(box=>{const r=box.getBoundingClientRect(),bar=box.querySelector('.objectQuickActions'),resize=box.querySelector('.objectResize');const visible=r.right>wrap.left&&r.left<wrap.right&&r.bottom>wrap.top&&r.top<wrap.bottom;bar.style.visibility=resize.style.visibility=visible?'visible':'hidden';if(!visible)return;bar.style.left=`${clamp(r.left,wrap.left+6,Math.max(wrap.left+6,wrap.right-bar.offsetWidth-6))-r.left}px`;bar.style.top=`${clamp(r.top-bar.offsetHeight-4,wrap.top+6,Math.max(wrap.top+6,wrap.bottom-bar.offsetHeight-6))-r.top}px`;resize.style.left=`${clamp(r.right-44,wrap.left+6,wrap.right-50)-r.left}px`;resize.style.top=`${clamp(r.bottom-44,wrap.top+6,wrap.bottom-50)-r.top}px`;});}
   function render(){
     const layer=el('objectOverlay');if(!layer||drag)return;layer.replaceChildren();updateControls();
     if(!composition||previewRevision!==revision||working||exporting||locked())return;
     const placed=composition.object_pages?.[currentPage]||[];if(!placed.some(o=>o.id===selectedId))selectedId=null;
     for(const obj of placed){if(!objects[obj.id])continue;const box=document.createElement('div'),k=.675*zoom;box.className='objectHit'+(obj.id===selectedId?' objectTarget':'');box.dataset.id=obj.id;Object.assign(box.style,{left:obj.x*k+'px',top:obj.y*k+'px',width:obj.width*k+'px',height:obj.height*k+'px'});
-      const choose=document.createElement('button');choose.type='button';choose.className='objectSelect';choose.setAttribute('aria-label','Seleccionar '+(obj.kind==='formula'?'fórmula':'gráfica'));choose.setAttribute('aria-pressed',String(obj.id===selectedId));choose.onclick=e=>{e.stopPropagation();selectedId=obj.id;render();};box.append(choose);
+      const choose=document.createElement('button');choose.type='button';choose.className='objectSelect';choose.setAttribute('aria-label','Seleccionar '+(obj.kind==='formula'?'fórmula':'gráfica'));choose.setAttribute('aria-pressed',String(obj.id===selectedId));choose.onclick=e=>{e.stopPropagation();selectedId=obj.id;TableEditor.clearSelection();render();};box.append(choose);
       if(obj.id===selectedId){const bar=document.createElement('div');bar.className='objectQuickActions';box.append(bar);for(const [cls,label,help] of [['objectMove','↔','Mover elemento por medios cuadros'],['objectOpen','Editar','Editar elemento'],['objectCopy','⧉','Copiar elemento'],['objectDelete','×','Eliminar elemento'],['objectResize','↘','Cambiar espacio del elemento']]){const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=label;b.title=help;b.setAttribute('aria-label',help);(cls==='objectResize'?box:bar).append(b);b.onclick=e=>{e.stopPropagation();if(cls==='objectOpen')open(objects[obj.id].kind,obj.id);if(cls==='objectCopy')copyObject(obj.id);if(cls==='objectDelete')quickRemove(obj.id);};}}
       layer.append(box);
     }positionTools();
@@ -428,7 +429,7 @@ const MathGraphEditor=(()=>{
     const traceTools=document.createElement('div');traceTools.className='graphNames';traceTools.innerHTML='<label>Nombre del trazo<input id="graphTraceLabel" maxlength="60" placeholder="Opcional"></label><label>Ubicación del nombre<select id="graphTraceLabelPosition"><option value="auto">Automática</option><option value="middle">Centro del trazo</option><option value="end">Final del trazo</option></select></label>';el('graphType').after(traceTools);
     const help=document.createElement('details');help.id='graphHelp';const summary=document.createElement('summary');summary.textContent='Ayuda y escala';help.append(summary);const info=el('graphGridInfo'),gestureHelp=info.nextElementSibling;info.before(help);help.append(info,gestureHelp);
     for(const [id,name,icon] of [['graphUndo','Deshacer gráfica','↶'],['graphRedo','Rehacer gráfica','↷']]){el(id).textContent=icon;el(id).title=name;el(id).setAttribute('aria-label',name);}
-    const pasteButton=document.createElement('button');pasteButton.type='button';pasteButton.className='btn iconBtn';pasteButton.id='pasteMath';pasteButton.title='Pegar fórmula o gráfica';pasteButton.setAttribute('aria-label','Pegar fórmula o gráfica');pasteButton.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1.5"/><path d="M8 5H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h9M16 5h3a1 1 0 0 1 1 1v4"/><rect x="12" y="12" width="9" height="9" rx="1.5"/></svg>';pasteButton.disabled=true;pasteButton.onclick=pasteObject;el('toolbarScroll').append(pasteButton);
+    const pasteButton=document.createElement('button');pasteButton.type='button';pasteButton.className='btn iconBtn';pasteButton.id='pasteMath';pasteButton.title='Pegar tabla, fórmula o gráfica';pasteButton.setAttribute('aria-label','Pegar tabla, fórmula o gráfica');pasteButton.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1.5"/><path d="M8 5H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h9M16 5h3a1 1 0 0 1 1 1v4"/><rect x="12" y="12" width="9" height="9" rx="1.5"/></svg>';pasteButton.disabled=true;pasteButton.onclick=pasteObject;el('toolbarPinned').append(pasteButton);
     document.addEventListener('click',e=>{if(selectedId&&!drag&&!e.target.closest('#objectOverlay,#mathDialog,#pasteMath')){selectedId=null;render();}});
     el('insertFormula').onclick=()=>open('formula');el('insertGraph').onclick=()=>open('graph');el('mathCancel').onclick=close;el('mathDone').onclick=commit;el('mathRemove').onclick=remove;el('mathMoveUp').onclick=()=>move(-1);el('mathMoveDown').onclick=()=>move(1);
     for(const [id,key] of [['mathLeft','left'],['mathWidth','width'],['mathHeight','height'],['mathGap','gap'],['mathSize','size'],['mathColor','color'],['mathThickness','thickness'],['mathAlign','align']])el(id).onchange=()=>{if(working.kind==='graph')graphCheckpoint();working[key]=key==='color'||key==='align'?el(id).value:key==='size'?+el(id).value/100:+el(id).value;if(key==='width'&&working.kind==='formula'){working.autoWidth=false;el('mathAutoWidth').checked=false;}if(working.kind==='graph'){graphCheckpoint();drawGraph();}queueDraft();};
@@ -489,5 +490,5 @@ const MathGraphEditor=(()=>{
     dialog.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'&&!e.target.classList.contains('mathSlot')){const nodes=[...dialog.querySelectorAll('button,input,select,textarea')].filter(n=>!n.disabled&&n.getClientRects().length);const i=nodes.indexOf(document.activeElement);if((e.shiftKey&&i===0)||(!e.shiftKey&&i===nodes.length-1)){e.preventDefault();nodes[e.shiftKey?nodes.length-1:0].focus();}}};
     if(resume?.object){try{validate(resume.object);working=resume.object;originalId=resume.originalId;insertion=resume.insertion;activate();if(working.kind==='graph'){traceIndex=clamp(resume.traceIndex||0,0,working.series.length-1);selectedPoint=Number.isInteger(resume.selectedPoint)?resume.selectedPoint:-1;graphTools();if(typeof resume.pointsDraft==='string'){el('graphPoints').value=resume.pointsDraft;bulkDirty=true;}if(Array.isArray(resume.pointDraft))['graphPointX','graphPointY','graphPointLabel'].forEach((id,i)=>el(id).value=resume.pointDraft[i]||'');drawGraph();}message('Se recuperó el elemento que estabas editando. Revisa y aplica los cambios.');}catch(e){resume=null;}}
   }
-  return {init,open,get,block,isLine,state,restore,count,render,mode,updateControls,applyMeasurements,copyObject,pasteObject,selectPreview,isOpen:()=>!!working,isDragging:()=>!!drag};
+  return {clearSelection:()=>{selectedId=null;render();},init,open,get,block,isLine,state,restore,count,render,mode,updateControls,applyMeasurements,copyObject,pasteObject,selectPreview,isOpen:()=>!!working,isDragging:()=>!!drag};
 })();

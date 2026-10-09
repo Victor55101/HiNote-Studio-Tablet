@@ -32,6 +32,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_SAVE=501, REQUEST_IMAGE=502, REQUEST_FOLDER=503;
     private static final Object ENGINE_START_LOCK=new Object();
     private WebView webView;
+    private KeyboardController keyboardController;
     private PyObject backend;
     private File sessionDir;
     private ThreadPoolExecutor worker;
@@ -92,8 +93,11 @@ public class MainActivity extends Activity {
             }catch(Exception e){startupError=message(e);}
         });
         webView=new WebView(this);WebSettings ws=webView.getSettings();
+        keyboardController=new KeyboardController(this,webView);
+        webView.setOnTouchListener((view,event)->{if(event.getActionMasked()==android.view.MotionEvent.ACTION_UP)view.postDelayed(()->{if(keyboardController!=null)keyboardController.hideIfNeeded();},80);return false;});
         ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setBuiltInZoomControls(false);
         webView.setWebViewClient(new WebViewClient(){
+            @Override public void onPageFinished(WebView view,String url){if(keyboardController!=null)keyboardController.publish();}
             @Override public boolean shouldOverrideUrlLoading(WebView view,String url){return !url.startsWith("file:///android_asset/");}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();
@@ -269,6 +273,14 @@ public class MainActivity extends Activity {
                 catch(Exception e){if(!token.isCancelled())send("onPageResult",id+","+quote(snapshot)+","+index+",null,"+quote(message(e)));}
             });
         }
+        @JavascriptInterface public String getKeyboardState(){return keyboardController==null?"{}":keyboardController.state();}
+        @JavascriptInterface public void setKeyboardMode(String mode){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.setMode(mode);});}
+        @JavascriptInterface public void requestOpenNotes(String snapshot,String title,boolean grid,String images,int pages){
+            if(destroyed||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
+            if(snapshot==null||!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de exportar");return;}
+            if(pages<1||pages>500||images==null||images.length()>300000){finishExport(false,"Demasiadas páginas o imágenes");return;}
+            ExportJob job=new ExportJob(snapshot,title,images,pages,null);pendingExport=job;startNotesExport(job);
+        }
         @JavascriptInterface public void requestSave(String snapshot,String title,boolean grid,String images,int pages){
             if(destroyed||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
             if(!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de guardar");return;}
@@ -430,6 +442,23 @@ public class MainActivity extends Activity {
         catch(Exception error){send("onNotesProbeResult",ticket+",null,"+quote(message(error)));}
         finally{if(output!=null)output.delete();deleteTree(work);if(snapshot!=null)backend.callAttr("remove_snapshot",sessionDir.getPath(),snapshot);exporting.set(false);}
     }
+    private void startNotesExport(ExportJob job){
+        worker.execute(()->{
+            File output=null;File work=new File(sessionDir,"notes-export-"+UUID.randomUUID());TaskToken token=new TaskToken("export",0,job.cancelled);
+            try{
+                token.check();ready();output=NotesFileProvider.create(this,"hinote");
+                send("onExportStage",quote("Preparando cuaderno para Huawei Notes…"));
+                prepareNativeNote(job.snapshot,job.title,job.images,job.pages,output,work,token);token.check();
+                final File shared=output;Uri uri=NotesFileProvider.uri(this,shared);
+                runOnUiThread(()->{
+                    try{token.check();NotesExport.open(this,uri);finishExport(true,"Cuaderno enviado a Huawei Notes. Completa la importación allí.");}
+                    catch(Exception error){shared.delete();finishExport(false,token.isCancelled()?"Exportación cancelada":"No se pudo abrir Huawei Notes. Puedes usar Guardar .hinote.");}
+                });output=null; // Keep the granted file after the activity leaves.
+            }catch(Exception error){finishExport(false,token.isCancelled()?"Exportación cancelada":message(error));}
+            catch(OutOfMemoryError error){finishExport(false,"No hay memoria suficiente para exportar este cuaderno.");}
+            finally{if(output!=null)output.delete();deleteTree(work);}
+        });
+    }
     private void startExport(ExportJob job,Uri pickedDestination){
         worker.execute(()->{
             Uri uri=pickedDestination;
@@ -464,7 +493,11 @@ public class MainActivity extends Activity {
     private void send(String function,String arguments){runOnUiThread(()->{if(!destroyed&&webView!=null)webView.evaluateJavascript("window."+function+" && window."+function+"("+arguments+");",null);});}
     private static void deleteTree(File file){if(file==null)return;File[] children=file.listFiles();if(children!=null)for(File child:children)deleteTree(child);file.delete();}
     private static void disposeWebView(WebView view){view.removeJavascriptInterface("AndroidBridge");if(view.getParent() instanceof ViewGroup)((ViewGroup)view.getParent()).removeView(view);view.destroy();}
-    @Override protected void onPause(){if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
+    @Override protected void onResume(){super.onResume();if(keyboardController!=null)keyboardController.start();}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.refresh();}
+    @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
+    @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchKeyEvent(event);}
+    @Override protected void onPause(){if(keyboardController!=null)keyboardController.stop();if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(notesProbe!=null){notesProbe.receive(intent);send("onNotesProbeShared","");}}
-    @Override protected void onDestroy(){destroyed=true;if(notesProbe!=null)notesProbe.close();if(worker!=null)worker.shutdownNow();if(webView!=null){disposeWebView(webView);webView=null;}super.onDestroy();}
+    @Override protected void onDestroy(){destroyed=true;if(keyboardController!=null)keyboardController.stop();if(notesProbe!=null)notesProbe.close();if(worker!=null)worker.shutdownNow();if(webView!=null){disposeWebView(webView);webView=null;}super.onDestroy();}
 }

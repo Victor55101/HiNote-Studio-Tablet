@@ -34,7 +34,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:.2s;z-index:20}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .hidden{display:none!important}
 @media(max-width:900px){body{overflow:auto;height:auto}.app{height:auto;min-height:100vh;grid-template-rows:auto auto auto}.workspace{grid-template-columns:1fr;min-height:auto}.editorCard{height:55vh}.previewCard{height:75vh}.toolbar{position:sticky;top:0;z-index:4}.topbar{position:sticky;top:0}.titlewrap small{display:none}.btn{padding:8px 10px}}
-@media(max-width:600px){.titlewrap h1{font-size:16px}.logo{width:34px;height:34px;border-radius:11px}.topbar{padding:9px 10px}.workspace{padding:8px;gap:8px}.toolbar{padding:8px}.field label{display:none}.editor{font-size:16px}.previewWrap{padding:8px}}
+@media(max-width:600px){.topbar{flex-wrap:wrap}.topactions{flex-wrap:wrap;width:100%}.topactions .btn{flex:1;white-space:nowrap}.titlewrap h1{font-size:16px}.logo{width:34px;height:34px;border-radius:11px}.topbar{padding:9px 10px}.workspace{padding:8px;gap:8px}.toolbar{padding:8px}.field label{display:none}.editor{font-size:16px}.previewWrap{padding:8px}}
 .draftFooter{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
 .warningPanel{padding:8px 14px;background:#fff8e6;font-size:12px;max-height:130px;overflow:auto}.warningPanel summary{cursor:pointer}.editor:has(> .line:only-child > br:only-child)::before{content:attr(data-placeholder);color:#7a879b;pointer-events:none;position:absolute}.editorCard .editorScroll{position:relative}
 </style>
@@ -45,7 +45,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   <div class="topbar">
     <div class="logo"><img src="logo-hinote.svg" alt=""></div>
     <div class="titlewrap"><h1>HiNote Studio</h1><small>Edición directa en tu MatePad · exporta a Huawei Notes</small></div>
-    <div class="topactions"><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar</button><button class="btn primary" id="exportBtn">Guardar .hinote</button></div>
+    <div class="topactions"><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar</button><button class="btn primary" id="exportBtn">Guardar .hinote</button><button class="btn accent" id="exportNotesBtn">Exportar a Notes</button></div>
   </div>
 
   <div class="toolbar">
@@ -61,13 +61,12 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <div class="field"><label>Color</label><input type="color" id="colorPick" value="#000000"><input id="hexInput" value="#000000" style="width:82px;border:0;background:transparent;outline:0"></div>
       <div class="field"><label>Opacidad</label><input id="opacity" type="number" min="1" max="100" value="100"><span>%</span></div>
       <div class="field"><label for="thicknessSel">Grosor</label><select id="thicknessSel"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
-      <button class="btn" id="applyFormat">Aplicar</button>
       <select id="caseSel" class="btn"><option value="">Aa</option><option value="sentence">Tipo oración.</option><option value="lower">minúscula</option><option value="upper">MAYÚSCULAS</option><option value="title">Mayúsculas Cada Palabra</option><option value="toggle">tIPO iNVERSO</option></select>
     </div>
     <div class="toolpanel hidden" id="panelLists">
       <select id="listType" class="btn"><option value="bullet">• Viñeta</option><option value="dash">- Guion</option><option value="asterisk">* Asterisco</option><option value="num_dot">1. Numérica</option><option value="num_paren">1) Numérica</option><option value="alpha_lower_dot">a. Alfabética</option><option value="alpha_lower_paren">a) Alfabética</option><option value="alpha_upper_dot">A. Alfabética</option><option value="alpha_upper_paren">A) Alfabética</option></select>
       <button class="btn" id="applyList">Aplicar lista</button><button class="btn" id="removeList">Quitar</button><button class="btn" id="indentBtn">Nivel →</button><button class="btn" id="outdentBtn">← Nivel</button>
-      <div class="field"><label>Sangría</label><input type="number" id="listIndent" min="0" max="6" value="1"><span>cuadros</span></div>
+      <div class="field"><label for="listIndent">Sangría</label><input type="number" id="listIndent" min="0" max="12" step="1" value="0"><span>cuadros</span></div>
     </div>
     <div class="toolpanel hidden" id="panelPage">
       <div class="field"><label>Interlineado</label><input id="lineRows" type="number" min="1" max="4" value="1"></div>
@@ -75,6 +74,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <div class="field"><label>Palabras</label><input id="wordSpacing" type="number" min="12" max="60" step="1" value="26"></div>
       <label class="field"><input id="autoPreview" type="checkbox" checked> Vista automática</label>
       <label class="field"><input id="gridCheck" type="checkbox" checked> Cuadrícula</label>
+      <label class="field">Teclado <select id="keyboardMode" aria-label="Teclado en HiNote"><option value="auto">Automático</option><option value="virtual">Mostrar virtual</option><option value="physical">Solo físico</option></select></label>
     </div>
     <div class="toolpanel hidden" id="panelImages">
       <button class="btn accent" id="insertImage">＋ Insertar imagen</button>
@@ -89,7 +89,6 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <button class="btn" id="duplicateImage" data-image-action>Duplicar</button><button class="btn danger" id="deleteImage" data-image-action>Eliminar</button>
     </div>
     <div class="toolpanel hidden" id="panelSave">
-      <button class="btn primary" id="saveDirect">Guardar .hinote</button>
       <button class="btn" id="mergeNotebooks">Combinar cuadernos .hinote</button>
       <button class="btn accent" id="chooseFolder">Elegir carpeta</button>
       <button class="btn" id="clearFolder">Preguntar cada vez</button>
@@ -102,7 +101,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <button class="btn accent" id="insertFormula">＋ Fórmula</button><button class="btn accent" id="insertGraph">＋ Gráfica</button><span class="field">Moldes y coordenadas · Tu escritura · Sin resolución</span>
     </div>
     <div class="toolpanel hidden" id="panelCalibration">
-      <span class="field">Letra: <strong id="activeProfileLabel">Original</strong></span>
+      <label class="field" for="activeProfileSelect">Letra: <select id="activeProfileSelect" aria-label="Calibración de la nota"><option value="original">Original</option></select></label>
       <button class="btn accent" id="manageCalibration">Mis calibraciones</button>
       <button class="btn" id="originalCalibration">Usar Original</button>
     </div>

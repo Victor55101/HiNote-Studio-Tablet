@@ -13,6 +13,7 @@ let history = [], historyIndex = -1;
 let folderBusy = false, exportFolderState = {configured:false,label:''};
 let saveRequested = false;
 let activeProfile = 'original';
+let elementClipboard = null, pendingExportMode = 'save', currentExportMode = 'save';
 const isBlockLine=line=>TableEditor.isLine(line)||MathGraphEditor.isLine(line);
 
 function bounded(value, min, max, fallback) {
@@ -119,7 +120,36 @@ function bookmark() {
 }
 function captureSelection() {
   const sel = getSelection();
-  if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) savedSelection = bookmark();
+  if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
+    savedSelection = bookmark();
+    if (!document.activeElement?.closest('#panelText')) syncTextControls();
+    syncListControls();
+  }
+}
+function selectionStyles() {
+  const mark=bookmark(),lines=readLines();if(!mark)return [];
+  if(collapsed(mark))return isBlockLine(lines[mark.start.line])?[]:[styleAt(lines[mark.start.line],Math.max(0,mark.start.offset-1))];
+  return selectedLineIndexes(mark).flatMap(i=>isBlockLine(lines[i])?[]:sliceSegments(lines[i],i===mark.start.line?mark.start.offset:0,i===mark.end.line?mark.end.offset:Infinity).map(cleanStyle));
+}
+function syncTextControls() {
+  const styles=selectionStyles();if(!styles.length)return;
+  const common=key=>styles.every(s=>s[key]===styles[0][key])?styles[0][key]:null;
+  for(const [id,key,factor] of [['sizeSel','scale',100],['thicknessSel','thickness',1]]){
+    const control=$(id),value=common(key);control.querySelectorAll('[data-selection-value]').forEach(o=>o.remove());
+    const text=value===null?'mixed':String(Math.round(value*factor*100)/100);
+    if(![...control.options].some(o=>o.value===text)){const option=new Option(value===null?'Mixto':text,text);option.dataset.selectionValue='true';control.add(option);}
+    control.value=text;control.dataset.mixed=String(value===null);
+  }
+  const opacity=common('opacity'),color=common('color');
+  $('opacity').value=opacity??'';$('opacity').placeholder=opacity===null?'Mixta':'';
+  $('hexInput').value=color??'';$('hexInput').placeholder=color===null?'Mixto':'';
+  $('colorPick').value=color||'#000000';$('colorPick').dataset.mixed=String(color===null);
+}
+function syncListControls(){
+  if(document.activeElement===$('listIndent'))return;
+  const mark=bookmark();if(!mark)return;const lines=readLines();
+  const values=selectedLineIndexes(mark).filter(i=>!isBlockLine(lines[i])).map(i=>Math.min(12,Math.floor((lineText(lines[i]).match(/^[ \t]*/)[0]).replace(/\t/g,'    ').length/4)));
+  if(values.length){$('listIndent').value=values.every(v=>v===values[0])?values[0]:'';$('listIndent').placeholder='Mixta';}
 }
 function domPoint(point) {
   const line = editor.childNodes[Math.min(point.line, editor.childNodes.length - 1)] || editor;
@@ -131,11 +161,12 @@ function domPoint(point) {
   }
   return last ? [last, last.length] : [line, 0];
 }
-function restoreSelection(mark) {
+function restoreSelection(mark, focus=true) {
   if (!mark) return;
   const range = document.createRange(); range.setStart(...domPoint(mark.start)); range.setEnd(...domPoint(mark.end));
-  editor.focus({preventScroll: true}); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  if(focus)editor.focus({preventScroll: true}); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
   savedSelection = bookmark();
+  if(focus){syncTextControls();syncListControls();}
 }
 function collapsed(mark) { return mark.start.line === mark.end.line && mark.start.offset === mark.end.offset; }
 function normalizeRoots() {
@@ -152,15 +183,19 @@ function checkpoint() {
   while (history.length > 2 && (history.length > 40 || bytes > 8 * 1024 * 1024)) bytes -= history.shift().data.length * 2;
   historyIndex = history.length - 1; controls();
 }
-function edit(operation) {
+function edit(operation, keepControlFocus=false) {
   if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || MathGraphEditor.isOpen() || NotebookUI.isBusy() || ime) return;
+  const held=keepControlFocus?document.activeElement:null;
+  const fieldRange=held&&typeof held.selectionStart==='number'?[held.selectionStart,held.selectionEnd]:null;
   normalizeRoots(); checkpoint();
   const mark = bookmark() || {start: {line: 0, offset: 0}, end: {line: 0, offset: 0}};
   const result = operation(readLines(), mark); if (!result) return;
   const n = result.lines.reduce((sum, line) => sum + lineText(line).length, 0) + result.lines.length - 1;
   if (n + TableEditor.count()+MathGraphEditor.count() > MAX_CHARS) { toast('El documento admite hasta 200000 caracteres'); return; }
   if (result.lines.length > 10000) { toast('El documento admite hasta 10000 párrafos'); return; }
-  renderLines(result.lines); restoreSelection(result.selection || mark); checkpoint(); changed();
+  renderLines(result.lines); restoreSelection(result.selection || mark,!keepControlFocus);
+  if(held){held.focus({preventScroll:true});if(fieldRange)held.setSelectionRange(...fieldRange);}
+  checkpoint(); changed();
 }
 function undoRedo(direction) {
   if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || MathGraphEditor.isOpen() || NotebookUI.isBusy() || ime || ImageEditor.isBusy()) return;
@@ -194,6 +229,7 @@ function selectedLineIndexes(mark) {
 }
 function applyStyle(patch) {
   const mark = bookmark(); if (!mark || collapsed(mark)) { toast('Selecciona texto primero'); return; }
+  const focused=document.activeElement,keep=!!focused?.closest('#panelText');
   edit((lines, selection) => {
     for (const i of selectedLineIndexes(selection)) {
       if(isBlockLine(lines[i]))continue;
@@ -202,7 +238,8 @@ function applyStyle(patch) {
       lines[i] = mergeSegments([...sliceSegments(lines[i], 0, a), ...sliceSegments(lines[i], a, b).map(s => ({...s, ...patch})), ...sliceSegments(lines[i], b)]);
     }
     return {lines, selection};
-  });
+  },keep);
+  if(!keep)syncTextControls();
 }
 function alphaMarker(number, upper = false) {
   let out = ''; do { number--; out = String.fromCharCode((upper ? 65 : 97) + number % 26) + out; number = Math.floor(number / 26); } while (number > 0); return out;
@@ -227,11 +264,11 @@ function modifyLists(action) {
       const text = lineText(lines[i]), match = text.match(listRegex);
       let oldLength = match ? text.length - match[4].length : (text.match(/^[ \t]*/)[0].length);
       let prefix = match ? text.slice(0, oldLength) : text.slice(0, oldLength);
-      const indent = Math.min(6, Math.floor((match ? match[1] : prefix).replace(/\t/g, '    ').length / 4));
+      const indent = Math.min(12, Math.floor((match ? match[1] : prefix).replace(/\t/g, '    ').length / 4));
       if (action === 'apply') prefix = '    '.repeat(indent) + markerFor($('listType').value, index) + ' ';
       else if (action === 'remove') prefix = '';
       else {
-        const level = Math.max(0, Math.min(6, indent + (action === 'indent' ? 1 : -1)));
+        const level = action==='setIndent'?Math.round(bounded($('listIndent').value,0,12,indent)):Math.max(0, Math.min(12, indent + (action === 'indent' ? 1 : -1)));
         prefix = '    '.repeat(level) + (match ? match[2] + ' ' : '');
       }
       const st = styleAt(lines[i], Math.max(0, oldLength));
@@ -282,7 +319,7 @@ function changeCase(mode) {
 }
 function settings() {
   return {letter_spacing: bounded($('letterSpacing').value, -8, 8, 0), word_spacing: bounded($('wordSpacing').value, 12, 60, 26),
-    line_grid_rows: Math.round(bounded($('lineRows').value, 1, 4, 1)), list_indent_squares: bounded($('listIndent').value, 0, 6, 1), auto_line_spacing: true, seed: 12345, profile: activeProfile};
+    line_grid_rows: Math.round(bounded($('lineRows').value, 1, 4, 1)), list_indent_squares: 0, auto_line_spacing: true, seed: 12345, profile: activeProfile};
 }
 function serializeDocument() {
   const config = settings();
@@ -292,8 +329,9 @@ function serializeDocument() {
     const text = lineText(line), match = text.match(listRegex);
     if (!match) return {segments: line};
     const prefix = text.length - match[4].length, style = styleAt(line, match[1].length);
-    return {segments: sliceSegments(line, prefix), list: {marker: match[2], level: Math.min(6, Math.floor(match[1].replace(/\t/g, '    ').length / 4)),
-      marker_scale: style.scale, marker_color: style.color, marker_opacity: style.opacity, marker_thickness: style.thickness, base_indent_squares: config.list_indent_squares}};
+    const indent=Math.min(12,Math.floor(match[1].replace(/\t/g,'    ').length/4));
+    return {segments: sliceSegments(line, prefix), list: {marker: match[2], level: Math.min(6,indent),
+      marker_scale: style.scale, marker_color: style.color, marker_opacity: style.opacity, marker_thickness: style.thickness, base_indent_squares: Math.max(0,indent-6)}};
   })};
 }
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.add('show'); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500); }
@@ -301,7 +339,7 @@ function saveDraft() {
   ImageEditor.finishGesture(false);
   clearTimeout(draftTimer);
   try {
-    const raw=JSON.stringify({version:32,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
+    const raw=JSON.stringify({version:38,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
     const nativeSaved=window.AndroidBridge?.saveDraft ? AndroidBridge.saveDraft(raw) : false;
     try{localStorage.setItem(DRAFT_KEY,raw);}catch(e){if(!nativeSaved)throw e;}
     $('draftStatus').textContent = 'Borrador guardado';
@@ -312,7 +350,7 @@ function restoreDraft() {
   try {
     const native=window.AndroidBridge?.getDraft?AndroidBridge.getDraft():'';
     const draft = JSON.parse(native||localStorage.getItem(DRAFT_KEY)||localStorage.getItem('hinote-draft-v21'));
-    if (!draft || ![21,23,25,27,30,31,32].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
+    if (!draft || ![21,23,25,27,30,31,32,38].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
     let count = draft.lines.length - 1, segments = 0;
     for (const line of draft.lines) {
       if (!Array.isArray(line)) return false;
@@ -323,6 +361,9 @@ function restoreDraft() {
     TableEditor.restore(draft);
     MathGraphEditor.restore(draft);
     activeProfile = /^(original|[a-f0-9]{32})$/.test(draft.settings?.profile||'')?draft.settings.profile:'original';
+    // V35 added a hidden global base to each list level. Encode the actual
+    // indentation in the paragraph so level 0 now really reaches the margin.
+    if(draft.version<38){const base=Math.floor(bounded(draft.settings?.list_indent_squares,0,6,1));draft.lines=draft.lines.map(line=>!isBlockLine(line)&&listRegex.test(lineText(line))?mergeSegments([{text:'    '.repeat(base),...styleAt(line,0)},...line]):line);}
     renderLines(draft.lines); $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
     for (const [id, key, min, max, fallback] of [['letterSpacing','letter_spacing',-8,8,0],['wordSpacing','word_spacing',12,60,26],['lineRows','line_grid_rows',1,4,1],['listIndent','list_indent_squares',0,6,1]]) $(id).value = bounded(draft.settings?.[key], min, max, fallback);
     $('gridCheck').checked = draft.grid !== false; $('autoPreview').checked = draft.auto !== false; return true;
@@ -332,7 +373,7 @@ function controls() {
   const calibrationBusy=CalibrationUI.isBusy()||NotebookUI.isBusy();
   $('charCount').textContent = `${characterCount().toLocaleString('es')} caracteres`;
   $('exportBtn').disabled = calibrationBusy || folderBusy || exporting || saveRequested || ImageEditor.isBusy();
-  $('saveDirect').disabled = $('exportBtn').disabled;
+  $('exportNotesBtn').disabled = $('exportBtn').disabled;
   $('refreshBtn').disabled = exporting || saveRequested || calibrationBusy || folderBusy; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
   $('prevPage').disabled = exporting || composing || !composition || currentPage <= 0;
   $('nextPage').disabled = exporting || composing || currentPage >= ImageEditor.count() - 1;
@@ -391,7 +432,7 @@ window.onComposeResult = (id, json) => {
     $('status').textContent = 'Cargando página…'; drawCurrent();
   } catch (e) { saveRequested=false;$('status').textContent = 'No se pudo generar'; toast(e.message); }
   controls();
-  if(saveRequested){saveRequested=false;exportNote();}
+  if(saveRequested){saveRequested=false;exportNote(pendingExportMode);}
 };
 window.onWorkProgress = (kind, id, page) => {
   if (kind === 'compose' && id === revision && composing) $('status').textContent = `Preparando página ${page}…`;
@@ -441,16 +482,16 @@ function applyZoom() {
   MathGraphEditor.render();
   schedulePreviewQuality();
 }
-function exportNote() {
+function exportNote(mode='save') {
   if (exporting || CalibrationUI.isBusy() || NotebookUI.isBusy() || MathGraphEditor.isOpen() || TableEditor.isOpen() || folderBusy || ImageEditor.isBusy() || ime) return;
   if(!window.AndroidBridge){toast('Guarda desde la app Android.');return;}
-  if(composing||!composition||previewRevision!==revision){saveRequested=true;if(!composing)refreshPreview();if(!composing)saveRequested=false;controls();return;}
-  clearTimeout(refreshTimer); saveDraft(); exporting = true; controls(); $('status').textContent = exportFolderState.configured?'Guardando en la carpeta elegida…':'Elige dónde guardar…';
-  try { AndroidBridge.requestSave(composition.snapshot, $('noteTitle').value || 'Nueva nota', $('gridCheck').checked,ImageEditor.exportJSON(),ImageEditor.count()); }
+  if(composing||!composition||previewRevision!==revision){pendingExportMode=mode;saveRequested=true;if(!composing)refreshPreview();if(!composing)saveRequested=false;controls();return;}
+  clearTimeout(refreshTimer); saveDraft(); exporting = true;currentExportMode=mode; controls(); $('status').textContent = mode==='notes'?'Preparando cuaderno para Notes…':exportFolderState.configured?'Guardando en la carpeta elegida…':'Elige dónde guardar…';
+  try { const method=mode==='notes'?'requestOpenNotes':'requestSave';AndroidBridge[method](composition.snapshot, $('noteTitle').value || 'Nueva nota', $('gridCheck').checked,ImageEditor.exportJSON(),ImageEditor.count()); }
   catch (e) { window.onExportComplete(false, e.message); }
 }
 window.onExportStage = message => { if (exporting) $('status').textContent = message; };
-window.onExportComplete = (ok, message) => { exporting = false; controls(); $('status').textContent = ok ? 'Guardado' : 'Guardado detenido'; toast(message); };
+window.onExportComplete = (ok, message) => { exporting = false; controls(); $('status').textContent = ok ? (currentExportMode==='notes'?'Enviado a Notes':'Guardado') : 'Exportación detenida'; toast(message); };
 
 // Keep toolbar selections as model offsets, including a newly collapsed caret.
 document.addEventListener('selectionchange', captureSelection);
@@ -463,15 +504,11 @@ $('tabs').addEventListener('click', event => {
   TableEditor.mode(event.target.dataset.tab==='tables');
   MathGraphEditor.mode(event.target.dataset.tab==='math');
 });
-$('colorPick').addEventListener('input', () => $('hexInput').value = $('colorPick').value.toUpperCase());
-$('hexInput').addEventListener('change', () => { const v = $('hexInput').value.trim().replace(/^#?/, '#'); if (/^#[\da-f]{6}$/i.test(v)) $('colorPick').value = v; });
-$('sizeSel').addEventListener('change', () => applyStyle({scale: bounded($('sizeSel').value, 35, 200, 100) / 100}));
-$('thicknessSel').addEventListener('change', () => applyStyle({thickness: Math.round(bounded($('thicknessSel').value,0,10,0))}));
-$('applyFormat').onclick = () => {
-  const color = $('hexInput').value.trim().replace(/^#?/, '#');
-  if (!/^#[\da-f]{6}$/i.test(color)) { toast('Escribe un color hexadecimal de 6 dígitos'); return; }
-  applyStyle({color: color.toUpperCase(), opacity: bounded($('opacity').value, 1, 100, 100)});
-};
+$('colorPick').addEventListener('input', () => {const color=$('colorPick').value.toUpperCase();$('hexInput').value=color;applyStyle({color});});
+$('hexInput').addEventListener('input', () => { const color=$('hexInput').value.trim().replace(/^#?/, '#').toUpperCase();if(/^#[\da-f]{6}$/i.test(color)){$('colorPick').value=color;applyStyle({color});} });
+$('opacity').addEventListener('input',()=>{if($('opacity').value!==''&&$('opacity').validity.valid)applyStyle({opacity:Number($('opacity').value)});});
+$('sizeSel').addEventListener('change', () => {if($('sizeSel').value!=='mixed')applyStyle({scale: bounded($('sizeSel').value, 35, 200, 100) / 100});});
+$('thicknessSel').addEventListener('change', () => {if($('thicknessSel').value!=='mixed')applyStyle({thickness: Math.round(bounded($('thicknessSel').value,0,10,0))});});
 $('caseSel').addEventListener('change', () => { const mode = $('caseSel').value; if (mode) changeCase(mode); $('caseSel').value = ''; });
 for (const [id, action] of [['applyList','apply'],['removeList','remove'],['indentBtn','indent'],['outdentBtn','outdent']]) $(id).onclick = () => modifyLists(action);
 $('undoBtn').onclick = () => undoRedo(-1); $('redoBtn').onclick = () => undoRedo(1);
@@ -493,9 +530,10 @@ editor.addEventListener('compositionstart', () => { ime = true; clearTimeout(ref
 editor.addEventListener('compositionend', () => { ime = false; captureSelection(); checkpoint(); changed(); });
 editor.addEventListener('paste', event => { event.preventDefault(); insertText((event.clipboardData || window.clipboardData).getData('text/plain')); });
 editor.addEventListener('drop', event => event.preventDefault());
-['letterSpacing','wordSpacing','lineRows','listIndent','autoPreview'].forEach(id => $(id).addEventListener('change', changed));
+['letterSpacing','wordSpacing','lineRows','autoPreview'].forEach(id => $(id).addEventListener('change', changed));
+$('listIndent').addEventListener('change',()=>{if($('listIndent').value!=='')modifyLists('setIndent');});
 $('gridCheck').addEventListener('change', () => { queueDraft(); drawCurrent(); }); $('noteTitle').addEventListener('input', queueDraft);
-$('refreshBtn').onclick = refreshPreview; $('exportBtn').onclick = exportNote; $('saveDirect').onclick=exportNote;
+$('refreshBtn').onclick = refreshPreview; $('exportBtn').onclick = ()=>exportNote(); $('exportNotesBtn').onclick=()=>exportNote('notes');
 $('chooseFolder').onclick=()=>changeExportFolder();$('clearFolder').onclick=()=>changeExportFolder(true);
 $('cancelBtn').onclick = () => {
   saveRequested=false;
@@ -517,3 +555,19 @@ CalibrationUI.init();
 TableEditor.init();
 MathGraphEditor.init();
 NotebookUI.init();
+
+// Physical keys continue reaching the editable fields; only their soft-keyboard
+// hint changes. Preserve decimal/text hints when returning to virtual input.
+(()=>{
+  const originalModes=new WeakMap();let suppress=false;
+  function updateFields(){
+    document.querySelectorAll('textarea,[contenteditable],input:not([type]),input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],input[type=url],input[type=tel]').forEach(node=>{
+      if(suppress){if(!originalModes.has(node))originalModes.set(node,node.getAttribute('inputmode'));if(node.getAttribute('inputmode')!=='none')node.setAttribute('inputmode','none');}
+      else if(originalModes.has(node)){const mode=originalModes.get(node);if(mode===null)node.removeAttribute('inputmode');else node.setAttribute('inputmode',mode);originalModes.delete(node);}
+    });
+  }
+  window.onKeyboardState=raw=>{try{const data=JSON.parse(raw);suppress=data.suppress===true;$('keyboardMode').value=data.mode||'auto';updateFields();}catch(_){}};
+  $('keyboardMode').onchange=()=>{if(window.AndroidBridge?.setKeyboardMode)AndroidBridge.setKeyboardMode($('keyboardMode').value);else toast('La detección del teclado está disponible en Android.');};
+  new MutationObserver(updateFields).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['contenteditable']});
+  if(window.AndroidBridge?.getKeyboardState)onKeyboardState(AndroidBridge.getKeyboardState());
+})();
