@@ -92,9 +92,13 @@ public class MainActivity extends Activity {
                 backend=Python.getInstance().getModule("mobile_backend");
             }catch(Exception e){startupError=message(e);}
         });
-        webView=new WebView(this);WebSettings ws=webView.getSettings();
+        webView=new WebView(this){
+            @Override public boolean dispatchKeyEventPreIme(android.view.KeyEvent event){
+                if(keyboardController!=null)keyboardController.observe(event);
+                return super.dispatchKeyEventPreIme(event);
+            }
+        };WebSettings ws=webView.getSettings();
         keyboardController=new KeyboardController(this,webView);
-        webView.setOnTouchListener((view,event)->{if(event.getActionMasked()==android.view.MotionEvent.ACTION_UP)view.postDelayed(()->{if(keyboardController!=null)keyboardController.hideIfNeeded();},80);return false;});
         ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setBuiltInZoomControls(false);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String url){if(keyboardController!=null)keyboardController.publish();}
@@ -275,6 +279,8 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public String getKeyboardState(){return keyboardController==null?"{}":keyboardController.state();}
         @JavascriptInterface public void setKeyboardMode(String mode){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.setMode(mode);});}
+        @JavascriptInterface public void beginTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.beginTouchInput();});}
+        @JavascriptInterface public void requestTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.requestTouchKeyboard();});}
         @JavascriptInterface public void requestOpenNotes(String snapshot,String title,boolean grid,String images,int pages){
             if(destroyed||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
             if(snapshot==null||!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de exportar");return;}
@@ -497,6 +503,8 @@ public class MainActivity extends Activity {
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.refresh();}
     @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchKeyEvent(event);}
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchTouchEvent(event);}
+    @Override public boolean dispatchGenericMotionEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchGenericMotionEvent(event);}
     @Override protected void onPause(){if(keyboardController!=null)keyboardController.stop();if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(notesProbe!=null){notesProbe.receive(intent);send("onNotesProbeShared","");}}
     @Override protected void onDestroy(){destroyed=true;if(keyboardController!=null)keyboardController.stop();if(notesProbe!=null)notesProbe.close();if(worker!=null)worker.shutdownNow();if(webView!=null){disposeWebView(webView);webView=null;}super.onDestroy();}

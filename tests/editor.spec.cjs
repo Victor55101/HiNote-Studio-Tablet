@@ -904,6 +904,36 @@ test('V38 physical keyboard keeps input editable and restores virtual hints in a
   await page.evaluate(()=>onKeyboardState('{"mode":"virtual","hardware":true,"suppress":false}'));assert.equal(await page.locator('.cellEditor').first().getAttribute('inputmode'),null);assert.equal(await page.getAttribute('#editor','contenteditable'),'true');
 });
 
+async function keyboardTouchBridge(page){
+  await page.evaluate(()=>{
+    window.keyboardRequests=[];
+    AndroidBridge.beginTouchKeyboard=()=>keyboardRequests.push('begin');
+    AndroidBridge.requestTouchKeyboard=()=>keyboardRequests.push('show');
+    onKeyboardState('{"mode":"auto","hardware":true,"suppress":true}');
+  });
+}
+test('V39 touch opens virtual input with hardware attached, mouse does not, and typing keeps the caret',async page=>{
+  await setup(page,'Texto');await keyboardTouchBridge(page);
+  await page.locator('#noteTitle').tap();await page.waitForFunction(()=>keyboardRequests.includes('show'));
+  assert.equal(await page.getAttribute('#noteTitle','inputmode'),null);assert.equal(await page.evaluate(()=>hinoteKeyboardCanShow()),true);
+  await page.evaluate(()=>{keyboardRequests=[];onKeyboardState('{"mode":"auto","hardware":true,"suppress":true}');});
+  await page.click('#noteTitle');assert.deepEqual(await page.evaluate(()=>keyboardRequests),[]);assert.equal(await page.getAttribute('#noteTitle','inputmode'),'none');
+  await page.locator('#editor .line').tap();await page.waitForFunction(()=>keyboardRequests.includes('show'));await select(page,{line:0,offset:5});
+  await page.evaluate(()=>onKeyboardState('{"mode":"auto","hardware":true,"suppress":true}'));await page.keyboard.type(' físico');assert.deepEqual(await lines(page),['Texto físico']);
+  await openMath(page,'graph');await keyboardTouchBridge(page);await page.locator('#graphPointX').tap();await page.waitForFunction(()=>keyboardRequests.includes('show'));assert.equal(await page.getAttribute('#graphPointX','inputmode'),'decimal');
+});
+test('V39 buttons, dragging, multitouch and physical-only mode never request virtual input',async page=>{
+  await setup(page,'Texto');await keyboardTouchBridge(page);await page.locator('[data-tab="page"]').tap();assert.deepEqual(await page.evaluate(()=>keyboardRequests),[]);
+  const editorBox=await page.locator('#editor').boundingBox(),client=await page.context().newCDPSession(page),x=editorBox.x+50,y=editorBox.y+30;
+  await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+  await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+60,id:1}]});await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await page.evaluate(()=>keyboardRequests.includes('show')),false);
+  await page.evaluate(()=>{keyboardRequests=[];onKeyboardState('{"mode":"auto","hardware":true,"suppress":true}');});
+  await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1},{x:x+40,y,id:2}]});await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await page.evaluate(()=>keyboardRequests.includes('show')),false);
+  await page.evaluate(()=>{keyboardRequests=[];onKeyboardState('{"mode":"physical","hardware":true,"suppress":true}');});await page.locator('#noteTitle').tap();assert.deepEqual(await page.evaluate(()=>keyboardRequests),[]);assert.equal(await page.getAttribute('#noteTitle','inputmode'),'none');
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
     const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';

@@ -559,14 +559,43 @@ NotebookUI.init();
 // Physical keys continue reaching the editable fields; only their soft-keyboard
 // hint changes. Preserve decimal/text hints when returning to virtual input.
 (()=>{
-  const originalModes=new WeakMap();let suppress=false;
+  const originalModes=new WeakMap();let suppress=false,mode='auto',touch=null,touchRevision=0;
+  const fieldSelector='textarea,[contenteditable],input:not([type]),input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],input[type=url],input[type=tel]';
+  function typingField(target){
+    const node=target instanceof Element?target.closest(fieldSelector):null;
+    if(!node||node.disabled||node.readOnly||node.closest('[inert]')||node.getClientRects().length===0)return null;
+    return node.matches('input,textarea')||node.isContentEditable?node:null;
+  }
   function updateFields(){
-    document.querySelectorAll('textarea,[contenteditable],input:not([type]),input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],input[type=url],input[type=tel]').forEach(node=>{
+    document.querySelectorAll(fieldSelector).forEach(node=>{
       if(suppress){if(!originalModes.has(node))originalModes.set(node,node.getAttribute('inputmode'));if(node.getAttribute('inputmode')!=='none')node.setAttribute('inputmode','none');}
       else if(originalModes.has(node)){const mode=originalModes.get(node);if(mode===null)node.removeAttribute('inputmode');else node.setAttribute('inputmode',mode);originalModes.delete(node);}
     });
   }
-  window.onKeyboardState=raw=>{try{const data=JSON.parse(raw);suppress=data.suppress===true;$('keyboardMode').value=data.mode||'auto';updateFields();}catch(_){}};
+  window.onKeyboardState=raw=>{try{
+    const data=JSON.parse(raw);suppress=data.suppress===true;mode=data.mode||'auto';$('keyboardMode').value=mode;
+    if(suppress){touch=null;touchRevision++;}updateFields();
+  }catch(_){}};
+  window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);
+  document.addEventListener('pointerdown',event=>{
+    touch=null;touchRevision++;
+    if((event.pointerType!=='touch'&&event.pointerType!=='pen')||!event.isPrimary||mode==='physical')return;
+    const node=typingField(event.target);if(!node)return;
+    touch={id:event.pointerId,node,x:event.clientX,y:event.clientY,moved:false};
+    // Restore the field's original hint before its default focus/selection.
+    // A mouse click never enters this path, even when it focuses the same field.
+    suppress=false;updateFields();window.AndroidBridge?.beginTouchKeyboard?.();
+  },true);
+  document.addEventListener('pointermove',event=>{if(touch&&event.pointerId===touch.id&&Math.hypot(event.clientX-touch.x,event.clientY-touch.y)>12)touch.moved=true;},true);
+  document.addEventListener('pointercancel',()=>{touch=null;touchRevision++;},true);
+  document.addEventListener('pointerup',event=>{
+    if(!touch||event.pointerId!==touch.id)return;
+    const gesture=touch,request=touchRevision;touch=null;if(gesture.moved)return;
+    requestAnimationFrame(()=>{
+      if(request===touchRevision&&hinoteKeyboardCanShow()&&typingField(document.activeElement)===gesture.node)
+        window.AndroidBridge?.requestTouchKeyboard?.();
+    });
+  },true);
   $('keyboardMode').onchange=()=>{if(window.AndroidBridge?.setKeyboardMode)AndroidBridge.setKeyboardMode($('keyboardMode').value);else toast('La detección del teclado está disponible en Android.');};
   new MutationObserver(updateFields).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['contenteditable']});
   if(window.AndroidBridge?.getKeyboardState)onKeyboardState(AndroidBridge.getKeyboardState());
