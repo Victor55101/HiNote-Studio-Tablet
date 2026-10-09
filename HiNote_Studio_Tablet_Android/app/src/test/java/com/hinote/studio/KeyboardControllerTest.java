@@ -5,6 +5,7 @@ import android.content.res.Configuration;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.WindowManager;
 import android.webkit.WebView;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -29,9 +30,13 @@ public class KeyboardControllerTest {
         MotionEvent.PointerCoords position=new MotionEvent.PointerCoords();position.x=100;position.y=100;position.pressure=1;
         return MotionEvent.obtain(1,1,action,1,new MotionEvent.PointerProperties[]{pointer},new MotionEvent.PointerCoords[]{position},0,0,1,1,4,0,source,0);
     }
+    public static class RecordingActivity extends Activity {
+        int windowUpdates;
+        @Override public void onWindowAttributesChanged(WindowManager.LayoutParams attributes){windowUpdates++;super.onWindowAttributesChanged(attributes);}
+    }
     private static final class Session implements AutoCloseable {
-        final ActivityController<Activity> host=Robolectric.buildActivity(Activity.class).setup();
-        final Activity activity=host.get();final WebView web=new WebView(activity);
+        final ActivityController<RecordingActivity> host=Robolectric.buildActivity(RecordingActivity.class).setup();
+        final RecordingActivity activity=host.get();final WebView web=new WebView(activity);
         final KeyboardController keyboard=new KeyboardController(activity,web);
         Session(){
             activity.setContentView(web);
@@ -39,9 +44,51 @@ public class KeyboardControllerTest {
             keyboard.start();keyboard.setMode("auto");
         }
         JSONObject state()throws Exception{return new JSONObject(keyboard.state());}
+        int flags(){return activity.getWindow().getAttributes().flags;}
         void event(int action,int source){MotionEvent e=motion(action,source);try{keyboard.observe(e);}finally{e.recycle();}}
         void finger(){event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);keyboard.beginTouchInput();}
         @Override public void close(){keyboard.stop();web.destroy();host.pause().stop().destroy();}
+    }
+    @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeDisconnectedAcrossKeysWithoutLosingKeyFocus()throws Exception{
+        try(Session s=new Session()){
+            s.activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            s.web.requestFocus();assertTrue(s.web.hasFocus());
+            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.observe(physicalTyping());
+            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            int updates=s.activity.windowUpdates,flags=s.flags();
+            for(int i=0;i<60;i++){
+                s.keyboard.observe(physicalTyping());
+                s.keyboard.observe(KeyEvent.changeAction(physicalTyping(),KeyEvent.ACTION_UP));
+                assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+                assertTrue(s.web.hasFocus());
+            }
+            // Focus/configuration callbacks must not release the gate either.
+            s.keyboard.refresh();s.keyboard.publish();
+            assertEquals(updates,s.activity.windowUpdates);assertEquals(flags,s.flags());
+            assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            assertNotEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            s.finger();assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            assertTrue(s.web.hasFocus());assertTrue(s.state().getBoolean("hardware"));
+            s.keyboard.observe(physicalTyping());assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+        }
+    }
+    @Test @Config(sdk={28,31}) public void imeGateFollowsManualModesResumeAndHardwareRemoval()throws Exception{
+        try(Session s=new Session()){
+            s.keyboard.setMode("physical");s.finger();
+            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.setMode("virtual");s.keyboard.observe(physicalTyping());
+            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.setMode("auto");assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.stop();s.keyboard.start();assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.finger();assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.event(MotionEvent.ACTION_HOVER_MOVE,InputDevice.SOURCE_MOUSE);
+            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            Configuration config=s.activity.getResources().getConfiguration();
+            config.keyboard=Configuration.KEYBOARD_NOKEYS;config.hardKeyboardHidden=Configuration.HARDKEYBOARDHIDDEN_YES;
+            s.keyboard.onInputDeviceRemoved(4);
+            assertFalse(s.state().getBoolean("hardware"));assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+        }
     }
     @Test public void touchAndPhysicalInputAlternateWithoutDisconnectingNearLink()throws Exception{
         try(Session s=new Session()){

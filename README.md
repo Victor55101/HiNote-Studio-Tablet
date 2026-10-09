@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V39
+# HiNote Studio Tablet — V40
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V40 corrige la reapertura del teclado virtual con cada tecla física: mantiene un bloqueo de entrada del teclado virtual en la ventana de HiNote hasta volver a tocar un campo editable. Conserva la alternancia con NearLink conectado y las funciones de V39. Detalles y comprobación: [docs/V40.md](docs/V40.md).
 
 V39 corrige el teclado automático: tocar un campo permite usar el teclado virtual con NearLink conectado; escribir con teclas físicas o usar el ratón/panel táctil lo oculta. La conexión del teclado ya no decide por sí sola. Conserva V38 y los modos manuales. Detalles y comprobación en la tablet: [docs/V39.md](docs/V39.md).
 
