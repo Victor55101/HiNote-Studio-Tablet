@@ -15,7 +15,6 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.android.controller.ActivityController;
 import static org.junit.Assert.*;
-import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,manifest=Config.NONE)
@@ -50,12 +49,13 @@ public class KeyboardControllerTest {
         void finger(){event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);keyboard.beginTouchInput();}
         @Override public void close(){keyboard.stop();web.destroy();host.pause().stop().destroy();}
     }
-    @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeDisconnectedAcrossKeysWithoutLosingKeyFocus()throws Exception{
+    @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeDisconnectedAcrossKeysAndWindowFocusable()throws Exception{
         try(Session s=new Session()){
             s.activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            // Robolectric has no Chromium renderer/focus delegate. Establish
-            // the focused-editor precondition through its supported shadow.
-            shadowOf(s.web).setViewFocus(true);assertTrue(s.web.hasFocus());
+            // Robolectric does not run Chromium's focus delegate. Verify the
+            // native window remains eligible for key focus here; editor.spec.cjs
+            // checks actual DOM focus/caret preservation in Chromium.
+            assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             s.keyboard.observe(physicalTyping());
             assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
@@ -64,7 +64,7 @@ public class KeyboardControllerTest {
                 s.keyboard.observe(physicalTyping());
                 s.keyboard.observe(KeyEvent.changeAction(physicalTyping(),KeyEvent.ACTION_UP));
                 assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
-                assertTrue(s.web.hasFocus());
+                assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             }
             // Focus/configuration callbacks must not release the gate either.
             s.keyboard.refresh();s.keyboard.publish();
@@ -72,7 +72,8 @@ public class KeyboardControllerTest {
             assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             assertNotEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             s.finger();assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
-            assertTrue(s.web.hasFocus());assertTrue(s.state().getBoolean("hardware"));
+            assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            assertTrue(s.state().getBoolean("hardware"));
             s.keyboard.observe(physicalTyping());assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
         }
     }
