@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://hinote.local">
+<link rel="stylesheet" href="images.css">
+<link rel="stylesheet" href="tables.css">
+<link rel="stylesheet" href="math_graph.css">
 <title>HiNote Studio Tablet</title>
 <style>
 :root{
@@ -16,7 +19,12 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 .logo{width:40px;height:40px;border-radius:14px;background:#f8fafc;display:grid;place-items:center;padding:3px;overflow:hidden;flex:0 0 auto}.logo img{display:block;width:100%;height:100%;object-fit:contain}
 .titlewrap{min-width:0;flex:1}.titlewrap h1{font-size:18px;margin:0}.titlewrap small{color:#b8c4d9}.topactions{display:flex;gap:8px}
 .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 13px;border-radius:10px;font-weight:650;cursor:pointer}.btn.primary{background:var(--accent2);color:#fff;border-color:transparent}.btn.accent{background:var(--accent);color:#fff;border-color:transparent}.btn.ghost{background:transparent;color:#fff;border-color:#40506c}.btn:disabled{opacity:.45}
-.toolbar{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);overflow:auto;white-space:nowrap}
+.toolbar{display:flex;gap:10px;align-items:center;min-width:0;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);overflow:hidden;white-space:nowrap}
+.toolbarPinned{display:flex;gap:8px;align-items:center;flex:0 0 auto}
+.toolbarScroll{display:flex;gap:10px;align-items:center;flex:1 1 0;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
+.toolbarScroll>*{flex-shrink:0}
+.toolbar .iconBtn{display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;height:44px;padding:0;font-size:22px}
+.iconBtn svg{width:22px;height:22px;pointer-events:none}
 .segment{display:flex;border:1px solid var(--line);border-radius:11px;overflow:hidden;flex:0 0 auto}.segment button{border:0;background:#fff;padding:9px 12px;color:var(--muted)}.segment button.active{background:#eef1ff;color:#4255e7;font-weight:700}
 .toolpanel{display:flex;gap:10px;align-items:center}.field{display:flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid var(--line);padding:6px 8px;border-radius:10px}.field label{font-size:12px;color:var(--muted)}.field input[type=number]{width:64px;border:0;background:transparent;outline:0}.field input[type=color]{width:34px;height:30px;border:0;background:transparent;padding:0}.field select{border:0;background:transparent;outline:0}
 .workspace{display:grid;grid-template-columns:minmax(360px,1fr) minmax(360px,1fr);gap:12px;padding:12px;min-height:0}
@@ -26,35 +34,39 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:.2s;z-index:20}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .hidden{display:none!important}
 @media(max-width:900px){body{overflow:auto;height:auto}.app{height:auto;min-height:100vh;grid-template-rows:auto auto auto}.workspace{grid-template-columns:1fr;min-height:auto}.editorCard{height:55vh}.previewCard{height:75vh}.toolbar{position:sticky;top:0;z-index:4}.topbar{position:sticky;top:0}.titlewrap small{display:none}.btn{padding:8px 10px}}
-@media(max-width:600px){.titlewrap h1{font-size:16px}.logo{width:34px;height:34px;border-radius:11px}.topbar{padding:9px 10px}.workspace{padding:8px;gap:8px}.toolbar{padding:8px}.field label{display:none}.editor{font-size:16px}.previewWrap{padding:8px}}
+@media(max-width:600px){.topbar{flex-wrap:wrap}.topactions{flex-wrap:wrap;width:100%}.topactions .btn{flex:1;white-space:nowrap}.titlewrap h1{font-size:16px}.logo{width:34px;height:34px;border-radius:11px}.topbar{padding:9px 10px}.workspace{padding:8px;gap:8px}.toolbar{padding:8px}.field label{display:none}.editor{font-size:16px}.previewWrap{padding:8px}}
 .draftFooter{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
 .warningPanel{padding:8px 14px;background:#fff8e6;font-size:12px;max-height:130px;overflow:auto}.warningPanel summary{cursor:pointer}.editor:has(> .line:only-child > br:only-child)::before{content:attr(data-placeholder);color:#7a879b;pointer-events:none;position:absolute}.editorCard .editorScroll{position:relative}
 </style>
+<link rel="stylesheet" href="calibration.css">
 </head>
 <body>
 <div class="app">
   <div class="topbar">
     <div class="logo"><img src="logo-hinote.svg" alt=""></div>
     <div class="titlewrap"><h1>HiNote Studio</h1><small>Edición directa en tu MatePad · exporta a Huawei Notes</small></div>
-    <div class="topactions"><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar</button><button class="btn primary" id="exportBtn">Guardar .hinote</button></div>
+    <div class="topactions"><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar</button><button class="btn primary" id="exportBtn">Guardar .hinote</button><button class="btn accent" id="exportNotesBtn">Exportar a Notes</button></div>
   </div>
 
   <div class="toolbar">
-    <button class="btn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button><button class="btn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
+    <div class="toolbarPinned" id="toolbarPinned" role="group" aria-label="Acciones rápidas">
+      <button class="btn iconBtn" id="undoBtn" title="Deshacer (Ctrl+Z)" aria-label="Deshacer nota">↶</button><button class="btn iconBtn" id="redoBtn" title="Rehacer (Ctrl+Y)" aria-label="Rehacer nota">↷</button>
+    </div>
+    <div class="toolbarScroll" id="toolbarScroll">
     <div class="segment" id="tabs">
-      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button>
+      <button data-tab="text" class="active">Texto</button><button data-tab="lists">Listas</button><button data-tab="page">Página</button><button data-tab="images">Imágenes</button><button data-tab="tables">Tablas</button><button data-tab="math">Fórmulas y gráficas</button><button data-tab="save">Guardado</button><button data-tab="calibration">Calibración</button>
     </div>
     <div class="toolpanel" id="panelText">
       <div class="field"><label>Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected>100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
       <div class="field"><label>Color</label><input type="color" id="colorPick" value="#000000"><input id="hexInput" value="#000000" style="width:82px;border:0;background:transparent;outline:0"></div>
       <div class="field"><label>Opacidad</label><input id="opacity" type="number" min="1" max="100" value="100"><span>%</span></div>
-      <button class="btn" id="applyFormat">Aplicar</button>
+      <div class="field"><label for="thicknessSel">Grosor</label><select id="thicknessSel"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
       <select id="caseSel" class="btn"><option value="">Aa</option><option value="sentence">Tipo oración.</option><option value="lower">minúscula</option><option value="upper">MAYÚSCULAS</option><option value="title">Mayúsculas Cada Palabra</option><option value="toggle">tIPO iNVERSO</option></select>
     </div>
     <div class="toolpanel hidden" id="panelLists">
       <select id="listType" class="btn"><option value="bullet">• Viñeta</option><option value="dash">- Guion</option><option value="asterisk">* Asterisco</option><option value="num_dot">1. Numérica</option><option value="num_paren">1) Numérica</option><option value="alpha_lower_dot">a. Alfabética</option><option value="alpha_lower_paren">a) Alfabética</option><option value="alpha_upper_dot">A. Alfabética</option><option value="alpha_upper_paren">A) Alfabética</option></select>
       <button class="btn" id="applyList">Aplicar lista</button><button class="btn" id="removeList">Quitar</button><button class="btn" id="indentBtn">Nivel →</button><button class="btn" id="outdentBtn">← Nivel</button>
-      <div class="field"><label>Sangría</label><input type="number" id="listIndent" min="0" max="6" value="1"><span>cuadros</span></div>
+      <div class="field"><label for="listIndent">Sangría</label><input type="number" id="listIndent" min="0" max="12" step="1" value="0"><span>cuadros</span></div>
     </div>
     <div class="toolpanel hidden" id="panelPage">
       <div class="field"><label>Interlineado</label><input id="lineRows" type="number" min="1" max="4" value="1"></div>
@@ -62,6 +74,37 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
       <div class="field"><label>Palabras</label><input id="wordSpacing" type="number" min="12" max="60" step="1" value="26"></div>
       <label class="field"><input id="autoPreview" type="checkbox" checked> Vista automática</label>
       <label class="field"><input id="gridCheck" type="checkbox" checked> Cuadrícula</label>
+      <label class="field">Teclado <select id="keyboardMode" aria-label="Teclado en HiNote"><option value="auto">Automático</option><option value="virtual">Mostrar virtual</option><option value="physical">Solo físico</option></select></label>
+    </div>
+    <div class="toolpanel hidden" id="panelImages">
+      <button class="btn accent" id="insertImage">＋ Insertar imagen</button>
+      <button class="btn" id="imageNewPage">＋ Página</button>
+      <button class="btn" id="replaceImage" data-image-action>Reemplazar</button>
+      <button class="btn" id="cropImage" data-image-action>Recortar</button>
+      <button class="btn" id="rotateImageLeft" data-image-action aria-label="Girar imagen 90 grados a la izquierda">↶ 90°</button>
+      <button class="btn" id="rotateImageRight" data-image-action aria-label="Girar imagen 90 grados a la derecha">↷ 90°</button>
+      <div class="field"><label for="imageAngle">Ángulo</label><input id="imageAngle" type="number" min="0" max="359.9" step="1" value="0" data-image-action><span>°</span></div>
+      <div class="field"><label for="imagePage">Página</label><input id="imagePage" type="number" min="1" max="500" value="1" data-image-action></div>
+      <button class="btn" id="imageBack" data-image-action>Atrás</button><button class="btn" id="imageFront" data-image-action>Adelante</button>
+      <button class="btn" id="duplicateImage" data-image-action>Duplicar</button><button class="btn danger" id="deleteImage" data-image-action>Eliminar</button>
+    </div>
+    <div class="toolpanel hidden" id="panelSave">
+      <button class="btn" id="mergeNotebooks">Combinar cuadernos .hinote</button>
+      <button class="btn accent" id="chooseFolder">Elegir carpeta</button>
+      <button class="btn" id="clearFolder">Preguntar cada vez</button>
+      <div class="saveLocation"><strong id="folderLabel" role="status">Se preguntará dónde guardar</strong><small id="folderHint">Elige una carpeta para guardar directamente en ella.</small></div>
+    </div>
+    <div class="toolpanel hidden" id="panelTables">
+      <button class="btn accent" id="insertTable">＋ Insertar tabla</button><span class="field">Toca una tabla para editar. Arrastra ↔ o ↘ en la vista.</span>
+    </div>
+    <div class="toolpanel hidden" id="panelMath">
+      <button class="btn accent" id="insertFormula">＋ Fórmula</button><button class="btn accent" id="insertGraph">＋ Gráfica</button><span class="field">Moldes y coordenadas · Tu escritura · Sin resolución</span>
+    </div>
+    <div class="toolpanel hidden" id="panelCalibration">
+      <label class="field" for="activeProfileSelect">Letra: <select id="activeProfileSelect" aria-label="Calibración de la nota"><option value="original">Original</option></select></label>
+      <button class="btn accent" id="manageCalibration">Mis calibraciones</button>
+      <button class="btn" id="originalCalibration">Usar Original</button>
+    </div>
     </div>
   </div>
 
@@ -76,7 +119,8 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
     <section class="card previewCard">
       <div class="cardhead"><h2>Previsualización</h2><span class="badge" id="pageBadge">Página 1/1</span></div>
       <details class="warningPanel hidden" id="warningPanel"><summary id="warningCount"></summary><ul id="warnings"></ul></details>
-      <div class="previewWrap" id="previewWrap"><div class="canvasShell" id="canvasShell"><canvas id="previewCanvas" width="1000" height="1600"></canvas></div></div>
+      <div id="imageHint" class="imageHint hidden" role="status">Toca una imagen para editarla. Arrastra para mover; usa dos dedos para cambiar tamaño y girar. La escritura siempre queda encima.</div>
+      <div class="previewWrap" id="previewWrap"><div class="canvasShell" id="canvasShell"><canvas id="gridCanvas" width="675" height="1080"></canvas><div id="imageLayer"></div><canvas id="previewCanvas" width="675" height="1080"></canvas><div id="imageSelection" class="hidden"><button data-handle="nw" aria-label="Redimensionar esquina superior izquierda"></button><button data-handle="ne" aria-label="Redimensionar esquina superior derecha"></button><button data-handle="sw" aria-label="Redimensionar esquina inferior izquierda"></button><button data-handle="se" aria-label="Redimensionar esquina inferior derecha"></button><button data-handle="rotate" aria-label="Girar imagen">↻</button></div></div></div>
       <div class="previewFooter">
         <button class="btn" id="prevPage">←</button>
         <div class="center"><button class="btn" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="btn" id="zoomIn">+</button><button class="btn" id="zoomFit">Ajustar</button><span class="status" id="status" role="status" aria-live="polite">Listo</span></div>
@@ -86,6 +130,93 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div id="tableDialog" class="tableDialog hidden" role="dialog" aria-modal="true" aria-labelledby="tableTitle">
+  <section class="tableCard">
+    <div class="tableHeading"><div><h2 id="tableTitle">Editar tabla</h2><p>Tu escritura · Dos renglones por cuadro cuando la altura de los trazos lo permite</p></div><button class="btn" id="tableCancel">Cancelar</button></div>
+    <div class="tableToolArea">
+    <div class="tableTools">
+      <label>Tamaño de tabla <select id="tableMode"><option value="standard">Estándar · 60 %</option><option value="compact">Ajustar al espacio · 60–50 %</option></select></label>
+      <label>Izquierda <input id="tableLeft" type="number" min="0.5" max="15" step="0.5" value="1"> cuadros</label>
+      <label>Espacio anterior <input id="tableGap" type="number" min="0" max="10" step="0.5" value="0"></label>
+      <label>Borde <input id="tableBorder" type="number" min="1" max="10" value="2"><input id="tableBorderColor" type="color" value="#000000" aria-label="Color del borde"></label>
+      <label><input id="tableRepeat" type="checkbox" checked> Repetir encabezado</label>
+      <button class="btn" id="tableAddRow">＋ Fila</button><button class="btn" id="tableDelRow">− Fila</button><button class="btn" id="tableAddCol">＋ Columna</button><button class="btn" id="tableDelCol">− Columna</button>
+    </div>
+    <div class="tableTools tableSelectionTools">
+      <button class="btn" id="tableSelectCells" aria-pressed="false">Seleccionar celdas</button>
+      <button class="btn" id="tableSelectRow">Seleccionar fila</button><button class="btn" id="tableSelectCol">Seleccionar columna</button><button class="btn" id="tableSelectAll">Toda la tabla</button>
+      <small id="tableSelectionHint">Toca una celda para escribir. Usa Seleccionar celdas para dar formato a varias.</small>
+    </div>
+    <div class="tableTools">
+      <strong id="tableCellLabel">Celda 1, 1</strong>
+      <label>Columna activa · ancho <input id="tableColWidth" type="number" min="1" max="15.5" step="0.5"></label>
+      <label>Fila activa · alto mínimo <input id="tableRowHeight" type="number" min="0.5" max="25" step="0.5"></label>
+      <label>Alinear <select id="tableAlign"><option value="mixed" disabled>Mixto</option><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
+      <label>Vertical <select id="tableValign"><option value="mixed" disabled>Mixto</option><option value="top">Arriba</option><option value="middle">Centro</option><option value="bottom">Abajo</option></select></label>
+      <label>Tamaño de selección <select id="tableCellSize"><option value="mixed" disabled>Mixto</option><option value="0">Según tabla · 60 %</option><option value="0.73">Fijo · 73 %</option><option value="0.65">Fijo · 65 %</option><option value="0.6">Fijo · 60 %</option><option value="0.55">Fijo · 55 %</option><option value="0.5">Fijo · 50 %</option></select></label>
+      <input id="tableInkColor" type="color" value="#000000" aria-label="Color del texto seleccionado">
+      <label>Grosor <select id="tableInkWidth"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
+      <button class="btn" id="tableApplyInk">Aplicar color y grosor</button>
+    </div>
+    <p id="tableSizeHint">El tamaño de tabla se usa en las celdas «Según tabla». Un tamaño fijo tiene prioridad. Para unificar, selecciona Toda la tabla y elige Según tabla.</p>
+    </div>
+    <p id="tableMessage" role="status"></p>
+    <div id="tableGridWrap"><table id="tableGrid" aria-label="Celdas de la tabla"></table></div>
+    <div class="tableActions"><button class="btn" id="tableMoveUp" title="Coloca la tabla antes del bloque de texto anterior">↑ Mover tabla arriba</button><button class="btn" id="tableMoveDown" title="Coloca la tabla después del siguiente bloque de texto">↓ Mover tabla abajo</button><button class="btn danger" id="tableRemove">Eliminar tabla</button><small>Las flechas cambian el orden de la tabla en el documento. Las filas pasan completas a la siguiente página.</small><button class="btn primary" id="tableDone">Aplicar tabla</button></div>
+  </section>
+</div>
+<div id="cropDialog" class="cropDialog hidden" role="dialog" aria-modal="true" aria-labelledby="cropTitle">
+  <div class="cropCard"><h2 id="cropTitle">Recortar imagen</h2><p>Arrastra dentro de la imagen para seleccionar el recorte. También puedes ajustar sus bordes con los controles.</p>
+    <div id="cropStage"><img id="cropSource" alt="Imagen original para recortar" draggable="false"><div id="cropBox"></div></div>
+    <div class="cropSliders">
+      <label>Izquierda <input id="cropLeft" type="range" min="0" max="99" step="1"></label><label>Arriba <input id="cropTop" type="range" min="0" max="99" step="1"></label>
+      <label>Derecha <input id="cropRight" type="range" min="1" max="100" step="1"></label><label>Abajo <input id="cropBottom" type="range" min="1" max="100" step="1"></label>
+    </div><div class="cropActions"><button class="btn" id="resetCrop">Restablecer</button><button class="btn" id="cancelCrop">Cancelar</button><button class="btn primary" id="applyCrop">Aplicar recorte</button></div>
+  </div>
+</div>
+<div id="calibrationDialog" class="calibrationDialog hidden" role="dialog" aria-modal="true" aria-labelledby="calibrationTitle">
+  <section class="calibrationCard">
+    <div class="calibrationHeader"><div><h2 id="calibrationTitle">Mis calibraciones</h2><p>Tu escritura, con ocho variantes por carácter.</p></div><button class="btn" id="closeCalibration">Cerrar</button></div>
+    <div id="calibrationStatus" role="status" aria-live="polite">Elige un perfil para ver sus caracteres.</div>
+    <div class="calibrationLayout">
+      <aside class="profileSidebar">
+        <label for="profileList">Perfiles guardados</label><select id="profileList" size="6" aria-label="Perfiles guardados"><option value="original">Original · predeterminada</option></select>
+        <button class="btn primary" id="useProfile">Usar en esta nota</button>
+        <label for="profileName">Nombre del perfil</label><input id="profileName" maxlength="60" value="Mi letra">
+        <div class="profileActions"><button class="btn" id="renameProfile">Renombrar</button><button class="btn" id="duplicateProfile">Duplicar</button><button class="btn" id="backupProfile">Respaldar</button><button class="btn danger" id="deleteProfile">Eliminar</button><button class="btn" id="restoreDeletedProfile">Recuperar última eliminación</button></div>
+        <div id="deleteProfileConfirm" class="notice hidden"><p>¿Eliminar este perfil? Sus archivos exportados se conservan. El borrador activo volverá a Original si lo estaba usando.</p><button class="btn danger" id="confirmDeleteProfile">Sí, eliminar</button><button class="btn" id="cancelDeleteProfile">Cancelar</button></div>
+        <hr><label for="importProfileName">Nombre de nueva calibración</label><input id="importProfileName" maxlength="60" value="Mi letra">
+        <label class="checkLabel"><input type="checkbox" id="extendProfile"> Completar el perfil seleccionado</label>
+        <button class="btn accent" id="importProfile">Importar .hinote / respaldo</button>
+        <small>Elige la nota escrita sobre la plantilla de esta app. Los respaldos .hnprofile se importan como perfiles nuevos.</small>
+      </aside>
+      <div class="profileContent">
+        <h3 id="profileHeading">Original</h3><p id="profileCoverage">Cargando caracteres…</p>
+        <div class="characterTabs"><button class="btn accent" id="showFound">Ver encontrados</button><button class="btn" id="showMissing">Ver faltantes</button></div>
+        <p id="characterLegend">Cada muestra muestra cuántas variantes están disponibles.</p>
+        <label class="characterSearch">Buscar carácter o código <input id="characterSearch" maxlength="20" placeholder="ñ o U+00F1"></label>
+        <div id="characterGrid" class="characterGrid" aria-label="Caracteres del perfil"></div>
+        <p id="profileWarnings"></p>
+        <div id="importReview" class="notice hidden"><strong>Revisa la calibración antes de guardarla</strong><p id="importReviewText"></p><button class="btn primary" id="commitProfile">Guardar perfil</button><button class="btn" id="discardProfile">Descartar</button></div>
+        <details id="templateOptions"><summary>Crear plantilla · agregar o repetir caracteres</summary>
+          <p>Conserva las páginas, su orden y las guías. Usa Rotulador y escribe cada variante dentro de su celda, apoyada en la línea azul. Las líneas rectas nativas también se admiten.</p>
+          <div class="templateGroups"><label><input type="checkbox" name="calibrationGroup" value="base" checked> Español y signos básicos</label><label><input type="checkbox" name="calibrationGroup" value="math"> Matemáticas</label><label><input type="checkbox" name="calibrationGroup" value="code"> Programación y redes</label><label><input type="checkbox" name="calibrationGroup" value="type"> Monedas y tipografía</label></div>
+          <label for="extraCharacters">Caracteres adicionales o solo los que deseas completar</label><input id="extraCharacters" maxlength="512" placeholder="Ejemplo: ¡!€±→">
+          <p id="templateCount"></p><div class="profileActions"><button class="btn" id="templateMissing">Solo los faltantes de este perfil</button><button class="btn accent" id="createTemplate">Guardar plantilla .hinote</button></div>
+          <small>Una fila por carácter, 8 variantes. Abre la plantilla en Huawei Notes, escribe y exporta de nuevo como .hinote. Si una fila queda vacía, no se sobrescribe una muestra existente.</small>
+        </details>
+        <details id="profilePreviewOptions"><summary>Probar esta escritura</summary><label for="profileSample">Texto de prueba (primera página)</label><textarea id="profileSample" maxlength="600" rows="2">Hola Ñandú 123. _- ¡Hola! • * @</textarea><button class="btn" id="previewProfile">Previsualizar perfil</button><p id="profilePreviewWarnings"></p><img id="profilePreview" class="hidden" alt="Muestra de escritura del perfil seleccionado"></details>
+      </div>
+    </div>
+    <div class="calibrationFooter"><small>Original está protegida. Los faltantes pueden usar sus trazos; los avisos indicarán cuándo ocurre.</small><button class="btn hidden" id="cancelCalibration">Cancelar operación</button></div>
+  </section>
+</div>
+<script src="calibration.js"></script>
+<script src="images.js"></script>
+<script src="tables.js"></script>
+<script src="math_graph.js"></script>
+<script src="notebooks.js"></script>
 <script src="editor.js"></script>
+<script src="notes_probe.js"></script>
 </body>
 </html>

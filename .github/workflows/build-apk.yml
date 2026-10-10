@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V22
+name: Build HiNote Studio Tablet V40
 on:
   workflow_dispatch:
   push:
@@ -27,13 +27,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node tests/editor.spec.cjs
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: editor-test-failures
+          name: editor-test-results
           path: test-results/
           if-no-files-found: ignore
   build:
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,9 +47,25 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - run: gradle --no-daemon assembleDebug
+      - run: gradle --no-daemon testStableDebugUnitTest testProbeDebugUnitTest assembleStableDebug
         working-directory: HiNote_Studio_Tablet_Android
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: HiNote-Studio-Tablet-APK-V22
-          path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/debug/app-debug.apk
+          name: android-test-results
+          path: HiNote_Studio_Tablet_Android/app/build/reports/tests/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-Studio-Tablet-APK-V40
+          path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/stable/debug/app-stable-debug.apk
+      - name: Package local signing tool
+        run: |
+          mkdir -p signing-tools
+          signer_path="$(find "$ANDROID_HOME/build-tools" -name apksigner.jar -type f | sort -V | tail -n 1)"
+          test -n "$signer_path"
+          cp "$signer_path" signing-tools/apksigner.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-signing-tool
+          path: signing-tools/apksigner.jar

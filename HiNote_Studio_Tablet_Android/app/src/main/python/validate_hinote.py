@@ -4,6 +4,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import math
 import shutil
 import tempfile
 import zipfile
@@ -41,8 +42,8 @@ def validate_hinote(path: str | Path, *, check_cancelled=None, quiet=False) -> b
             errors.append(f"root .jhinote: {len(root)}")
         if not pages:
             errors.append("no hay páginas .jhinote")
-        if len(bins) != len(pages):
-            errors.append(f"páginas={len(pages)} pero bins={len(bins)}")
+        if len(names) != len(set(names)):
+            errors.append("El ZIP contiene entradas duplicadas")
 
         files = {}
         for name in names:
@@ -91,6 +92,37 @@ def validate_hinote(path: str | Path, *, check_cancelled=None, quiet=False) -> b
                     nm = item.get("name", "")
                     if nm.endswith(".bin"):
                         referenced_bins.append(nm)
+                listed = {item.get("name") for item in obj.get("fileList", [])}
+                page_bins = []
+                for att in page.get("attachment", []):
+                    name = Path(att.get("filePath", "")).name
+                    if name.endswith(".bin"):
+                        page_bins.append(name)
+                        if name not in listed or name not in files:
+                            errors.append(f"{jh}: trazos ausentes de fileList")
+                if len(page_bins) > 1:
+                    errors.append(f"{jh}: más de un bloque de trazos")
+                if {n for n in listed if n and n.endswith('.bin')} != set(page_bins):
+                    errors.append(f"{jh}: referencias de trazos inconsistentes")
+                identities = set()
+                for image in page.get("pageElement", []):
+                    if image.get("elementType") != 1:
+                        errors.append(f"{jh}: elemento de página desconocido")
+                        continue
+                    name = Path(image.get("filePath", "")).name
+                    if name not in files or name not in listed:
+                        errors.append(f"{jh}: imagen ausente de fileList")
+                    if image.get("notePageId") != page.get("id"):
+                        errors.append(f"{jh}: imagen asociada a otra página")
+                    if not image.get("id") or image["id"] in identities:
+                        errors.append(f"{jh}: id de imagen repetido o vacío")
+                    identities.add(image.get("id"))
+                    for key in ('positionX','positionY','width','height','angle','scale','positionZ'):
+                        value = image.get(key)
+                        if not isinstance(value, (float,int)) or not math.isfinite(value):
+                            errors.append(f"{jh}: {key} inválido")
+                        elif key in ('width','height','scale') and value <= 0:
+                            errors.append(f"{jh}: {key} no positivo")
 
         if page_meta:
             numbers = sorted(x[0] for x in page_meta)
@@ -100,8 +132,8 @@ def validate_hinote(path: str | Path, *, check_cancelled=None, quiet=False) -> b
             last_tags = [x for x in page_meta if x[1] == 1]
             if len(last_tags) != 1 or last_tags[0][0] != len(page_meta):
                 errors.append("lastPageTag inválido: debe existir solo en la última página")
-            if len(set(referenced_bins)) != len(page_meta):
-                errors.append("las páginas no referencian un .bin único cada una")
+            if len(referenced_bins) != len(set(referenced_bins)) or set(referenced_bins) != {Path(b).name for b in bins}:
+                errors.append("las referencias .bin no son únicas o están incompletas")
 
         # Valida todos los .bin y muestra resumen por pageNumber cuando es posible.
         bin_to_page = {}

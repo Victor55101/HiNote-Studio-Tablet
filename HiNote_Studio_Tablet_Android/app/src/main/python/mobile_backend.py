@@ -4,12 +4,17 @@ import json
 import math
 import re
 import shutil
+import unicodedata
 import uuid
 from pathlib import Path
 from handwriting_composer import compose_document
 from mobile_hinote_writer import build_hinote_multi
 from pencilengine_writer import write_pencilengine
 from validate_hinote import validate_hinote
+from pencilengine_width import width_level, native_width
+import calibration
+from table_composer import validate_table, cell_segments, border_stroke
+from math_graph_composer import validate_object, object_text
 MAX_CHARACTERS = 200_000
 MAX_PAGES = 500
 MAX_CACHE_BYTES = 512 * 1024 * 1024
@@ -37,20 +42,41 @@ def _document(raw):
     paragraphs = doc.get("paragraphs", [])
     if not isinstance(paragraphs, list) or len(paragraphs) > 10_000:
         raise ValueError("El documento supera 10 000 párrafos.")
-    chars = segments = 0
+    chars = segments = cells = 0
+    table_ids, object_ids = set(), set()
     for para in paragraphs:
-        for seg in para.get("segments", []):
+        if para.get("type") == "table":
+            table = validate_table(para["table"])
+            if table["id"] in table_ids: raise ValueError("Tabla duplicada en el documento")
+            table_ids.add(table["id"])
+            cells += len(table["rows"]) * len(table["widths"])
+            if cells > 2000 or len(table_ids) > 50: raise ValueError("La nota admite hasta 50 tablas y 2000 celdas")
+            current_segments = cell_segments(table)
+        elif para.get("type") in ("formula", "graph"):
+            obj = validate_object(para["object"], para["type"])
+            if obj["id"] in object_ids: raise ValueError("Elemento matemático duplicado")
+            object_ids.add(obj["id"])
+            if len(object_ids) > 100: raise ValueError("La nota admite hasta 100 fórmulas y gráficas")
+            chars += sum(len(text) for text in object_text(obj))
+            current_segments = []
+        elif para.get("type") not in (None, "text"):
+            raise ValueError("Bloque de documento desconocido")
+        else:
+            current_segments = para.get("segments", [])
+        for seg in current_segments:
             if not isinstance(seg.get("text", ""), str):
                 raise ValueError("El texto de un segmento no es válido.")
             chars += len(seg.get("text", "")); segments += 1
             seg["scale"] = _number(seg.get("scale", 1), .35, 2)
             seg["opacity"] = _number(seg.get("opacity", 100), 1, 100)
+            seg["thickness"] = width_level(seg.get("thickness", 0))
         info = para.get("list")
         if info:
             info["level"] = int(_number(info.get("level", 0), 0, 6))
             info["base_indent_squares"] = int(_number(info.get("base_indent_squares", 1), 0, 6))
             info["marker_scale"] = _number(info.get("marker_scale", 1), .35, 2)
             info["marker_opacity"] = _number(info.get("marker_opacity", 100), 1, 100)
+            info["marker_thickness"] = width_level(info.get("marker_thickness", 0))
             if len(str(info.get("marker", ""))) > 16:
                 raise ValueError("Marcador de lista demasiado largo.")
     if chars + max(0,len(paragraphs)-1) > MAX_CHARACTERS or segments > 20_000:
@@ -76,22 +102,30 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
     _check(token)
     doc, settings = _document(document_json), _settings(settings_json)
     project, cache = Path(project_dir), Path(cache_dir)
+    profile_id = json.loads(settings_json or "{}").get("profile", "original")
+    library, fallback, profile_revision = calibration.resolve(project, profile_id)
     snapshot_id = uuid.uuid4().hex
     work = cache / snapshot_id
     work.mkdir(parents=True)
     cache_bytes = 0
+    stroke_counts = []
+    table_pages = []
+    object_pages = []
     try:
         def sink(page):
             nonlocal cache_bytes
             _check(token)
             index = page["page_number"] - 1
+            stroke_counts.append(len(page["strokes"]))
+            table_pages.append(page.get("tables", []))
+            object_pages.append(page.get("objects", []))
             if shutil.disk_usage(cache).free < 20 * 1024 * 1024:
                 raise ValueError("No queda suficiente espacio para generar la nota.")
             binary = work / f"page-{index}.bin"
             write_pencilengine(page, project / "template_1stroke.hinote", binary)
             # Only the preview is rounded; the BIN keeps all original points.
             preview = {"strokes": [[s.get("color", "#000000"), s.get("opacity", 100),
-                [[round(p["x"],3),round(p["y"],3),round(p["pressure"],4)] for p in s["points"]]]
+                [[round(p["x"],3),round(p["y"],3),round(p["pressure"],4)] for p in s["points"]], native_width(s)]
                 for s in page["strokes"]]}
             preview_path = work / f"page-{index}.json"
             preview_path.write_text(_json(preview), encoding="utf-8")
@@ -99,11 +133,25 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             if cache_bytes > MAX_CACHE_BYTES:
                 raise ValueError("La nota supera el espacio de trabajo de 512 MB; divídela en varias notas.")
             if token is not None: token.onProgress(index + 1)
-        result = compose_document(project / "glyphs_v22.json", doc, **settings,
-            page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES)
+        result = compose_document(project / "glyphs_v24.json", doc, **settings,
+            page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library)
+        used = set()
+        for para in doc["paragraphs"]:
+            if para.get("type") in ("formula", "graph"):
+                for text in object_text(para["object"]): used.update(unicodedata.normalize("NFC", text))
+            for seg in (cell_segments(para["table"]) if para.get("type") == "table" else para.get("segments", [])):
+                used.update(unicodedata.normalize("NFC", seg["text"]))
+            used.update(str((para.get("list") or {}).get("marker", "")))
+        restored = sorted(used & fallback)
+        if restored: result["warnings"].insert(0, "Se usó la letra Original para: " + " ".join(restored))
         _check(token)
         manifest = {"snapshot": snapshot_id, "page_count": result["page_count"],
-                    "layout": result["layout"], "warnings": result["warnings"]}
+                    "layout": result["layout"], "warnings": result["warnings"],
+                    "stroke_counts": stroke_counts}
+        manifest["table_pages"] = table_pages
+        manifest["object_pages"] = object_pages
+        manifest["profile"] = profile_id
+        manifest["profile_revision"] = profile_revision
         (work / "manifest.json").write_text(_json(manifest), encoding="utf-8")
         return _json(manifest)
     except BaseException:
@@ -119,16 +167,27 @@ def page_preview(cache_dir, snapshot_id, index):
     if not 0 <= index < info["page_count"]: raise ValueError("Página fuera de rango")
     return (work/f"page-{index}.json").read_text(encoding="utf-8")
 
-def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_path, token=None):
+def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_path, token=None,
+                    images_json="[]", page_count=0, export_dir=None):
     work = _snapshot(cache_dir, snapshot_id)
-    count = json.loads((work/"manifest.json").read_text(encoding="utf-8"))["page_count"]
-    bins = [work/f"page-{i}.bin" for i in range(count)]
-    thumbs = [work/f"page-{i}-{'grid' if grid else 'plain'}.jpg" for i in range(count)]
+    info = json.loads((work/"manifest.json").read_text(encoding="utf-8"))
+    count = max(info["page_count"], int(page_count))
+    if not 1 <= count <= MAX_PAGES:
+        raise ValueError("El documento supera 500 páginas")
+    rendered = Path(export_dir) if export_dir else work
+    if export_dir and rendered.resolve().parent != Path(cache_dir).resolve():
+        raise ValueError("Directorio de exportación inválido")
+    images = _export_images(images_json, count, rendered)
+    stroke_counts = info.get("stroke_counts", [1] * info["page_count"])
+    bins = [work/f"page-{i}.bin" if i < info["page_count"] and stroke_counts[i] else None for i in range(count)]
+    # `grid` is a preview-only preference, retained in the bridge signature.
+    # Native page metadata is base3, so cached thumbnails must use that paper too.
+    thumbs = [rendered/f"page-{i}-native.jpg" for i in range(count)]
     output = Path(output_path)
     try:
         _check(token)
         build_hinote_multi(Path(project_dir)/"template_1stroke.hinote", bins, output,
-            title=title or "Nueva nota", thumbnails=thumbs, check_cancelled=lambda: _check(token))
+            title=title or "Nueva nota", thumbnails=thumbs, images=images, check_cancelled=lambda: _check(token))
         if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
             raise RuntimeError("La nota generada no pasó la validación local")
         _check(token)
@@ -136,6 +195,94 @@ def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_pat
     except BaseException:
         output.unlink(missing_ok=True)
         raise
+
+def export_probe_page(project_dir, cache_dir, snapshot_id, index, title, output_path, token=None,
+                      images_json="[]", page_count=0, export_dir=None):
+    """Public transport experiment: one actual native page, never a fake lasso payload."""
+    work = _snapshot(cache_dir, snapshot_id)
+    info = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+    count = max(info["page_count"], int(page_count))
+    if not 1 <= count <= MAX_PAGES or not isinstance(index, int) or not 0 <= index < count:
+        raise ValueError("Página de prueba fuera de rango")
+    if not export_dir or Path(export_dir).resolve().parent != Path(cache_dir).resolve():
+        raise ValueError("Directorio de exportación inválido")
+    rendered = Path(export_dir)
+    images = _export_images(images_json, 1, rendered)
+    counts = info["stroke_counts"]
+    binary = work / f"page-{index}.bin" if index < info["page_count"] and counts[index] else None
+    output = Path(output_path)
+    try:
+        _check(token)
+        build_hinote_multi(Path(project_dir) / "template_1stroke.hinote", [binary], output,
+            title=title or "Prueba de una página", thumbnails=[rendered / "page-0-native.jpg"],
+            images=images, check_cancelled=lambda: _check(token))
+        if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
+            raise RuntimeError("La página de prueba no pasó la validación local")
+        _check(token)
+        return str(output)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+
+def export_transfer_sample(project_dir, cache_dir, preview_json, output_path, export_dir, token=None):
+    """Three genuine native strokes, from the exact preview used by the Android test."""
+    if Path(export_dir).resolve().parent != Path(cache_dir).resolve():
+        raise ValueError("Directorio de exportación inválido")
+    records = json.loads(preview_json)["strokes"]
+    if len(records) != 3:
+        raise ValueError("La muestra requiere tres trazos")
+    strokes = []
+    for color, opacity, points, width in records:
+        if len(points) != 2 or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            raise ValueError("Muestra no válida")
+        coords = [(float(p[0]), float(p[1])) for p in points]
+        if any(not math.isfinite(x+y) or not 0 <= x <= 1000 or not 0 <= y <= 1600 for x, y in coords):
+            raise ValueError("Coordenadas de muestra inválidas")
+        strokes.append(border_stroke(coords, {"color": color, "border": _number(width, .1, 10)}))
+    output, rendered = Path(output_path), Path(export_dir)
+    try:
+        _check(token)
+        binary = rendered / "sample.bin"
+        write_pencilengine({"strokes": strokes}, Path(project_dir)/"template_1stroke.hinote", binary)
+        build_hinote_multi(Path(project_dir)/"template_1stroke.hinote", [binary], output,
+            title="HiNote · Temporal de tres rayas", thumbnails=[rendered/"page-0-native.jpg"],
+            check_cancelled=lambda: _check(token))
+        if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
+            raise RuntimeError("La muestra no pasó la validación")
+        _check(token)
+        return str(output)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+
+def _export_images(raw, count, directory):
+    """Only native-prepared image files inside this isolated export are trusted."""
+    records = json.loads(raw)
+    if not isinstance(records, list) or len(records) > 200:
+        raise ValueError("La nota admite hasta 200 imágenes")
+    pages = [[] for _ in range(count)]
+    ids = set()
+    for item in records:
+        page = item.get("page")
+        if not isinstance(page, int) or not 0 <= page < count:
+            raise ValueError("Página de imagen inválida")
+        identity = item.get("id", "")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", identity) or identity in ids:
+            raise ValueError("Identificador de imagen inválido o repetido")
+        ids.add(identity)
+        source = Path(item["path"]).resolve()
+        if not source.is_relative_to(directory.resolve()) or not source.is_file() or source.suffix not in (".jpg", ".png"):
+            raise ValueError("Archivo de imagen inválido")
+        clean = {"path": str(source)}
+        for key, low, high in (("x",-3200,3200),("y",-3200,3200),("width",1,3200),("height",1,3200),("angle",-360,360)):
+            value = float(item[key])
+            if not math.isfinite(value) or not low <= value <= high:
+                raise ValueError("Transformación de imagen inválida")
+            clean[key] = value
+        pages[page].append(clean)
+        if len(pages[page]) > 20:
+            raise ValueError("Cada página admite hasta 20 imágenes")
+    return pages
 
 def remove_snapshot(cache_dir, snapshot_id):
     if re.fullmatch(r"[0-9a-f]{32}", snapshot_id):
