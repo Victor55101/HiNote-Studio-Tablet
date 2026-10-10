@@ -15,6 +15,7 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.android.controller.ActivityController;
 import static org.junit.Assert.*;
+import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,manifest=Config.NONE)
@@ -52,7 +53,9 @@ public class KeyboardControllerTest {
     @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeDisconnectedAcrossKeysWithoutLosingKeyFocus()throws Exception{
         try(Session s=new Session()){
             s.activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            s.web.requestFocus();assertTrue(s.web.hasFocus());
+            // Robolectric has no Chromium renderer/focus delegate. Establish
+            // the focused-editor precondition through its supported shadow.
+            shadowOf(s.web).setViewFocus(true);assertTrue(s.web.hasFocus());
             assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             s.keyboard.observe(physicalTyping());
             assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
