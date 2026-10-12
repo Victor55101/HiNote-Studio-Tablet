@@ -2,8 +2,9 @@
 /* Presentation only: move existing controls, preserve model IDs and action handlers. */
 window.StudioUI = (() => {
   const el=id=>document.getElementById(id), node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text)n.textContent=text;return n;};
-  const paths={list:'M9 6h12M9 12h12M9 18h12M3 6h.01M3 12h.01M3 18h.01',undo:'M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12',redo:'m15 5 5 5-5 5m5-5H10a6 6 0 0 0 0 12',paste:'M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3M9 2h6v5H9z',image:'M3 3h18v18H3zM3 16l6-6 6 6 3-3 3 3M16 7h.01',table:'M3 3h18v18H3zM3 9h18M9 3v18',formula:'M18 4H6l7 8-7 8h12',graph:'M4 3v17h17M7 14l4-5 4 3 6-8',plus:'M12 5v14M5 12h14',left:'m14 5-7 7 7 7M7 12h14',right:'m10 5 7 7-7 7M3 12h14',close:'m6 6 12 12M6 18 18 6',up:'m5 12 7-7 7 7M12 5v16',down:'m5 12 7 7 7-7M12 3v14'};
+  const paths={chevron:'m6 9 6 6 6-6',move:'M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4M7 8l-4 4 4 4M17 8l4 4-4 4',copy:'M8 8h13v13H8zM16 8V3H3v13h5',trash:'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',resize:'M8 4H4v4M4 4l16 16M16 20h4v-4',crop:'M8 3v13h13M3 8h13v13',rotate:'M20 7a9 9 0 1 0 1 9M20 2v5h-5',replace:'M3 8h15l-4-4M21 16H6l4 4',keyboard:'M3 5h18v14H3zM7 9h.01M12 9h.01M17 9h.01M7 13h.01M12 13h.01M17 13h.01M8 16h8',list:'M9 6h12M9 12h12M9 18h12M3 6h.01M3 12h.01M3 18h.01',undo:'M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12',redo:'m15 5 5 5-5 5m5-5H10a6 6 0 0 0 0 12',paste:'M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3M9 2h6v5H9z',image:'M3 3h18v18H3zM3 16l6-6 6 6 3-3 3 3M16 7h.01',table:'M3 3h18v18H3zM3 9h18M9 3v18',formula:'M18 4H6l7 8-7 8h12',graph:'M4 3v17h17M7 14l4-5 4 3 6-8',plus:'M12 5v14M5 12h14',left:'m14 5-7 7 7 7M7 12h14',right:'m10 5 7 7-7 7M3 12h14',close:'m6 6 12 12M6 18 18 6',up:'m5 12 7-7 7 7M12 5v16',down:'m5 12 7 7 7-7M12 3v14'};
   function icon(key){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.8');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');svg.classList.add('uiIcon');const p=document.createElementNS(svg.namespaceURI,'path');p.setAttribute('d',paths[key]);svg.append(p);return svg;}
+  function objectIcon(button,action){const key=/Move$/.test(action)?'move':/Copy$/.test(action)?'copy':/Delete$/.test(action)?'trash':/Resize$/.test(action)?'resize':null;if(key)button.replaceChildren(icon(key));}
   function decorate(id,key,only=false){const b=el(id);if(!b)return;const label=b.getAttribute('aria-label')||b.textContent.trim();if(only){b.textContent='';b.setAttribute('aria-label',label);b.title=label;}b.prepend(icon(key));}
   function tabs(items,changed,cls='inspectorTabs'){
     const bar=node('div',cls);bar.setAttribute('role','tablist');
@@ -61,7 +62,7 @@ window.StudioUI = (() => {
     const rows=[...toolArea.querySelectorAll('.tableTools')],body=node('div','tableBody'),main=node('div','tableMain'),canvas=node('div','tableCanvas'),side=node('aside','tableSide');
     canvas.append(rows[1],el('tableGridWrap'));rows[2].classList.add('tableCellTools');main.append(canvas,rows[2]);side.append(rows[0]);
     const help=node('details');help.open=true;help.append(node('summary',null,'Ayuda de tamaños'),el('tableSizeHint'),el('tableMessage'));side.append(help);body.append(main,side);toolArea.replaceWith(body);
-    const ink=node('label',null,'Color');el('tableInkColor').before(ink);ink.append(el('tableInkColor'));
+    const ink=node('label',null,'Color del texto');el('tableInkColor').before(ink);ink.append(el('tableInkColor'));
     const border=node('label',null,'Color del borde');el('tableBorder').parentElement.after(border);border.append(el('tableBorderColor'));
   }
   function buildProfiles(){
@@ -98,7 +99,7 @@ window.StudioUI = (() => {
   function toHex(){const {h,s,v}=hsv,c=v*s,x=c*(1-Math.abs(h/60%2-1)),m=v-c;const a=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];return '#'+a.map(n=>Math.round((n+m)*255).toString(16).padStart(2,'0')).join('').toUpperCase();}
   function syncColors(){for(const [input,b] of colorButtons){const color=input.value;b.querySelector('.colorSwatch').style.background=color;b.querySelector('.colorCode').textContent=input.dataset.mixed==='true'?'Mixto':color.toUpperCase();b.disabled=input.disabled;b.setAttribute('aria-label',(input.getAttribute('aria-label')||'Elegir color')+': '+color.toUpperCase());}}
   function colorPaint(){const c=toHex();el('colorSV').style.background=`linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,transparent),hsl(${hsv.h},100%,50%)`;el('colorCursor').style.left=hsv.s*100+'%';el('colorCursor').style.top=(1-hsv.v)*100+'%';el('colorPreview').style.background=c;el('colorHue').value=hsv.h;el('colorSaturation').value=Math.round(hsv.s*100);el('colorValue').value=Math.round(hsv.v*100);if(document.activeElement!==el('colorHex'))el('colorHex').value=c;el('colorError').textContent='';}
-  function commitColor(){if(!colorInput||colorInput.disabled)return;const c=toHex();if(colorInput.value.toUpperCase()===c)return;colorInput.value=c;colorInput.dataset.mixed='false';colorInput.dispatchEvent(new Event('input',{bubbles:true}));colorInput.dispatchEvent(new Event('change',{bubbles:true}));if(colorInput.id==='tableInkColor')el('tableApplyInk').click();syncColors();}
+  function commitColor(){if(!colorInput||colorInput.disabled)return;const c=toHex();if(colorInput.value.toUpperCase()===c)return;colorInput.value=c;colorInput.dataset.mixed='false';colorInput.dispatchEvent(new Event('input',{bubbles:true}));colorInput.dispatchEvent(new Event('change',{bubbles:true}));syncColors();}
   function recentColors(){try{return JSON.parse(localStorage.getItem('hinote-recent-colors')||'[]').filter(valid).slice(0,8);}catch(_){return [];}}
   function palette(container,colors){container.replaceChildren();for(const c of colors){const b=node('button');b.style.background=c;b.type='button';b.setAttribute('aria-label','Color '+c);b.onclick=()=>{hsv=fromHex(c);colorPaint();commitColor();};container.append(b);}}
   function openColor(input){
@@ -137,6 +138,6 @@ window.StudioUI = (() => {
     // Disable hidden native color controls and their visible proxies together.
     CalibrationUI.redraw();
   }
-  return {init,setTab,ribbon,meta,mathMode,profile,syncColors,closeColor,selectGraphPane:key=>graphTabs.select(key),selectProfilePane:key=>profileTabs.select(key)};
+  return {icon,objectIcon,init,setTab,ribbon,meta,mathMode,profile,syncColors,closeColor,selectGraphPane:key=>graphTabs.select(key),selectProfilePane:key=>profileTabs.select(key)};
 })();
 StudioUI.init();

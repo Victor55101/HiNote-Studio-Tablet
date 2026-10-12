@@ -553,7 +553,7 @@ NotebookUI.init();
 // Physical keys continue reaching the editable fields; only their soft-keyboard
 // hint changes. Preserve decimal/text hints when returning to virtual input.
 (()=>{
-  const originalModes=new WeakMap();let suppress=false,mode='auto',touch=null,touchRevision=0;
+  const originalModes=new WeakMap();let suppress=false,nativeGate=false,mode='auto',touch=null,touchRevision=0;
   const fieldSelector='textarea,[contenteditable],input:not([type]),input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],input[type=url],input[type=tel]';
   function typingField(target){
     const node=target instanceof Element?target.closest(fieldSelector):null;
@@ -562,12 +562,12 @@ NotebookUI.init();
   }
   function updateFields(){
     document.querySelectorAll(fieldSelector).forEach(node=>{
-      if(suppress){if(!originalModes.has(node))originalModes.set(node,node.getAttribute('inputmode'));if(node.getAttribute('inputmode')!=='none')node.setAttribute('inputmode','none');}
+      if(suppress&&!nativeGate){if(!originalModes.has(node))originalModes.set(node,node.getAttribute('inputmode'));if(node.getAttribute('inputmode')!=='none')node.setAttribute('inputmode','none');}
       else if(originalModes.has(node)){const mode=originalModes.get(node);if(mode===null)node.removeAttribute('inputmode');else node.setAttribute('inputmode',mode);originalModes.delete(node);}
     });
   }
   window.onKeyboardState=raw=>{try{
-    const data=JSON.parse(raw);suppress=data.suppress===true;mode=data.mode||'auto';$('keyboardMode').value=mode;
+    const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;mode=data.mode||'auto';$('keyboardMode').value=mode;
     if(suppress){touch=null;touchRevision++;}updateFields();
   }catch(_){}};
   window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);

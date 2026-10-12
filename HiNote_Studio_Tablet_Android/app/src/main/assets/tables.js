@@ -54,11 +54,11 @@ const TableEditor = (() => {
       if(/^(DIV|P)$/.test(n.tagName)&&n!==node&&out.length&&!out.at(-1).text.endsWith('\n'))out.push({text:'\n',...style});
       for(const child of n.childNodes)walk(child,cleanStyle({...style,...n.dataset}));
     }
-    walk(node,DEFAULT_STYLE);return mergeSegments(out);
+    walk(node,cleanStyle(working?.rows[+node.dataset.row]?.cells[+node.dataset.col]?.ink||DEFAULT_STYLE));return mergeSegments(out);
   }
   function drawCell(node,segments){
     node.replaceChildren();
-    for(const s of mergeSegments(segments)){const span=document.createElement('span');Object.assign(span.dataset,cleanStyle(s));span.style.color=rgba(s.color,s.opacity);span.textContent=s.text;node.append(span);}
+    for(const s of mergeSegments(segments)){const span=document.createElement('span');Object.assign(span.dataset,cleanStyle(s));span.style.color=rgba(s.color,s.opacity);span.style.fontWeight=s.thickness?String(Math.min(850,400+s.thickness*45)):'400';span.textContent=s.text;node.append(span);}
   }
   function flush(){if(!working)return;el('tableGrid').querySelectorAll('.cellEditor').forEach(node=>{working.rows[+node.dataset.row].cells[+node.dataset.col].segments=readCell(node);});}
   function draw(){
@@ -72,7 +72,7 @@ const TableEditor = (() => {
     working.rows.forEach((row,r)=>{
       const tr=document.createElement('tr');tr.style.height=`${Math.max(50,row.height*40)}px`;body.append(tr);
       const th=document.createElement('th');th.textContent=r+1;const grip=document.createElement('button');grip.className='tableGrip row';grip.dataset.row=r;grip.setAttribute('aria-label',`Ajustar altura de fila ${r+1}`);th.append(grip);tr.append(th);
-      row.cells.forEach((cell,c)=>{const td=document.createElement('td'),node=document.createElement('div');node.className='cellEditor';node.contentEditable='true';node.dataset.row=r;node.dataset.col=c;node.setAttribute('role','textbox');node.setAttribute('aria-multiline','true');node.setAttribute('aria-label',`Fila ${r+1}, columna ${c+1}`);drawCell(node,cell.segments);td.append(node);tr.append(td);td.style.textAlign=cell.align;td.style.verticalAlign=cell.valign==='middle'?'middle':cell.valign==='bottom'?'bottom':'top';});
+      row.cells.forEach((cell,c)=>{const td=document.createElement('td'),node=document.createElement('div');node.className='cellEditor';node.contentEditable='true';node.dataset.row=r;node.dataset.col=c;node.setAttribute('role','textbox');node.setAttribute('aria-multiline','true');node.setAttribute('aria-label',`Fila ${r+1}, columna ${c+1}`);Object.assign(node.dataset,cleanStyle(cell.ink||DEFAULT_STYLE));node.style.color=rgba((cell.ink||DEFAULT_STYLE).color,(cell.ink||DEFAULT_STYLE).opacity);drawCell(node,cell.segments);td.append(node);tr.append(td);td.style.textAlign=cell.align;td.style.verticalAlign=cell.valign==='middle'?'middle':cell.valign==='bottom'?'bottom':'top';});
     });
     sync();
   }
@@ -92,7 +92,7 @@ const TableEditor = (() => {
     el('tableSelectCells').setAttribute('aria-pressed',String(selecting));el('tableSelectCells').classList.toggle('accent',selecting);
     el('tableSelectCells').textContent=selecting?'Terminar selección':'Seleccionar celdas';
     el('tableSelectionHint').textContent=selecting?'Toca para marcar o desmarcar. Fila y columna se agregan a la selección. Mayús + clic selecciona un rango; Toda la tabla marca todas las celdas.':'Toca una celda para escribir. Usa Seleccionar celdas para dar formato a varias.';
-    const at=readLines().findIndex(l=>l[0]?.tableId===originalId);
+    syncInk();const at=readLines().findIndex(l=>l[0]?.tableId===originalId);
     el('tableRemove').disabled=!originalId;el('tableMoveUp').disabled=!originalId||at<=0;el('tableMoveDown').disabled=!originalId||at>=readLines().length-1;window.StudioUI?.syncColors();
   }
   function selectGroup(kind){
@@ -112,7 +112,7 @@ const TableEditor = (() => {
     if(locked()||ime)return;captureSelection();checkpoint();
     if(!id&&Object.keys(live()).length>=50){toast('La nota admite hasta 50 tablas');return;}
     originalId=id;insertion=bookmark();
-    working=id?get(id):{id:newId(),widths:[4,5,6],rows:Array.from({length:4},(_,r)=>({height:r?2:1,cells:Array.from({length:3},()=>({...blank(),align:r?'left':'center'}))})),left:1,gap:0,mode:'standard',border:2,color:'#000000',repeat_header:true};
+    working=id?get(id):{id:newId(),widths:[5,5,5],rows:Array.from({length:4},(_,r)=>({height:r?2:1,cells:Array.from({length:3},()=>({...blank(),align:r?'left':'center'}))})),left:1,gap:0,mode:'standard',border:2,color:'#000000',repeat_header:true};
     selecting=false;singleCell(0,0);activate();
   }
   function activate(){el('tableDialog').classList.remove('hidden');document.querySelector('.app').inert=true;draw();show('Estándar: 60 %. Ajustar al espacio reduce hasta 50 % si hace falta. La fila crece para conservar todo el texto.');el('tableDone').focus();window.StudioUI?.syncColors();}
@@ -146,13 +146,26 @@ const TableEditor = (() => {
     if(!node||!node.contains(range.endContainer))return;
     const start=range.cloneRange();start.selectNodeContents(node);start.setEnd(range.startContainer,range.startOffset);
     cellSelection={row:+node.dataset.row,col:+node.dataset.col,start:start.toString().length,end:start.toString().length+range.toString().length};
+    if(document.activeElement?.closest('.cellEditor'))syncInk();
   }
-  function ink(){
-    capture();flush();const cell=currentCell(),s=cellSelection;
-    const patch={color:el('tableInkColor').value.toUpperCase(),thickness:+el('tableInkWidth').value};
-    if(!selecting&&selectedCells.size===1&&s&&s.row===selectedRow&&s.col===selectedCol&&s.end>s.start)cell.segments=mergeSegments([...sliceSegments(cell.segments,0,s.start),...sliceSegments(cell.segments,s.start,s.end).map(x=>({...x,...patch})),...sliceSegments(cell.segments,s.end)]);
-    else chosenCells().forEach(c=>c.segments=c.segments.map(x=>({...x,...patch})));
-    draw();queueDraft();show(`Color y grosor aplicados a ${selectedCells.size===1?'la selección de texto o celda':selectedCells.size+' celdas'}.`);
+  function syncInk(){
+    if(!working)return;
+    const cell=currentCell(),range=cellSelection;
+    let styles=chosenCells().flatMap(c=>c.segments.length?c.segments:[cleanStyle(c.ink||DEFAULT_STYLE)]);
+    if(!selecting&&selectedCells.size===1&&range&&range.end>range.start)styles=sliceSegments(cell.segments,range.start,range.end);
+    if(!styles.length)styles=[cleanStyle(cell.ink||DEFAULT_STYLE)];
+    const same=key=>styles.every(s=>cleanStyle(s)[key]===cleanStyle(styles[0])[key]);
+    el('tableInkColor').value=cleanStyle(styles[0]).color;
+    el('tableInkColor').dataset.mixed=String(!same('color'));
+    el('tableInkWidth').value=same('thickness')?String(cleanStyle(styles[0]).thickness):'mixed';
+    window.StudioUI?.syncColors();
+  }
+  function ink(patch){
+    if(!working)return;capture();flush();const cell=currentCell(),s=cellSelection;
+    if(!selecting&&selectedCells.size===1&&s&&s.row===selectedRow&&s.col===selectedCol&&s.end>s.start)
+      cell.segments=mergeSegments([...sliceSegments(cell.segments,0,s.start),...sliceSegments(cell.segments,s.start,s.end).map(x=>({...x,...patch})),...sliceSegments(cell.segments,s.end)]);
+    else chosenCells().forEach(c=>{c.ink=cleanStyle({...DEFAULT_STYLE,...c.ink,...patch});c.segments=c.segments.map(x=>({...x,...patch}));});
+    draw();queueDraft();show('Formato preparado. Pulsa Aplicar tabla para guardar los cambios en la nota.');
   }
   function insertCellText(text){
     if(text.length>MAX_CHARS)return show('El texto supera el límite de la nota');
@@ -214,7 +227,7 @@ const TableEditor = (() => {
       const choose=document.createElement('button');choose.type='button';choose.className='tableSelect';choose.setAttribute('aria-label','Seleccionar tabla');choose.setAttribute('aria-pressed',String(selectedId===t.id));choose.onclick=e=>{e.stopPropagation();selectPreview(t.id);};box.append(choose);layer.append(box);
       if(selectedId!==t.id)continue;
       const bar=document.createElement('div');bar.className='tableQuickActions';box.append(bar);
-      for(const [action,label,help] of [['tableMove','↔','Mover tabla'],['tableOpen','✎','Editar tabla'],['tableCopy','⧉','Copiar tabla'],['tableDelete','×','Eliminar tabla'],['tableResize','↘','Redimensionar tabla']]){const b=document.createElement('button');b.type='button';b.className=action;b.textContent=label;b.setAttribute('aria-label',help);b.title=help;(action==='tableResize'?box:bar).append(b);b.onclick=e=>{e.stopPropagation();if(action==='tableCopy')copyObject(t.id);if(action==='tableDelete')quickRemove(t.id);};}
+      for(const [action,label,help] of [['tableMove','↔','Mover tabla'],['tableOpen','Editar','Editar tabla'],['tableCopy','⧉','Copiar tabla'],['tableDelete','×','Eliminar tabla'],['tableResize','↘','Redimensionar tabla']]){const b=document.createElement('button');b.type='button';b.className=action;b.textContent=label;window.StudioUI?.objectIcon(b,action);b.setAttribute('aria-label',help);b.title=help;(action==='tableResize'?box:bar).append(b);b.onclick=e=>{e.stopPropagation();if(action==='tableCopy')copyObject(t.id);if(action==='tableDelete')quickRemove(t.id);};}
       const edit=box.querySelector('.tableOpen');let tap=null;
       edit.onclick=()=>{if(!working)open(t.id);};
       // Touch browsers can omit the compatibility click immediately after a drag.
@@ -267,7 +280,9 @@ const TableEditor = (() => {
     grid.addEventListener('input',()=>{flush();queueDraft();});grid.addEventListener('paste',paste);grid.addEventListener('drop',e=>e.preventDefault());
     grid.addEventListener('beforeinput',e=>{if(selecting){e.preventDefault();return;}if(['insertParagraph','insertLineBreak'].includes(e.inputType)&&!e.isComposing){e.preventDefault();insertCellText('\n');}});
     grid.addEventListener('keydown',e=>{if(e.isComposing)return;if(selecting){const n=e.target.closest('.cellEditor');if(n&&[' ','Enter'].includes(e.key)){e.preventDefault();selectCell(+n.dataset.row,+n.dataset.col,e.shiftKey);}return;}if(e.key==='Enter'){e.preventDefault();insertCellText('\n');}if(e.key==='Tab'){e.preventDefault();const n=el('tableGrid').querySelectorAll('.cellEditor'),index=selectedRow*working.widths.length+selectedCol+(e.shiftKey?-1:1);n[clamp(index,0,n.length-1)].focus();}});
-    document.addEventListener('selectionchange',capture);el('tableApplyInk').onclick=ink;
+    document.addEventListener('selectionchange',capture);
+    el('tableInkColor').onchange=()=>ink({color:el('tableInkColor').value.toUpperCase()});
+    el('tableInkWidth').onchange=()=>{if(el('tableInkWidth').value!=='mixed')ink({thickness:+el('tableInkWidth').value});};
     for(const [id,key] of [['tableAlign','align'],['tableValign','valign'],['tableCellSize','size']])el(id).onchange=()=>{const value=el(id).value;if(value==='mixed')return;modify(()=>chosenCells().forEach(c=>c[key]=key==='size'?Number(value):value));show(`Formato aplicado a ${selectedCells.size} ${selectedCells.size===1?'celda':'celdas'}.`);};
     for(const [id,fn] of Object.entries({tableMode:()=>working.mode=el('tableMode').value,tableLeft:()=>working.left=clamp(snap(+el('tableLeft').value),.5,16-working.widths.reduce((a,b)=>a+b,0)),tableGap:()=>working.gap=clamp(snap(+el('tableGap').value),0,10),tableBorder:()=>working.border=clamp(Math.round(+el('tableBorder').value),1,10),tableBorderColor:()=>working.color=el('tableBorderColor').value,tableRepeat:()=>working.repeat_header=el('tableRepeat').checked,tableRowHeight:()=>working.rows[selectedRow].height=clamp(snap(+el('tableRowHeight').value),.5,25),tableColWidth:()=>{const others=working.widths.reduce((n,w,i)=>n+(i===selectedCol?0:w),0);working.widths[selectedCol]=clamp(snap(+el('tableColWidth').value),1,16-working.left-others);}}))el(id).onchange=()=>modify(fn);
     grid.addEventListener('pointerdown',e=>{if(!e.target.classList.contains('tableGrip')||drag)return;e.preventDefault();flush();const column=e.target.classList.contains('column'),index=+(column?e.target.dataset.col:e.target.dataset.row);drag={kind:column?'column':'row',pointer:e.pointerId,index,x:e.clientX,y:e.clientY,value:column?working.widths[index]:working.rows[index].height};e.target.setPointerCapture(e.pointerId);});

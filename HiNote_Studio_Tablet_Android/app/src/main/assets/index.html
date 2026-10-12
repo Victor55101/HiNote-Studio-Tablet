@@ -128,7 +128,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div class="tableToolArea">
 <div class="tableTools">
 <label>Tamaño de tabla <select id="tableMode"><option value="standard">Estándar · 60 %</option><option value="compact">Ajustar al espacio · 60–50 %</option></select></label>
-<label>Izquierda <input id="tableLeft" max="15" min="0.5" step="0.5" type="number" value="1"/> cuadros</label>
+<label>Izquierda (cuadros) <input id="tableLeft" max="15" min="0.5" step="0.5" type="number" value="1"/></label>
 <label>Espacio anterior <input id="tableGap" max="10" min="0" step="0.5" type="number" value="0"/></label>
 <label>Borde <input id="tableBorder" max="10" min="1" type="number" value="2"/><input aria-label="Color del borde" id="tableBorderColor" type="color" value="#000000"/></label>
 <label><input checked="" id="tableRepeat" type="checkbox"/> Repetir encabezado</label>
@@ -147,8 +147,8 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <label>Vertical <select id="tableValign"><option disabled="" value="mixed">Mixto</option><option value="top">Arriba</option><option value="middle">Centro</option><option value="bottom">Abajo</option></select></label>
 <label>Tamaño de selección <select id="tableCellSize"><option disabled="" value="mixed">Mixto</option><option value="0">Según tabla · 60 %</option><option value="0.73">Fijo · 73 %</option><option value="0.65">Fijo · 65 %</option><option value="0.6">Fijo · 60 %</option><option value="0.55">Fijo · 55 %</option><option value="0.5">Fijo · 50 %</option></select></label>
 <input aria-label="Color del texto seleccionado" id="tableInkColor" type="color" value="#000000"/>
-<label>Grosor <select id="tableInkWidth"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
-<button class="btn" id="tableApplyInk">Aplicar color y grosor</button>
+<label>Grosor <select id="tableInkWidth"><option disabled value="mixed">Mixto</option><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
+
 </div>
 <p id="tableSizeHint">El tamaño de tabla se usa en las celdas «Según tabla». Un tamaño fijo tiene prioridad. Para unificar, selecciona Toda la tabla y elige Según tabla.</p>
 </div>
@@ -210,5 +210,6 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <script src="notebooks.js"></script>
 <script src="editor.js"></script>
 <script src="notes_probe.js"></script>
-<script src="studio.js"></script></body>
+<script src="studio.js"></script>
+<script src="studio_controls.js"></script></body>
 </html>

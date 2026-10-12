@@ -298,7 +298,7 @@ test('Tables preserve anchors, text, rich color, sizes and draft reload',async p
   await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openTable(page);
   await fillCell(page,0,0,'Título');await fillCell(page,1,1,'Rojo negro');
   await page.evaluate(()=>{const n=document.querySelector('.cellEditor[data-row="1"][data-col="1"]').firstChild;const r=document.createRange();r.setStart(n,0);r.setEnd(n,4);getSelection().removeAllRanges();getSelection().addRange(r);});
-  await page.click('[data-color-for=tableInkColor]');await page.fill('#colorHex','#ff0000');await page.click('#colorDone');await page.click('#tableApplyInk');
+  await page.click('[data-color-for=tableInkColor]');await page.fill('#colorHex','#ff0000');await page.click('#colorDone');
   await page.selectOption('#tableMode','compact');await page.selectOption('#tableAlign','center');await page.selectOption('#tableValign','middle');await page.selectOption('#tableCellSize','0.55');
   await page.click('#tableDone');
   let doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[1].type,'table');
@@ -326,11 +326,11 @@ test('Touch handles resize columns and rows in half-square steps',async page=>{
   await setup(page);await openTable(page);
   const handle=page.locator('.tableGrip.column[data-col="0"]'),b=await handle.boundingBox();
   await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2-20,b.y+b.height/2);await page.mouse.up();
-  await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();assert.equal(await page.inputValue('#tableColWidth'),'3.5');
+  await page.locator('.cellEditor[data-row="0"][data-col="0"]').focus();assert.equal(await page.inputValue('#tableColWidth'),'4.5');
   const row=page.locator('.tableGrip.row[data-row="0"]'),br=await row.boundingBox();
   const session=await page.context().newCDPSession(page);await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:br.x+br.width/2,y:br.y+br.height/2}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:br.x+br.width/2,y:br.y+br.height/2+20}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   assert.equal(await page.inputValue('#tableRowHeight'),'1.5');await page.click('#tableDone');
-  const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);assert.equal(t.widths[0],3.5);assert.equal(t.rows[0].height,1.5);
+  const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);assert.equal(t.widths[0],4.5);assert.equal(t.rows[0].height,1.5);
 });
 test('Table editor preserves explicit newlines and recovers unfinished changes',async page=>{
   await setup(page);await openTable(page);await fillCell(page,1,0,'uno');await page.keyboard.press('End');await page.keyboard.press('Enter');await page.keyboard.type('dos');
@@ -372,7 +372,7 @@ test('Touch multi-cell formatting preserves unselected cells and supports undo',
   assert.equal(await page.locator('td.selectedCell').count(),3);assert.equal(await page.inputValue('#tableAlign'),'mixed');
   await page.selectOption('#tableAlign','right');await page.selectOption('#tableValign','middle');await page.selectOption('#tableCellSize','0.6');
   assert.equal(await page.locator('td.selectedCell').count(),3);
-  await page.click('[data-color-for=tableInkColor]');await page.fill('#colorHex','#ff0000');await page.click('#colorDone');await page.click('#tableApplyInk');
+  await page.click('[data-color-for=tableInkColor]');await page.fill('#colorHex','#ff0000');await page.click('#colorDone');
   fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/tables-multiselect.png')});
   await page.click('#tableDone');const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);
   for(const i of [0,1,2]){const c=t.rows[i].cells[i];assert.equal(c.size,.6);assert.equal(c.align,'right');assert.equal(c.valign,'middle');assert.equal(c.segments[0].color,'#FF0000');}
@@ -991,9 +991,73 @@ test('V41 layout adapts to portrait and a reduced editing height without losing 
   }
 });
 
+test('V42 custom menus preserve selected text and close before their editor',async page=>{
+  await setup(page,'Hugo');await select(page,{line:0,offset:0},{line:0,offset:4});
+  await page.click('[data-select-for=sizeSel]');await page.click('.selectMenu [data-value="90"]');
+  assert.equal(await page.evaluate(()=>readLines()[0][0].scale),.9);
+  assert.equal(await page.locator('.selectMenu').count(),0);
+  await page.click('[data-select-for=sizeSel]');await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(()=>readLines()[0][0].scale),.7);
+  await openTable(page);await page.click('[data-select-for=tableValign]');
+  assert.equal(await page.evaluate(()=>hinoteHandleBack()),true);assert.equal(await page.isVisible('#tableDialog'),true);assert.equal(await page.locator('.selectMenu').count(),0);
+  assert.equal(await page.evaluate(()=>hinoteHandleBack()),true);assert.equal(await page.isVisible('#tableDialog'),false);
+  assert.equal(await page.evaluate(()=>hinoteHandleBack()),false);
+});
+test('V42 table defaults and immediate ink survive empty-cell typing and application',async page=>{
+  await setup(page);await openTable(page);assert.equal(await page.locator('#tableApplyInk').count(),0);
+  await page.click('[data-color-for=tableInkColor]');await page.fill('#colorHex','#EF4444');await page.click('#colorDone');
+  await page.click('[data-select-for=tableInkWidth]');await page.click('.selectMenu [data-value="5"]');
+  await fillCell(page,0,0,'Rojo');await fillCell(page,1,1,'Normal');await page.click('#tableDone');
+  const table=await page.evaluate(()=>serializeDocument().paragraphs[0].table);assert.deepEqual(table.widths,[5,5,5]);
+  assert.equal(table.rows[0].cells[0].segments[0].color,'#EF4444');assert.equal(table.rows[0].cells[0].segments[0].thickness,5);assert.equal(table.rows[1].cells[1].segments[0].color,'#000000');
+  await page.click('.tableBlock button');await page.locator('.cellEditor').first().focus();assert.equal(await page.inputValue('#tableInkWidth'),'5');assert.equal((await page.inputValue('#tableInkColor')).toUpperCase(),'#EF4444');
+  await page.click('#tableSelectAll');await page.click('[data-select-for=tableInkWidth]');await page.click('.selectMenu [data-value="2"]');await page.click('#tableDone');
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].table.rows[1].cells[1].segments[0].thickness),2);
+});
+test('V42 arrows and select-all stay inside writable fields and skip object controls',async page=>{
+  await setup(page,'Hug');await select(page,{line:0,offset:3});
+  for(let i=0;i<5;i++)await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'editor');await page.keyboard.type('o');assert.deepEqual(await lines(page),['Hugo']);
+  await page.keyboard.press('Control+a');assert.equal(await page.evaluate(()=>getSelection().toString()),'Hugo');
+  await page.fill('#noteTitle','Nota');await page.press('#noteTitle','End');for(let i=0;i<4;i++)await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'noteTitle');
+  await openTable(page);await page.click('#tableDone');await page.evaluate(()=>{const lines=readLines();lines.push([{text:'Final',...DEFAULT_STYLE}]);renderLines(lines);});
+  await select(page,{line:0,offset:4});await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'editor');assert.equal(await page.isVisible('#tableDialog'),false);
+  await openTable(page);await fillCell(page,0,0,'Celda');await page.keyboard.press('End');for(let i=0;i<3;i++)await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.className),'cellEditor');await page.keyboard.press('Control+a');assert.equal(await page.evaluate(()=>getSelection().toString()),'Celda');
+  assert.equal(await page.locator('#tableDone').evaluate(n=>getComputedStyle(n).userSelect),'none');
+});
+test('V42 image touch scroll keeps selection and geometry and image wins only inside its bounds',async page=>{
+  await setup(page);await openTable(page);await page.click('#tableDone');await importImage(page);await page.evaluate(()=>{zoom=.7;applyZoom();const t=serializeDocument().paragraphs[0].table;composition={snapshot:'overlap',page_count:1,table_pages:[[{id:t.id,x:40,y:100,width:900,height:650}]]};previewRevision=revision;TableEditor.render();});
+  const initial=(await imageState(page)).images[0],shell=await page.locator('#canvasShell').boundingBox(),k=.675*.7;
+  await page.touchscreen.tap(shell.x+(initial.x+initial.width/2)*k,shell.y+(initial.y+initial.height/2)*k);
+  assert.equal(await page.evaluate(()=>ImageEditor.selected()?.id),initial.id);assert.equal(await page.locator('.tableTarget').count(),0);
+  const session=await page.context().newCDPSession(page),x=shell.x+(initial.x+initial.width/2)*k,y=shell.y+(initial.y+initial.height/2)*k;
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-90}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await page.evaluate(()=>ImageEditor.selected()?.id),initial.id);assert.deepEqual((await imageState(page)).images[0],initial);
+  await page.evaluate(()=>{$('previewWrap').scrollTop=0;});const movedShell=await page.locator('#canvasShell').boundingBox();await page.touchscreen.tap(movedShell.x+55*k,movedShell.y+300*k);
+  assert.equal(await page.locator('.tableTarget').count(),1);assert.equal(await page.evaluate(()=>ImageEditor.selected()?.id||null),null);assert.equal(await page.textContent('.tableOpen'),'Editar');assert.equal(await page.locator('.tableDelete svg').count(),1);
+});
+test('V42 contextual strips preserve preview height and image actions live on selection',async page=>{
+  await page.setViewportSize({width:1536,height:960});await setup(page,'Texto');const before=await page.locator('.workspace').boundingBox();
+  await page.click('#listToggle');const after=await page.locator('.workspace').boundingBox();assert.equal(after.y,before.y);assert.equal(after.height,before.height);
+  assert.equal(await page.locator('#keyboardMode').evaluate(n=>!!n.closest('.topactions')),true);
+  await importImage(page);await page.evaluate(()=>{zoom=.5;applyZoom();});
+  for(const id of ['cropImage','replaceImage','duplicateImage','deleteImage','rotateImageRight'])assert.equal(await page.locator('#'+id).evaluate(n=>!!n.closest('#imageQuickActions')),true);
+  assert.equal(await page.locator('#panelImages #imageAngle').count(),1);
+  await page.click('#cropImage');assert.equal(await page.evaluate(()=>hinoteHandleBack()),true);assert.equal(await page.isVisible('#cropDialog'),false);
+});
+test('V42 back cancels formula graph and calibration without applying pending edits',async page=>{
+  await setup(page,'Texto');for(const kind of ['formula','graph']){await openMath(page,kind);assert.equal(await page.evaluate(()=>hinoteHandleBack()),true);assert.equal(await page.isVisible('#mathDialog'),false);assert.deepEqual(await lines(page),['Texto']);}
+  await calibrationBridge(page);assert.equal(await page.evaluate(()=>hinoteHandleBack()),true);assert.equal(await page.isVisible('#calibrationDialog'),false);
+});
+test('V42 keyboard gate does not restart input hints and remains available in modal fields',async page=>{
+  await setup(page,'Hug');await select(page,{line:0,offset:3});await page.evaluate(()=>onKeyboardState('{"nativeGate":true,"mode":"auto","hardware":true,"suppress":true}'));await page.keyboard.type('o');assert.deepEqual(await lines(page),['Hugo']);assert.equal(await page.getAttribute('#editor','inputmode'),null);
+  await openMath(page,'graph');assert.equal(await page.getAttribute('#graphPointX','inputmode'),'decimal');await page.fill('#graphPointX','2');await page.press('#graphPointX','End');for(let i=0;i<3;i++)await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'graphPointX');
+  await page.click('#mathCancel');await openMath(page,'formula');await page.locator('.mathSlot').fill('Hug');await page.keyboard.press('End');await page.evaluate(()=>onKeyboardState('{"nativeGate":true,"mode":"auto","hardware":true,"suppress":true}'));await page.keyboard.type('o');assert.equal(await page.locator('.mathSlot').inputValue(),'Hugo');
+  await page.click('[data-category=calculus]');await page.hover('[data-category=calculus]');await page.waitForFunction(()=>getComputedStyle(document.querySelector('[data-category=calculus]')).backgroundColor==='rgb(18, 60, 64)');assert.deepEqual(await page.locator('[data-category=calculus]').evaluate(n=>[getComputedStyle(n).backgroundColor,getComputedStyle(n).color]),['rgb(18, 60, 64)','rgb(129, 224, 218)']);
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));

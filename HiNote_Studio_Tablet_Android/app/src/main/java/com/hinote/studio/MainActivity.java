@@ -92,13 +92,13 @@ public class MainActivity extends Activity {
                 backend=Python.getInstance().getModule("mobile_backend");
             }catch(Exception e){startupError=message(e);}
         });
-        webView=new WebView(this){
-            @Override public boolean dispatchKeyEventPreIme(android.view.KeyEvent event){
-                if(keyboardController!=null)keyboardController.observe(event);
-                return super.dispatchKeyEventPreIme(event);
-            }
-        };WebSettings ws=webView.getSettings();
+        webView=new EditorWebView(this);WebSettings ws=webView.getSettings();
         keyboardController=new KeyboardController(this,webView);
+        ((EditorWebView)webView).setKeyboard(keyboardController);
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(7,18,22)));
+        webView.setBackgroundColor(Color.rgb(7,18,22));
+        if(android.os.Build.VERSION.SDK_INT>=33)getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+            android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::handleEditorBack);
         ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setBuiltInZoomControls(false);
         webView.setWebViewClient(new WebViewClient(){
             @Override public void onPageFinished(WebView view,String url){if(keyboardController!=null)keyboardController.publish();}
@@ -277,6 +277,7 @@ public class MainActivity extends Activity {
                 catch(Exception e){if(!token.isCancelled())send("onPageResult",id+","+quote(snapshot)+","+index+",null,"+quote(message(e)));}
             });
         }
+        @JavascriptInterface public void setEditingField(boolean editing){runOnUiThread(()->{if(!destroyed&&webView instanceof EditorWebView)((EditorWebView)webView).setEditing(editing);});}
         @JavascriptInterface public String getKeyboardState(){return keyboardController==null?"{}":keyboardController.state();}
         @JavascriptInterface public void setKeyboardMode(String mode){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.setMode(mode);});}
         @JavascriptInterface public void beginTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.beginTouchInput();});}
@@ -499,8 +500,18 @@ public class MainActivity extends Activity {
     private void send(String function,String arguments){runOnUiThread(()->{if(!destroyed&&webView!=null)webView.evaluateJavascript("window."+function+" && window."+function+"("+arguments+");",null);});}
     private static void deleteTree(File file){if(file==null)return;File[] children=file.listFiles();if(children!=null)for(File child:children)deleteTree(child);file.delete();}
     private static void disposeWebView(WebView view){view.removeJavascriptInterface("AndroidBridge");if(view.getParent() instanceof ViewGroup)((ViewGroup)view.getParent()).removeView(view);view.destroy();}
+    private boolean handlingBack;
+    private void handleEditorBack(){
+        if(handlingBack||destroyed)return;
+        if(webView==null){finish();return;}
+        handlingBack=true;
+        webView.evaluateJavascript("Boolean(window.hinoteHandleBack && window.hinoteHandleBack())",handled->{
+            handlingBack=false;if(!destroyed&&!"true".equals(handled))finish();
+        });
+    }
+    @Override public void onBackPressed(){handleEditorBack();}
     @Override protected void onResume(){super.onResume();if(keyboardController!=null)keyboardController.start();}
-    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.refresh();}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.windowFocused();}
     @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchKeyEvent(event);}
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchTouchEvent(event);}

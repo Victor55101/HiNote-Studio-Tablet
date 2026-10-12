@@ -1,4 +1,4 @@
-/* HiNote Studio V41. Shared visual language; paper/ink rendering stays independent. */
+/* HiNote Studio V42. Shared visual language; paper/ink rendering stays independent. */
 @font-face{font-family:Manrope;src:url('fonts/Manrope.ttf') format('truetype');font-weight:200 800;font-display:swap}
 :root{color-scheme:dark;--bg:#071216;--panel:#101f26;--surface:#1b303a;--surface-hover:#243e49;--ink:#e4edf0;--muted:#9bb2bc;--line:#2b434e;--accent:#16b5b5;--accent2:#ffa936;--danger:#ff9198;--shadow:0 18px 60px #0005;--paper:#fbfaf7;--active:#123c40}
 body{font-family:Manrope,system-ui,sans-serif;background:var(--bg);color:var(--ink);height:100vh;height:100dvh;overflow:hidden;font-size:15px}
@@ -44,3 +44,37 @@ button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-vis
 @media(min-width:761px){.workspace>.card{height:auto;min-height:0}}
 @media(max-width:900px){.previewFooter{gap:5px;padding:10px}.previewFooter .center{gap:6px}.previewFooter .btn{min-width:40px;min-height:44px;padding:8px}#zoomLabel{min-width:36px;font-size:14px}}
 @media(max-width:760px){.topbar{flex-wrap:wrap;gap:8px}.titlewrap h1{white-space:nowrap}.topactions{width:100%;gap:6px}.topactions .btn{flex:1;font-size:11px;min-height:44px}#refreshBtn{display:inline-flex}.viewState{display:none}}
+
+/* V42: compact contextual controls, consistent menus and editing boundaries. */
+html{background:var(--bg)}body,.app,button,label,summary,[role=tab],.badge{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,[contenteditable=true],[contenteditable=true] *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+[contenteditable=false],[contenteditable=false] *{user-select:none!important;-webkit-user-select:none!important}
+.uiIcon{display:block;pointer-events:none;vertical-align:middle}
+summary{list-style:none;display:flex;align-items:center;gap:9px}summary::-webkit-details-marker{display:none}summary::marker{content:''}
+summary::before{content:'';width:8px;height:8px;flex:0 0 8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);margin:0 4px 0 2px;transition:transform .18s ease}details[open]>summary::before{transform:rotate(45deg)}
+.toolbarScroll.ribbonPanels{flex-direction:row;align-items:center;overflow-x:auto;overflow-y:hidden;min-height:52px}
+.contextPanel{border-top:0;border-left:1px solid var(--line);padding:0 0 0 10px;flex-shrink:0}
+#panelLists:not(.hidden){animation:revealList .18s ease-out}#panelImages:not(.hidden){animation:revealImage .18s ease-out;border-left:0;border-right:1px solid var(--line);padding:0 10px 0 0}
+@keyframes revealList{from{opacity:0;transform:translateX(-15px)}to{opacity:1;transform:translateX(0)}}
+@keyframes revealImage{from{opacity:0;transform:translateX(15px)}to{opacity:1;transform:translateX(0)}}
+.topbar{gap:12px}.topactions{gap:8px;min-width:0}.headerKeyboard{display:flex;flex-direction:column;align-items:stretch;gap:0;font-size:10px;color:var(--muted);padding:5px 10px;min-height:48px;flex-shrink:0}.headerKeyboard .selectButton{font-size:13px;min-height:24px;padding:0 25px 0 0;background:transparent}.headerKeyboard .selectButton .uiIcon{right:1px}
+.selectControl{position:relative;display:inline-flex;min-width:0;max-width:100%;vertical-align:middle;align-items:stretch}
+select.nativeSelect{position:absolute!important;left:0!important;top:0!important;width:1px!important;min-width:0!important;max-width:1px!important;height:1px!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;opacity:0!important;pointer-events:none!important}
+.selectButton{position:relative;display:flex;align-items:center;justify-content:flex-start;gap:12px;min-height:44px;width:100%;padding:10px 38px 10px 14px;border:1px solid transparent;border-radius:13px;background:var(--surface);color:var(--ink);text-align:left;line-height:1.3;white-space:nowrap}
+.selectButton .uiIcon{position:absolute;right:13px;width:17px;height:17px;transition:transform .18s}.selectButton[aria-expanded=true]{border-color:var(--accent);background:var(--surface-hover)}.selectButton[aria-expanded=true] .uiIcon{transform:rotate(180deg)}
+.selectValue{overflow:hidden;text-overflow:ellipsis;min-width:0}.selectButton:hover:not(:disabled){background:var(--surface-hover)}
+.field .selectButton{background:transparent;padding:0 26px 0 0;min-height:25px}.field .selectButton .uiIcon{right:1px}.field>.selectControl{grid-column:1}.quickProfile>.selectControl{grid-column:1/-1;font-size:14px;min-width:130px}.quickProfile{max-width:210px}.caseField .selectButton{min-width:100px}
+.tableTools label>.selectControl,.mathTools label>.selectControl,.graphInspectorPane>.selectControl{width:100%}.graphTraceBar>.selectControl{flex:1}.graphTraceBar .selectButton{font-size:13px}
+.selectMenu{position:fixed;z-index:120;display:flex;flex-direction:column;gap:3px;padding:6px;overflow:auto;overscroll-behavior:contain;background:#172c35;color:var(--ink);border:1px solid #36535e;border-radius:16px;box-shadow:0 14px 45px #0008;animation:selectReveal .16s ease-out}
+.selectMenu>button,.selectList>button{display:flex;align-items:center;gap:10px;flex-shrink:0;width:100%;border:0;border-radius:10px;background:transparent;color:var(--ink);text-align:left;padding:11px 14px;min-height:44px;font-size:14px;line-height:1.4;white-space:normal}
+.selectMenu>button[aria-selected=true],.selectList>button[aria-selected=true]{background:var(--active);color:#9ae6df;font-weight:700}.selectMenu>button.highlighted,.selectMenu>button:hover:not(:disabled),.selectList>button:hover:not(:disabled){background:#294650}.selectMenu>button[aria-selected=true]::after,.selectList>button[aria-selected=true]::after{content:'';margin-left:auto;width:6px;height:11px;border-right:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:rotate(45deg);flex-shrink:0}
+.selectListControl{display:block;width:100%}.selectList{background:#14272f;border-radius:16px;padding:7px;max-height:24vh;overflow:auto}.selectList>button{margin-bottom:3px}
+@keyframes selectReveal{from{opacity:0;transform:translateY(-5px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}
+.imageQuickActions{position:absolute;z-index:9;display:flex;align-items:center;gap:4px;padding:4px;border:1px solid #498a88;border-radius:14px;background:#123c40;box-shadow:0 5px 15px #0004;pointer-events:auto;flex-wrap:wrap;width:max-content;overflow:visible}
+.imageQuickActions .btn{min-width:38px;width:38px;height:42px;min-height:42px;padding:8px;background:#16464a;border-radius:10px;flex-shrink:0}.imageQuickActions [data-handle=move]{touch-action:none}
+#imageSelection [data-handle=rotate]{display:flex;align-items:center;justify-content:center}.imageQuickActions .btn:hover{background:#246268}.tableQuickActions button,.objectQuickActions button,.tableResize,.objectResize{display:flex;align-items:center;justify-content:center;gap:7px;padding:9px;min-width:44px;min-height:44px;line-height:1;box-sizing:border-box}.tableOpen,.objectOpen{padding:10px 14px!important}
+.mathCategories .btn.accent,.mathCategories .btn.accent:not(:disabled):hover,.mathCategories .btn.accent:focus,.characterTabs .btn.accent:not(:disabled):hover,.tableSelectionTools .btn[aria-pressed=true]:hover{background:var(--active);color:#81e0da}.mathCategories .btn:not(.accent):hover{background:var(--surface-hover);color:var(--ink)}
+@media(max-width:1200px){.viewState{display:none}.topbar .titlewrap small{max-width:20vw}.topactions .btn{font-size:12px;padding:10px}.topbar .titlewrap h1{font-size:18px}}
+@media(max-width:900px){.topbar .titlewrap small{display:none}.topbar{padding:10px 16px}.headerKeyboard{min-height:44px}.topactions{gap:6px}.logo{width:38px;height:38px}.topactions .btn{min-height:44px}}
+@media(max-width:760px){.topactions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.headerKeyboard{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:center;gap:12px;min-height:36px}.headerKeyboard .selectControl{min-width:160px}.topactions .btn{min-width:0;font-size:10px}.contextPanel{max-width:none}.quickProfile{max-width:150px}.quickProfile>.selectControl{min-width:110px}}
+@media(prefers-reduced-motion:reduce){.selectMenu,#panelLists,#panelImages{animation:none}summary::before,.selectButton .uiIcon{transition:none}}

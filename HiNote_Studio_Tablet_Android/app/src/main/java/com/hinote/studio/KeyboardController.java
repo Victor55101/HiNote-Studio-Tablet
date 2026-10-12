@@ -48,7 +48,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
             ||event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE);
     }
     void start(){if(active)return;active=true;if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
-    void stop(){active=false;keyObserved=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);}
+    void stop(){active=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);}
     void refresh(){
         boolean found=false;if(inputs!=null)for(int id:inputs.getInputDeviceIds()){
             InputDevice device=inputs.getInputDevice(id);
@@ -58,6 +58,13 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         boolean wasConnected=hardware;
         hardware=found||keyObserved||(config.keyboard==Configuration.KEYBOARD_QWERTY&&config.hardKeyboardHidden==Configuration.HARDKEYBOARDHIDDEN_NO);
         if(wasConnected&&!hardware){physicalInput=false;cancelTouch();}publish();
+    }
+    boolean routeBeforeIme(KeyEvent event){return active&&!"virtual".equals(mode)&&physicalKey(event);}
+    void windowFocused(){
+        refresh();
+        // Drop any stale resize frame from the IME in the previous activity.
+        activity.getWindow().getDecorView().requestApplyInsets();
+        web.requestLayout();web.invalidate();
     }
     void observe(KeyEvent event){if(physicalKey(event)){keyObserved=true;hardware=true;usePhysicalInput();}}
     void observe(MotionEvent event){
@@ -106,7 +113,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         restartForTouch|=wasSuppressed&&!suppress(mode,physicalInput);
         activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode",mode).apply();publish();
     }
-    String state(){return "{\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)+"}";}
+    String state(){return "{\"nativeGate\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)+"}";}
     void publish(){
         if(!active)return;
         applyWindowPolicy(suppress(mode,physicalInput));
@@ -121,14 +128,14 @@ final class KeyboardController implements InputManager.InputDeviceListener {
                 // WebView/IME can request a new composition UI on physical keys.
                 // Keep key focus, but prevent this window from being an IME
                 // target. Do not use NOT_FOCUSABLE, null input connections or
-                // consume/replay keys: normal WebView editing must keep working.
+                // reconstruct typed text: normal WebView editing must keep working.
                 InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
                 if(ime!=null&&activity.hasWindowFocus())ime.hideSoftInputFromWindow(web.getWindowToken(),0);
                 activity.getWindow().addFlags(flag);restartForTouch=true;
             }else activity.getWindow().clearFlags(flag);
         }
-        int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|(blocked?WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
-        if(activity.getWindow().getAttributes().softInputMode!=softMode)activity.getWindow().setSoftInputMode(softMode);
+        int softMode=blocked?WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED;
+        if(activity.getWindow().getAttributes().softInputMode!=softMode){activity.getWindow().setSoftInputMode(softMode);activity.getWindow().getDecorView().requestApplyInsets();web.requestLayout();}
     }
     @Override public void onInputDeviceAdded(int id){refresh();}
     @Override public void onInputDeviceChanged(int id){refresh();}
