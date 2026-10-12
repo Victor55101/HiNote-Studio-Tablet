@@ -79,6 +79,7 @@ const ImageEditor = (() => {
     if(im && document.activeElement!==el('imageAngle'))el('imageAngle').value=Math.round(normalizeAngle(im.angle)*10)/10;
     if(im && document.activeElement!==el('imagePage'))el('imagePage').value=im.page+1;
     el('imageHint').classList.toggle('hidden',!active);
+    window.StudioUI?.ribbon();
   }
   function modified(){
     currentPage=clamp(currentPage,0,count()-1);queueDraft();controls();render();
@@ -88,7 +89,7 @@ const ImageEditor = (() => {
     if(exporting||CalibrationUI.isBusy()||busy||ime)return; finishGesture(false);checkpoint();op();checkpoint();modified();
   }
   function mode(enabled){finishGesture(false);active=enabled;render();}
-  function select(id){selectedId=id;selection();updateControls();}
+  function select(id){selectedId=id;if(id){TableEditor.clearSelection();MathGraphEditor.clearSelection();}selection();updateControls();}
   function insert(replace=false){
     if(exporting||CalibrationUI.isBusy()||busy)return;
     if(!replace && images.length>=200){toast('La nota admite hasta 200 imágenes');return;}
@@ -113,7 +114,7 @@ const ImageEditor = (() => {
         }
         currentPage=im.page;selectedId=im.id;
       });
-      document.querySelector('[data-tab="images"]').click();drawCurrent();
+      window.StudioUI?.setTab('insert');drawCurrent();
       if(!composition&&!composing)refreshPreview();
       toast('Imagen guardada. Puedes moverla, girarla o recortarla.');
     }catch(e){toast(e.message);}

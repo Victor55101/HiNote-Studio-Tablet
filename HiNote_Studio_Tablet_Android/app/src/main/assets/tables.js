@@ -93,7 +93,7 @@ const TableEditor = (() => {
     el('tableSelectCells').textContent=selecting?'Terminar selección':'Seleccionar celdas';
     el('tableSelectionHint').textContent=selecting?'Toca para marcar o desmarcar. Fila y columna se agregan a la selección. Mayús + clic selecciona un rango; Toda la tabla marca todas las celdas.':'Toca una celda para escribir. Usa Seleccionar celdas para dar formato a varias.';
     const at=readLines().findIndex(l=>l[0]?.tableId===originalId);
-    el('tableRemove').disabled=!originalId;el('tableMoveUp').disabled=!originalId||at<=0;el('tableMoveDown').disabled=!originalId||at>=readLines().length-1;
+    el('tableRemove').disabled=!originalId;el('tableMoveUp').disabled=!originalId||at<=0;el('tableMoveDown').disabled=!originalId||at>=readLines().length-1;window.StudioUI?.syncColors();
   }
   function selectGroup(kind){
     flush();selecting=true;cellSelection=null;
@@ -115,7 +115,7 @@ const TableEditor = (() => {
     working=id?get(id):{id:newId(),widths:[4,5,6],rows:Array.from({length:4},(_,r)=>({height:r?2:1,cells:Array.from({length:3},()=>({...blank(),align:r?'left':'center'}))})),left:1,gap:0,mode:'standard',border:2,color:'#000000',repeat_header:true};
     selecting=false;singleCell(0,0);activate();
   }
-  function activate(){el('tableDialog').classList.remove('hidden');document.querySelector('.app').inert=true;draw();show('Estándar: 60 %. Ajustar al espacio reduce hasta 50 % si hace falta. La fila crece para conservar todo el texto.');el('tableDone').focus();}
+  function activate(){el('tableDialog').classList.remove('hidden');document.querySelector('.app').inert=true;draw();show('Estándar: 60 %. Ajustar al espacio reduce hasta 50 % si hace falta. La fila crece para conservar todo el texto.');el('tableDone').focus();window.StudioUI?.syncColors();}
   function close(){working=null;originalId=null;resume=null;drag=null;el('tableDialog').classList.add('hidden');document.querySelector('.app').inert=false;queueDraft();el('insertTable').focus();}
   function commit(){
     flush();try{validate(working);}catch(e){show(e.message);return false;}
@@ -174,7 +174,7 @@ const TableEditor = (() => {
   function remove(){const id=originalId;if(!id||!confirm('¿Eliminar la tabla y su contenido de esta nota? Puedes deshacerlo.'))return;const lines=readLines().filter(l=>l[0]?.tableId!==id);delete tables[id];close();renderLines(lines.length?lines:[[]]);checkpoint();changed();}
   function mode(value){active=value;render();}
   function clearSelection(){selectedId=null;render();}
-  function selectPreview(id){if(locked()||working||drag||!tables[id])return;selectedId=id;MathGraphEditor.clearSelection();render();}
+  function selectPreview(id){if(locked()||working||drag||!tables[id])return;selectedId=id;ImageEditor.select(null);MathGraphEditor.clearSelection();render();}
   function copyObject(id){if(locked()||working||drag)return;elementClipboard={kind:'table',table:get(id)};MathGraphEditor.updateControls();toast('Tabla copiada. Coloca el cursor y pulsa el icono Pegar.');}
   function pasteObject(){
     if(elementClipboard?.kind!=='table'||locked()||working||drag||ime)return;

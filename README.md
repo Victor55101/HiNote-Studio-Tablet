@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V40
+# HiNote Studio Tablet — V41
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V41 incorpora el rediseño de la cinta y de todos los editores: cinco apartados, herramientas de imagen contextuales, paneles de gráficas, fórmulas, tablas y calibraciones, nueva paleta oscura y selector de colores propio. Conserva el motor de trazos y el teclado de V40. Consulta [docs/V41.md](docs/V41.md).
 
 V40 corrige la reapertura del teclado virtual con cada tecla física: mantiene un bloqueo de entrada del teclado virtual en la ventana de HiNote hasta volver a tocar un campo editable. Conserva la alternancia con NearLink conectado y las funciones de V39. Detalles y comprobación: [docs/V40.md](docs/V40.md).
 
@@ -34,7 +36,7 @@ Izquierda, ancho, alto mínimo y espacio anterior se indican en **medios cuadros
 
 Las fórmulas y gráficas son editables en Studio, se incluyen en deshacer/rehacer y en el borrador, y recuperan una edición pendiente al reabrir la app. En Huawei Notes se reciben como **trazos nativos**, con líneas estructurales independientes, conservando color y geometría. No se convierten en una imagen ni en un editor de ecuaciones de Notes.
 
-Para combinar apuntes, agrega archivos `.hinote` en **Guardado → Combinar cuadernos .hinote**. También puedes incorporar las **Páginas del documento abierto** sin exportarlas antes. Marca páginas y revisa el orden. Ver muestra la miniatura original; ↑/↓ cambia el orden. **Guardar cuaderno combinado** prepara y comprueba los recursos, usa la carpeta elegida en Guardado y pregunta el destino si no hay una configurada. Crea un archivo nuevo para importar en Notes; no modifica el cuaderno abierto allí ni los archivos originales.
+Para combinar apuntes, agrega archivos `.hinote` en **Archivo → Combinar cuadernos .hinote**. También puedes incorporar las **Páginas del documento abierto** sin exportarlas antes. Marca páginas y revisa el orden. Ver muestra la miniatura original; ↑/↓ cambia el orden. **Guardar cuaderno combinado** prepara y comprueba los recursos, usa la carpeta elegida en Archivo y pregunta el destino si no hay una configurada. Crea un archivo nuevo para importar en Notes; no modifica el cuaderno abierto allí ni los archivos originales.
 
 Se copian sin cambios los binarios de tinta y recursos de las páginas seleccionadas, incluyendo imágenes y papel. Se regeneran identificadores, numeración y hashes. También se admiten exportaciones parciales con numeración original, como las páginas 8 y 9 de la muestra. Hasta ocho archivos, 128 MiB por entrada, 256 MiB comprimidos en total y 500 páginas/512 MiB en la salida. La lista de archivos de combinación dura durante la sesión; al reiniciar la app se vuelven a seleccionar. Los límites generales del documento se comparten con texto y tablas: cien bloques matemáticos y 8192 caracteres por fórmula.
 
@@ -57,7 +59,7 @@ Las plantillas ya escritas se pueden reutilizar. En la muestra real recibida, co
 ## V25: grosor y mis calibraciones
 
 - **Texto → Grosor**: niveles 1–10 independientes del tamaño de letra, aplicables a una selección y a marcadores de lista. **Calibrado** conserva el grosor original de cada trazo y es el valor inicial, también para borradores anteriores. Los cambios admiten deshacer/rehacer y se conservan al cerrar la app.
-- **Calibración → Mis calibraciones**: Original sigue siendo la letra predeterminada y está protegida. Se pueden guardar hasta 20 perfiles adicionales, nombrarlos, duplicarlos, alternar entre ellos y respaldarlos como `.hnprofile`. Una importación no activa ni reemplaza automáticamente la letra de la nota.
+- **Mi letra → Mis calibraciones**: Original sigue siendo la letra predeterminada y está protegida. Se pueden guardar hasta 20 perfiles adicionales, nombrarlos, duplicarlos, alternar entre ellos y respaldarlos como `.hnprofile`. Una importación no activa ni reemplaza automáticamente la letra de la nota.
 - **Ver encontrados / Ver faltantes** en cada perfil: caracteres identificados, código Unicode, variantes disponibles de ocho, variantes incompletas y búsqueda. Los faltantes se distinguen entre disponibles en Original y sin muestra. Los avisos al componer indican cuándo se usa Original o se deja espacio.
 - Plantillas `.hinote` identificadas y versionadas, con una fila por carácter, ocho celdas y línea base azul. Selección por grupos (español, matemáticas, programación, tipografía) o caracteres adicionales; hasta 256 por plantilla/perfil. También se puede generar una plantilla **solo de los faltantes**.
 - Importación con revisión previa, comprobación de páginas, guías, celdas y límites. Las filas vacías no borran muestras anteriores. Completar Original crea **Original ampliada** y deja intacta la calibración incluida. Eliminar un perfil permite recuperar la última eliminación.
@@ -65,7 +67,7 @@ Las plantillas ya escritas se pueden reutilizar. En la muestra real recibida, co
 
 ### Crear y completar una calibración
 
-1. Abre **Calibración → Mis calibraciones → Crear plantilla**. Elige grupos o escribe los caracteres que necesitas; guarda la plantilla `.hinote` y ábrela en Huawei Notes.
+1. Abre **Mi letra → Mis calibraciones → Crear plantilla**. Elige grupos o escribe los caracteres que necesitas; guarda la plantilla `.hinote` y ábrela en Huawei Notes.
 2. Escribe con **Rotulador**, preferiblemente grosor 1–3. Cada fila indica el carácter: escribe ocho versiones, una dentro de cada celda, apoyadas en la línea azul. Los descendentes y `_` deben quedar debajo de esa línea. Conserva todas las páginas, su orden, dimensiones y las imágenes de guía. No muevas, gires, recortes ni escribas sobre la etiqueta o el código inferior. Las líneas rectas nativas de Rotulador también se admiten.
 3. Exporta la nota escrita como `.hinote`. En Studio, pon un nombre y pulsa **Importar .hinote / respaldo**. Revisa encontrados, faltantes y variantes; pulsa **Guardar perfil**, luego **Usar en esta nota** cuando quieras activarlo.
 4. Para completar una letra guardada, selecciónala, crea una plantilla de los faltantes (o de caracteres concretos que quieras repetir) y escribe esas filas. Al importar, marca **Completar el perfil seleccionado**. Los caracteres con muestras se añaden o sustituyen; los demás se conservan. Si el seleccionado es Original, se crea una copia ampliada.
@@ -78,7 +80,7 @@ La equivalencia 1–10 se basa en los archivos de grosor aportados por el usuari
 ## Funciones conservadas
 
 - Las miniaturas exportadas usan el papel nativo `base3` de la plantilla Huawei, independientemente del interruptor de cuadrícula de la previsualización. Así se evita alternar entre hoja blanca/cuadrícula tenue y el papel nativo mientras carga una página.
-- **Guardado → Elegir carpeta** recuerda la carpeta y el permiso de Android entre sesiones. **Guardar .hinote** guarda allí directamente y crea otra copia numerada si ya existe el nombre. **Preguntar cada vez** restablece el selector anterior. Si la carpeta se mueve, elimina o pierde su permiso, se solicita volver a elegirla.
+- **Archivo → Elegir carpeta** recuerda la carpeta y el permiso de Android entre sesiones. **Guardar .hinote** guarda allí directamente y crea otra copia numerada si ya existe el nombre. **Preguntar cada vez** restablece el selector anterior. Si la carpeta se mueve, elimina o pierde su permiso, se solicita volver a elegirla.
 - Se conservan los espacios y tabulaciones al inicio de cada párrafo, incluido texto con formato mixto. Los renglones creados por ajuste automático vuelven al margen normal; una sangría demasiado larga se distribuye sin sacar los trazos de la página.
 - El guion bajo queda debajo de la línea base de las letras, conservando el glifo de su fila de calibración.
 - Imágenes JPG, PNG y WebP estático desde el selector de Android. Transparencia conservada y orientación EXIF aplicada.

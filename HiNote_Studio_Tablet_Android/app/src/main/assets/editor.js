@@ -87,7 +87,7 @@ function renderLines(lines) {
       if (sameStyle(s, DEFAULT_STYLE)) div.append(document.createTextNode(s.text));
       else {
         const span = document.createElement('span'); Object.assign(span.dataset, cleanStyle(s));
-        span.style.fontSize = `${17 * s.scale}px`; span.style.color = rgba(s.color, s.opacity);
+        span.style.fontSize = `${s.scale}em`; span.style.color = rgba(s.color.toUpperCase()==='#000000'?'#E4EDF0':s.color, s.opacity);
         span.textContent = s.text; div.append(span);
       }
     }
@@ -122,7 +122,7 @@ function captureSelection() {
   const sel = getSelection();
   if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
     savedSelection = bookmark();
-    if (!document.activeElement?.closest('#panelText')) syncTextControls();
+    if (!document.activeElement?.closest('#panelText,#colorDialog')) syncTextControls();
     syncListControls();
   }
 }
@@ -229,7 +229,7 @@ function selectedLineIndexes(mark) {
 }
 function applyStyle(patch) {
   const mark = bookmark(); if (!mark || collapsed(mark)) { toast('Selecciona texto primero'); return; }
-  const focused=document.activeElement,keep=!!focused?.closest('#panelText');
+  const focused=document.activeElement,keep=!!focused?.closest('#panelText,#colorDialog');
   edit((lines, selection) => {
     for (const i of selectedLineIndexes(selection)) {
       if(isBlockLine(lines[i]))continue;
@@ -375,7 +375,7 @@ function controls() {
   $('exportBtn').disabled = calibrationBusy || folderBusy || exporting || saveRequested || ImageEditor.isBusy();
   $('exportNotesBtn').disabled = $('exportBtn').disabled;
   $('refreshBtn').disabled = exporting || saveRequested || calibrationBusy || folderBusy; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
-  $('prevPage').disabled = exporting || composing || !composition || currentPage <= 0;
+  $('prevPage').disabled = exporting || composing || currentPage <= 0;
   $('nextPage').disabled = exporting || composing || currentPage >= ImageEditor.count() - 1;
   editor.contentEditable = String(!exporting && !calibrationBusy); $('noteTitle').disabled = exporting || calibrationBusy;
   document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el => el.disabled = exporting || folderBusy);
@@ -386,6 +386,7 @@ function controls() {
   if(calibrationBusy || folderBusy)document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el=>el.disabled=true);
   CalibrationUI.controls();
   MathGraphEditor.updateControls();
+  window.StudioUI?.ribbon();window.StudioUI?.meta();
 }
 function showExportFolder(raw) {
   const data=JSON.parse(raw || '{}');
@@ -496,14 +497,7 @@ window.onExportComplete = (ok, message) => { exporting = false; controls(); $('s
 // Keep toolbar selections as model offsets, including a newly collapsed caret.
 document.addEventListener('selectionchange', captureSelection);
 document.querySelector('.toolbar').addEventListener('pointerdown', captureSelection, true);
-$('tabs').addEventListener('click', event => {
-  if (event.target.tagName !== 'BUTTON') return;
-  [...$('tabs').children].forEach(b => b.classList.toggle('active', b === event.target));
-  ['text','lists','page','images','tables','math','save','calibration'].forEach(name => $('panel' + name[0].toUpperCase() + name.slice(1)).classList.toggle('hidden', event.target.dataset.tab !== name));
-  ImageEditor.mode(event.target.dataset.tab==='images');
-  TableEditor.mode(event.target.dataset.tab==='tables');
-  MathGraphEditor.mode(event.target.dataset.tab==='math');
-});
+$('tabs').addEventListener('click', event => {const tab=event.target.closest('[data-tab]');if(tab)window.StudioUI?.setTab(tab.dataset.tab);});
 $('colorPick').addEventListener('input', () => {const color=$('colorPick').value.toUpperCase();$('hexInput').value=color;applyStyle({color});});
 $('hexInput').addEventListener('input', () => { const color=$('hexInput').value.trim().replace(/^#?/, '#').toUpperCase();if(/^#[\da-f]{6}$/i.test(color)){$('colorPick').value=color;applyStyle({color});} });
 $('opacity').addEventListener('input',()=>{if($('opacity').value!==''&&$('opacity').validity.valid)applyStyle({opacity:Number($('opacity').value)});});

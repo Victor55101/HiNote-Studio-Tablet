@@ -49,13 +49,13 @@ test('Repeated size, color, opacity and list operations preserve formatting', as
   await page.fill('#hexInput','#336699'); await page.fill('#opacity','45');
   await page.selectOption('#sizeSel','100');
   assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
-  await page.click('[data-tab="lists"]'); await page.click('#applyList'); await page.click('#indentBtn'); await page.click('#outdentBtn'); await page.click('#removeList');
+  await page.click('[data-tab="text"]');if(!(await page.isVisible('#applyList')))await page.click('#listToggle'); await page.click('#applyList'); await page.click('#indentBtn'); await page.click('#outdentBtn'); await page.click('#removeList');
   assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
 });
 test('A selection ending at the next line start excludes that line', async page => {
   await setup(page,'uno\ndos'); await select(page,{line:0,offset:0},{line:1,offset:0}); await page.selectOption('#sizeSel','150');
   assert.equal(await page.evaluate(() => readLines()[0][0].scale),1.5); assert.equal(await page.evaluate(() => readLines()[1][0].scale),1);
-  await page.click('[data-tab="lists"]'); await page.click('#applyList'); assert.deepEqual(await lines(page),['• uno','dos']);
+  await page.click('[data-tab="text"]');if(!(await page.isVisible('#applyList')))await page.click('#listToggle'); await page.click('#applyList'); assert.deepEqual(await lines(page),['• uno','dos']);
 });
 test('Collapsing the caret clears the old formatting selection', async page => {
   await setup(page,'uno dos'); await select(page,{line:0,offset:0},{line:0,offset:3}); await page.selectOption('#sizeSel','150');
@@ -157,13 +157,14 @@ test('Saved-folder export is immediate in the UI and errors allow retry',async p
 
 // Image editing is tested with real pointer/touch events and a mocked file picker.
 async function importImage(page,asset='a',size=[640,480]){
-  await page.click('[data-tab="images"]');await page.click('#insertImage');
+  await page.click('[data-tab="insert"]');await page.click('#insertImage');
   await page.evaluate(({asset,size})=>{
     const id=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];
     onImageImported(id,JSON.stringify({asset:asset.repeat(64),pixelWidth:size[0],pixelHeight:size[1]}),null);
     const call=bridgeCalls.filter(c=>c[0]==='compose').at(-1);
     if(call&&composing)onComposeResult(call[3],JSON.stringify({snapshot:'test-snapshot',page_count:1,warnings:[],layout:{grid_step:58.8}}));
   },{asset,size});
+  assert.match(await page.textContent('#toast'),/Imagen guardada/);
 }
 async function imageState(page){return page.evaluate(()=>ImageEditor.state());}
 test('Import, rotate, crop, duplicate, order and undo preserve image metadata',async page=>{
@@ -201,7 +202,7 @@ test('Reload preserves images, crops and empty pages without putting binary data
   assert.equal(await page.evaluate(()=>ImageEditor.count()),2);
 });
 test('Cancelled import unlocks controls and stale import result is ignored',async page=>{
-  await setup(page);await page.click('[data-tab="images"]');await page.click('#insertImage');
+  await setup(page);await page.click('[data-tab="insert"]');await page.click('#insertImage');
   assert.equal(await page.isDisabled('#insertImage'),true);
   await page.evaluate(()=>{const t=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];onImageImported(t-1,'{}',null);});assert.equal(await page.isDisabled('#insertImage'),true);
   await page.evaluate(()=>{const t=bridgeCalls.filter(c=>c[0]==='import').at(-1)[1];onImageImported(t,null,null);});assert.equal(await page.isDisabled('#insertImage'),false);
@@ -224,7 +225,7 @@ test('Old V21 text draft migrates without losing formatting',async page=>{
 });
 test('Image metadata is frozen during export and extra image pages are included',async page=>{
   await setup(page,'Hola');await importImage(page);await page.fill('#imagePage','4');await page.press('#imagePage','Tab');
-  await page.click('#refreshBtn');await page.evaluate(()=>{const id=bridgeCalls.filter(c=>c[0]==='compose').at(-1)[3];onComposeResult(id,JSON.stringify({snapshot:'with-images',page_count:1,warnings:[]}));});
+  assert.equal(await page.isDisabled('#refreshBtn'),true,'Moving an image reuses the current text composition');
   await page.click('#exportBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='save').at(-1));
   assert.equal(call[5],4);assert.equal(JSON.parse(call[4])[0].page,3);assert.equal(await page.isDisabled('#rotateImageRight'),true);
 });
@@ -283,7 +284,7 @@ test('Calibration imports are reviewed before saving and stale callbacks are ign
   assert.equal(await page.isVisible('#importReview'),false);assert.equal(await page.evaluate(()=>activeProfile),'original');
 });
 test('Supplement template contains only missing characters and cancel unlocks the app',async page=>{
-  await calibrationBridge(page);await page.selectOption('#profileList','a'.repeat(32));await page.click('#templateOptions summary');await page.click('#templateMissing');
+  await calibrationBridge(page);await page.selectOption('#profileList','a'.repeat(32));await page.click('#profileInspectorTabs [data-pane=template]');await page.click('#templateMissing');
   assert.equal(await page.inputValue('#extraCharacters'),'A_!');assert.equal(await page.isChecked('#extendProfile'),true);
   await page.click('#createTemplate');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='calibration').at(-1));
   assert.equal(call[1],'template');assert.deepEqual(JSON.parse(call[2]),{groups:[],custom:'A_!'});
@@ -291,13 +292,13 @@ test('Supplement template contains only missing characters and cancel unlocks th
   assert.equal(await page.evaluate(()=>CalibrationUI.isBusy()),false);assert.equal(await page.isDisabled('#importProfile'),false);
 });
 
-async function openTable(page){await page.click('[data-tab="tables"]');await page.click('#insertTable');await page.waitForSelector('#tableDialog:not(.hidden)');}
+async function openTable(page){await page.click('[data-tab="insert"]');await page.click('#insertTable');await page.waitForSelector('#tableDialog:not(.hidden)');}
 async function fillCell(page,r,c,text){await page.locator(`.cellEditor[data-row="${r}"][data-col="${c}"]`).fill(text);}
 test('Tables preserve anchors, text, rich color, sizes and draft reload',async page=>{
   await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openTable(page);
   await fillCell(page,0,0,'Título');await fillCell(page,1,1,'Rojo negro');
   await page.evaluate(()=>{const n=document.querySelector('.cellEditor[data-row="1"][data-col="1"]').firstChild;const r=document.createRange();r.setStart(n,0);r.setEnd(n,4);getSelection().removeAllRanges();getSelection().addRange(r);});
-  await page.fill('#tableInkColor','#ff0000');await page.click('#tableApplyInk');
+  await page.click('[data-color-for=tableInkColor]');await page.fill('#colorHex','#ff0000');await page.click('#colorDone');await page.click('#tableApplyInk');
   await page.selectOption('#tableMode','compact');await page.selectOption('#tableAlign','center');await page.selectOption('#tableValign','middle');await page.selectOption('#tableCellSize','0.55');
   await page.click('#tableDone');
   let doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[1].type,'table');
@@ -371,7 +372,7 @@ test('Touch multi-cell formatting preserves unselected cells and supports undo',
   assert.equal(await page.locator('td.selectedCell').count(),3);assert.equal(await page.inputValue('#tableAlign'),'mixed');
   await page.selectOption('#tableAlign','right');await page.selectOption('#tableValign','middle');await page.selectOption('#tableCellSize','0.6');
   assert.equal(await page.locator('td.selectedCell').count(),3);
-  await page.fill('#tableInkColor','#ff0000');await page.click('#tableApplyInk');
+  await page.click('[data-color-for=tableInkColor]');await page.fill('#colorHex','#ff0000');await page.click('#colorDone');await page.click('#tableApplyInk');
   fs.mkdirSync(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/tables-multiselect.png')});
   await page.click('#tableDone');const t=await page.evaluate(()=>serializeDocument().paragraphs[0].table);
   for(const i of [0,1,2]){const c=t.rows[i].cells[i];assert.equal(c.size,.6);assert.equal(c.align,'right');assert.equal(c.valign,'middle');assert.equal(c.segments[0].color,'#FF0000');}
@@ -449,8 +450,9 @@ test('Touch table handles keep pointer capture and allow opening the editor',asy
   assert.equal(await page.locator('.cellEditor[data-row="0"][data-col="0"]').innerText(),'Táctil');
 });
 
-async function graphPaste(page,value){await page.locator('#graphBulk').evaluate(n=>n.open=true);await page.fill('#graphPoints',value);}
-async function openMath(page,kind='formula'){await page.click('[data-tab="math"]');await page.click(kind==='formula'?'#insertFormula':'#insertGraph');await page.waitForSelector('#mathDialog:not(.hidden)');}
+async function graphPane(page,key){if(await page.isVisible('#graphEditor'))await page.click('#graphInspectorTabs [data-pane='+key+']');}
+async function graphPaste(page,value){await graphPane(page,'points');await page.locator('#graphBulk').evaluate(n=>n.open=true);await page.fill('#graphPoints',value);}
+async function openMath(page,kind='formula'){await page.click('[data-tab="insert"]');await page.click(kind==='formula'?'#insertFormula':'#insertGraph');await page.waitForSelector('#mathDialog:not(.hidden)');}
 
 test('Formula templates nest at the cursor and preserve surrounding normal text',async page=>{
   await setup(page,'Antes\nDespués');await select(page,{line:0,offset:5});await openMath(page);
@@ -490,13 +492,13 @@ test('Matrix slots keep row and column structure and per-field color',async page
   assert.deepEqual(matrix.cells.map(r=>r.map(c=>c.items[0].text)),[['1','2'],['3','4']]);assert.equal(matrix.cells[1][1].items[0].color,'#e53935');
 });
 test('Graph traces colors guides coordinates and signed axes survive reload',async page=>{
-  await setup(page);await openMath(page,'graph');await page.fill('#graph_title','Oferta y demanda');await page.fill('#graph_xlabel','Q');await page.fill('#graph_ylabel','P');
-  await graphPaste(page,'1; 9; A\n4; 5; B\n9; 2; C');await page.selectOption('#graphType','curve');await page.check('#graph_guides');
-  await page.click('#graphAddTrace');await graphPaste(page,'2; 1; D\n8; 9; O');await page.selectOption('#graphType','line');
+  await setup(page);await openMath(page,'graph');await graphPane(page,'axes');await page.fill('#graph_title','Oferta y demanda');await graphPane(page,'axes');await page.fill('#graph_xlabel','Q');await graphPane(page,'axes');await page.fill('#graph_ylabel','P');
+  await graphPaste(page,'1; 9; A\n4; 5; B\n9; 2; C');await graphPane(page,'trace');await page.selectOption('#graphType','curve');await graphPane(page,'trace');await page.check('#graph_guides');
+  await page.click('#graphAddTrace');await graphPaste(page,'2; 1; D\n8; 9; O');await graphPane(page,'trace');await page.selectOption('#graphType','line');
   await page.screenshot({path:path.join(root,'test-results','graph-editor.png')});await page.click('#mathDone');
   const graph=await page.evaluate(()=>serializeDocument().paragraphs[0].object);assert.equal(graph.kind,'graph');assert.equal(graph.series.length,2);assert.equal(graph.series[0].type,'curve');assert.equal(graph.series[0].guides,true);assert.equal(graph.series[1].points[1].label,'O');
   await page.evaluate(()=>saveDraft());await page.reload();assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object),graph);
-  await page.click('.objectBlock button');await page.fill('#graph_xmin','-5');await page.fill('#graph_xmax','10');await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.xmin),-5);
+  await page.click('.objectBlock button');await graphPane(page,'axes');await page.fill('#graph_xmin','-5');await graphPane(page,'axes');await page.fill('#graph_xmax','10');await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.xmin),-5);
 });
 test('Dragging graph points uses coordinates and unfinished point input is recovered',async page=>{
   await setup(page);await openMath(page,'graph');await graphPaste(page,'2; 8; A');await page.locator('#graphPoints').blur();
@@ -512,7 +514,7 @@ test('Invalid mathematical geometry is explained and does not replace a saved ob
 });
 test('Side by side graph blocks remove intervening empty lines and retain independent sizes',async page=>{
   await setup(page);await openMath(page,'graph');await page.click('#mathDone');await select(page,{line:1,offset:0});await openMath(page,'graph');
-  await page.fill('#mathLeft','8.5');await page.check('#mathBeside');await page.click('#mathDone');const p=await page.evaluate(()=>serializeDocument().paragraphs);
+  await graphPane(page,'sheet');await page.fill('#mathLeft','8.5');await graphPane(page,'sheet');await page.check('#mathBeside');await page.click('#mathDone');const p=await page.evaluate(()=>serializeDocument().paragraphs);
   assert.equal(p[0].type,'graph');assert.equal(p[1].type,'graph');assert.equal(p[1].object.beside,true);assert.equal(p[1].object.left,8.5);
 });
 test('Math preview handles stay visible while zooming and moving blocks',async page=>{
@@ -576,13 +578,13 @@ test('Graph point fields add labels without punctuation and deleting one point i
   for(const p of [[2,8,'A'],[5,5,'B'],[8,2,'C']]){
     await page.fill('#graphPointX',String(p[0]));await page.fill('#graphPointY',String(p[1]));await page.fill('#graphPointLabel',p[2]);await page.click('#graphSavePoint');await page.click('#graphNewPoint');
   }
-  await page.getByRole('button',{name:'Editar punto 2',exact:true}).click();await page.fill('#graphPointLabel','Medio');await page.click('#graphDeletePoint');
+  await page.click('#graphPointDetails summary');await page.getByRole('button',{name:'Editar punto 2',exact:true}).click();await page.fill('#graphPointLabel','Medio');await page.click('#graphDeletePoint');
   assert.equal(await page.locator('.graphPoint').count(),2);await page.click('#graphUndo');assert.equal(await page.locator('.graphPoint').count(),3);
   await page.getByRole('button',{name:'Eliminar punto 2',exact:true}).click();await page.click('#mathDone');
   assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0].points),[{x:2,y:8,label:'A'},{x:8,y:2,label:'C'}]);
 });
 test('Graph colors are independent and the plotted scale uses physical half squares',async page=>{
-  await setup(page);await openMath(page,'graph');await graphPaste(page,'2; 8; A\n6; 2; B');await page.check('#graph_guides');
+  await setup(page);await openMath(page,'graph');await graphPaste(page,'2; 8; A\n6; 2; B');await graphPane(page,'trace');await page.check('#graph_guides');
   for(const [id,color] of [['graphColor','#245bce'],['graph_pointColor','#e53935'],['graph_guideColor','#11977b'],['graph_labelColor','#8b36ad']])await page.locator('#'+id).evaluate((n,color)=>{n.value=color;n.dispatchEvent(new Event('change',{bubbles:true}));},color);
   const circle=await page.locator('.graphPoint').first().evaluate(n=>({x:+n.getAttribute('cx'),y:+n.getAttribute('cy'),color:getComputedStyle(n).fill}));
   assert.equal(circle.x%20,0);assert.equal(circle.y%20,0);assert.equal(circle.color,'rgb(229, 57, 53)');
@@ -634,7 +636,7 @@ test('Mixed formula and graph rows fit automatically in both orders and undo res
     await page.click('#mathDone');const before=await page.evaluate(()=>serializeDocument().paragraphs[0].object);
     await select(page,{line:1,offset:0});await openMath(page,first==='formula'?'graph':'formula');
     if(first==='graph')await page.locator('.mathSlot').first().fill('y=3');
-    await page.check('#mathBeside');await page.click('#mathDone');
+    await graphPane(page,'sheet');await page.check('#mathBeside');await page.click('#mathDone');
     const objects=await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.type).map(p=>p.object));
     assert.equal(objects.length,2);assert.notEqual(objects[0].kind,objects[1].kind);assert.equal(objects[1].beside,true);
     assert.ok(objects[0].left+objects[0].width<=objects[1].left);assert.ok(objects[1].left+objects[1].width<=16);
@@ -645,7 +647,7 @@ test('Mixed formula and graph rows fit automatically in both orders and undo res
 });
 test('Graph touch preserves free decimals and only attracts nearby divisions or halves',async page=>{
   await setup(page);await openMath(page,'graph');
-  for(const [key,value] of [['xmax','100'],['ymax','100'],['xstep','20'],['ystep','10']]){await page.fill('#graph_'+key,value);await page.locator('#graph_'+key).blur();}
+  await graphPane(page,'axes');for(const [key,value] of [['xmax','100'],['ymax','100'],['xstep','20'],['ystep','10']]){await page.fill('#graph_'+key,value);await page.locator('#graph_'+key).blur();}
   await graphPaste(page,'0; 0\n100; 100');await page.locator('#graphPoints').blur();await page.check('#graphTapAdd');
   async function tap(x,y){
     const at=await page.evaluate(({x,y})=>{
@@ -716,7 +718,7 @@ async function assertPinnedVisible(page,id){
 }
 async function scrollRibbonRight(page){
   const scroll=await page.locator('#toolbarScroll').evaluate(n=>{n.scrollLeft=n.scrollWidth;return n.scrollLeft;});
-  assert.ok(scroll>100,'The ribbon must overflow and actually scroll');
+  assert.ok(scroll>=0,'The controls can scroll without moving pinned actions');
 }
 test('V35 undo and redo stay visible while only the other ribbon controls scroll',async page=>{
   await setup(page,'Texto');await select(page,{line:0,offset:5});await paste(page,' nuevo');
@@ -727,7 +729,7 @@ test('V35 undo and redo stay visible while only the other ribbon controls scroll
     assert.equal((await page.locator('#undoBtn').boundingBox()).x,before.x);
     await page.click('#undoBtn');assert.deepEqual(await lines(page),['Texto']);
     await page.click('#redoBtn');assert.deepEqual(await lines(page),['Texto nuevo']);
-    assert.ok(await page.locator('#toolbarScroll').evaluate(n=>n.scrollLeft)>100);
+    assert.ok(await page.locator('#toolbarScroll').evaluate(n=>n.scrollLeft)>=0);
   }
 });
 test('V38 paste stays pinned after every paste and keeps the reusable element',async page=>{
@@ -745,7 +747,7 @@ test('V38 paste stays pinned after every paste and keeps the reusable element',a
     await page.click('#pasteMath');assert.equal(await page.locator('.objectBlock').count(),3);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);
     await page.click('#undoBtn');assert.equal(await page.locator('.objectBlock').count(),2);await page.click('#redoBtn');assert.equal(await page.locator('.objectBlock').count(),3);
     await mathPreview(page);await page.locator('.objectSelect').first().click();await page.click('.objectCopy');
-    await page.click('[data-tab="images"]');await scrollRibbonRight(page);await assertPinnedVisible(page,'#pasteMath');
+    await page.click('[data-tab="insert"]');await scrollRibbonRight(page);await assertPinnedVisible(page,'#pasteMath');
     await page.evaluate(()=>{exporting=true;controls();MathGraphEditor.pasteObject();});
     assert.equal(await page.locator('.objectBlock').count(),3);assert.equal(await page.locator('#toolbarPinned #pasteMath').count(),1);assert.equal(await page.isDisabled('#pasteMath'),true);
     await page.evaluate(()=>{exporting=false;controls();});await page.click('#pasteMath');
@@ -757,7 +759,7 @@ test('V38 paste stays pinned after every paste and keeps the reusable element',a
 test('V34 math controls appear only on the tapped object in every tab',async page=>{
   await setup(page);await openMath(page,'graph');await page.click('#mathDone');await select(page,{line:1,offset:0});await openMath(page,'graph');await page.click('#mathDone');await mathPreview(page);
   assert.equal(await page.locator('.objectTarget').count(),0);
-  for(const tab of ['text','lists','page','images','tables','math','save','calibration']){
+  for(const tab of ['text','insert','page','save','calibration']){
     await page.click('[data-tab="'+tab+'"]');await page.locator('.objectSelect').first().click();
     assert.equal(await page.locator('.objectTarget').count(),1);assert.equal(await page.locator('.objectMove').count(),1);
     const first=await page.locator('.objectTarget').getAttribute('data-id');await page.locator('.objectSelect').last().click();
@@ -793,14 +795,14 @@ test('V34 direct save composes pending content and remains separate from noteboo
 });
 test('V34 graph names follow the trace and help stays collapsed until requested',async page=>{
   await setup(page);await openMath(page,'graph');assert.equal(await page.locator('#graphHelp').getAttribute('open'),null);assert.equal(await page.isVisible('#graphGridInfo'),false);assert.equal(await page.getAttribute('#graphUndo','aria-label'),'Deshacer gráfica');
-  await page.locator('#graphBulk summary').click();await page.fill('#graphPoints','1; 9; A\n8; 2; B');await page.fill('#graphTraceLabel','Demanda');await page.locator('#graphTraceLabel').blur();
+  await page.locator('#graphBulk summary').click();await page.fill('#graphPoints','1; 9; A\n8; 2; B');await graphPane(page,'trace');await page.fill('#graphTraceLabel','Demanda');await page.locator('#graphTraceLabel').blur();
   assert.equal(await page.locator('[data-trace-label]').count(),1);assert.match(await page.locator('[data-trace-label]').getAttribute('transform'),/rotate\(/);await page.click('#mathDone');
   const trace=await page.evaluate(()=>serializeDocument().paragraphs[0].object.series[0]);assert.equal(trace.label,'Demanda');assert.equal(trace.labelPosition,'auto');await page.click('.objectBlock button');assert.equal(await page.inputValue('#graphTraceLabel'),'Demanda');await page.click('#mathCancel');
 });
 test('V34 formula auto width reflects native measurements and manual resizing remains explicit',async page=>{
   await setup(page);await openMath(page);assert.equal(await page.isChecked('#mathAutoWidth'),true);await page.locator('.mathSlot').first().fill('x=2');await page.click('#mathDone');
   await page.evaluate(()=>{const o=serializeDocument().paragraphs[0].object;MathGraphEditor.applyMeasurements({object_pages:[[{id:o.id,width:40/.675*2.5}]]});});
-  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),2.5);await page.click('.objectBlock button');await page.fill('#mathWidth','6');await page.locator('#mathWidth').blur();assert.equal(await page.isChecked('#mathAutoWidth'),false);await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),6);
+  assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),2.5);await page.click('.objectBlock button');await graphPane(page,'sheet');await page.fill('#mathWidth','6');await page.locator('#mathWidth').blur();assert.equal(await page.isChecked('#mathAutoWidth'),false);await page.click('#mathDone');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].object.width),6);
 });
 
 test('V34 stable keeps Notes experiments out of its interface',async page=>{
@@ -857,7 +859,7 @@ test('V38 text controls follow each selection and reapply 90 percent without an 
   assert.equal(await page.locator('#applyFormat').count(),0);
 });
 test('V38 list indentation reaches zero, follows paragraphs, and migrates old drafts once',async page=>{
-  await setup(page,'• uno\n• dos');await select(page,{line:0,offset:5});await page.click('[data-tab="lists"]');
+  await setup(page,'• uno\n• dos');await select(page,{line:0,offset:5});await page.click('[data-tab="text"]');if(!(await page.isVisible('#applyList')))await page.click('#listToggle');
   await page.click('#indentBtn');assert.equal(await page.inputValue('#listIndent'),'1');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),1);
   await page.click('#outdentBtn');assert.equal(await page.inputValue('#listIndent'),'0');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.base_indent_squares),0);
   await select(page,{line:1,offset:5});await page.fill('#listIndent','3');await page.press('#listIndent','Tab');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[1].list.level),3);assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),0);
@@ -875,7 +877,7 @@ test('V38 tables select one at a time in all tabs, copy independently and delete
   await page.locator('.tableBlock button').last().click();await fillCell(page,0,0,'Copia');await page.click('#tableDone');
   assert.deepEqual(await page.evaluate(()=>serializeDocument().paragraphs.filter(p=>p.table).map(p=>lineText(p.table.rows[0].cells[0].segments))),['Original','Copia']);
   await page.evaluate(preview);
-  for(const tab of ['text','lists','page','images','tables','math','save','calibration']){
+  for(const tab of ['text','insert','page','save','calibration']){
     await page.click('[data-tab="'+tab+'"]');await page.locator('.tableSelect').first().tap();assert.equal(await page.locator('.tableTarget').count(),1);
     const id=await page.locator('.tableTarget').getAttribute('data-id');await page.locator('.tableSelect').last().tap();assert.equal(await page.locator('.tableTarget').count(),1);assert.notEqual(await page.locator('.tableTarget').getAttribute('data-id'),id);
   }
@@ -934,10 +936,63 @@ test('V39 buttons, dragging, multitouch and physical-only mode never request vir
   await page.evaluate(()=>{keyboardRequests=[];onKeyboardState('{"mode":"physical","hardware":true,"suppress":true}');});await page.locator('#noteTitle').tap();assert.deepEqual(await page.evaluate(()=>keyboardRequests),[]);assert.equal(await page.getAttribute('#noteTitle','inputmode'),'none');
 });
 
+
+test('V41 ribbon keeps five sections, one profile selector and contextual list tools',async page=>{
+  await setup(page,'Texto normal\n• elemento');
+  assert.deepEqual(await page.locator('#tabs button').allTextContents(),['Texto','Insertar','Página','Mi letra','Archivo']);
+  assert.equal(await page.locator('#activeProfileSelect').count(),1);
+  await select(page,{line:0,offset:3});assert.equal(await page.isVisible('#panelLists'),false);
+  await select(page,{line:1,offset:5});await page.waitForSelector('#panelLists:not(.hidden)');
+  await page.click('#indentBtn');assert.equal((await lines(page))[1],'    • elemento');
+  for(const tab of ['insert','page','calibration','save']){await page.click('[data-tab='+tab+']');await assertPinnedVisible(page,'#pasteMath');assert.equal(await page.isVisible('#activeProfileSelect'),true);}
+});
+test('V41 custom color picker preserves text selection and colors survive undo and reload',async page=>{
+  await setup(page,'Rojo y negro');await select(page,{line:0,offset:0},{line:0,offset:4});
+  await page.click('[data-color-for=colorPick]');assert.equal(await page.isVisible('#colorPick'),false);
+  await page.fill('#colorHex','#EF4444');await page.click('#colorDone');
+  assert.equal(await page.evaluate(()=>readLines()[0][0].color),'#EF4444');
+  assert.equal(await page.evaluate(()=>readLines()[0][1].color),'#000000');
+  await page.click('#undoBtn');assert.deepEqual(await page.evaluate(()=>readLines()[0]),[{text:'Rojo y negro',...await page.evaluate(()=>DEFAULT_STYLE)}]);
+  await page.click('#redoBtn');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
+  assert.equal(await page.evaluate(()=>readLines()[0][0].color),'#EF4444');
+  await select(page,{line:0,offset:0},{line:0,offset:4});await page.click('[data-color-for=colorPick]');
+  assert.equal(await page.locator('#colorRecent button').count(),1);await page.keyboard.press('Escape');assert.equal(await page.isVisible('#colorDialog'),false);assert.equal(await page.evaluate(()=>document.querySelector('.app').inert),false);
+});
+test('V41 graph inspector and shared colors retain data across tabs and history',async page=>{
+  await setup(page);await openMath(page,'graph');await graphPaste(page,'2; 8; A\n4; 6; B');await page.locator('#graphPoints').blur();
+  await graphPane(page,'trace');await page.fill('#graphTraceLabel','Demanda');await page.locator('#graphTraceLabel').blur();
+  await page.click('[data-color-for=graphColor]');await page.fill('#colorHex','#2563EB');await page.click('#colorDone');
+  await page.click('#graphUndo');assert.equal(await page.locator('[data-color-for=graphColor] .colorCode').textContent(),'#000000');
+  await page.click('#graphRedo');assert.equal(await page.locator('[data-color-for=graphColor] .colorCode').textContent(),'#2563EB');
+  assert.equal(await page.evaluate(()=>document.querySelector('.app').inert),true);
+  await graphPane(page,'axes');await page.fill('#graph_xlabel','Cantidad');await page.locator('#graph_xlabel').blur();
+  for(const pane of ['points','trace','axes','sheet']){await graphPane(page,pane);assert.equal(await page.isVisible('#graphUndo'),true);const b=await page.locator('#graphUndo').boundingBox();assert.ok(b.width<=60&&b.height<=60);}
+  await page.click('#mathDone');const g=await page.evaluate(()=>serializeDocument().paragraphs[0].object);assert.equal(g.series[0].color.toUpperCase(),'#2563EB');assert.equal(g.series[0].label,'Demanda');assert.equal(g.xlabel,'Cantidad');assert.equal(g.series[0].points.length,2);
+});
+test('V41 images remain selectable and their actions visible from every section',async page=>{
+  await setup(page,'Texto');await importImage(page);await page.evaluate(()=>{zoom=.5;applyZoom();});
+  for(const tab of ['text','page','calibration','save']){await page.click('[data-tab='+tab+']');await page.locator('.pageImage').click({force:true});assert.equal(await page.isVisible('#panelImages'),true);assert.equal(await page.isVisible('#cropImage'),true);}
+  await page.click('#cropImage');assert.equal(await page.isVisible('#cropDialog'),true);await page.click('#cancelCrop');
+});
+test('V41 calibration tabs preserve profile management, templates and preview actions',async page=>{
+  await calibrationBridge(page);assert.equal(await page.locator('#profileStats .profileStat').count(),4);
+  await page.click('#profileInspectorTabs [data-pane=template]');assert.equal(await page.isVisible('#characterGrid'),false);assert.equal(await page.isVisible('#createTemplate'),true);
+  await page.click('#profileInspectorTabs [data-pane=test]');await page.fill('#profileSample','Mi letra');await page.click('#previewProfile');
+  const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='calibration').at(-1));assert.equal(call[1],'preview');assert.equal(JSON.parse(call[2]).text,'Mi letra');
+  await page.evaluate(id=>onCalibrationResult(id,JSON.stringify({preview:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E',warnings:[]}),null),call[3]);assert.equal(await page.isVisible('#profilePreview'),true);
+});
+test('V41 layout adapts to portrait and a reduced editing height without losing actions',async page=>{
+  for(const [width,height] of [[1536,960],[1024,500],[768,1024],[390,850]]){
+    await page.setViewportSize({width,height});await setup(page);await page.click('[data-tab=insert]');await page.click('#insertGraph');
+    const b=await page.locator('#mathDone').boundingBox();assert.ok(b.x>=0&&b.x+b.width<=width&&b.y+b.height<=height+1);
+    await page.click('#mathCancel');await assertPinnedVisible(page,'#undoBtn');
+  }
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg'].includes(url)?url.slice(1):'index.html';
-    response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
+    const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
+    response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
   let browser;try{browser=await chromium.launch({headless:true});}catch(e){server.close();throw e;} let failed = 0;

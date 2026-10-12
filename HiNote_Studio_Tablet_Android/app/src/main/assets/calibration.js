@@ -52,7 +52,7 @@ const CalibrationUI = (() => {
     el('importReview').classList.toggle('hidden',!review);
     if(review)el('importReviewText').textContent=(review.copiesOriginal?'Se guardará como Original ampliada. ':'')+(review.replaced?`Se reemplazarán ${review.replaced} caracteres del perfil con las muestras importadas. `:'')+'Las filas vacías no borran caracteres existentes. Guardar el perfil no cambia automáticamente la letra de tu nota.';
     el('activeProfileSelect').value=activeProfile;
-    drawCharacters();controls();
+    drawCharacters();controls();window.StudioUI?.profile(p,profiles.find(x=>x.id===activeProfile));
   }
   function updateCatalog(data){
     profiles=data.profiles;groups=data.groups||{};
@@ -130,5 +130,5 @@ const CalibrationUI = (() => {
   }
   window.onCalibrationResult=result;
   window.onCalibrationProgress=(id,text)=>{if(id===ticket&&busy)status(text);};
-  return {init,controls,isBusy:()=>busy,open};
+  return {init,controls,isBusy:()=>busy,open,redraw:draw};
 })();

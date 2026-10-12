@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
         draftFile=new AtomicFile(new File(getFilesDir(),"draft-v23.json"));
         exportFolder=new ExportFolder(this);
         try {imageStore=new ImageStore(getFilesDir());} catch(IOException e){startupError=message(e);}
-        getWindow().setStatusBarColor(Color.rgb(15,23,42)); getWindow().setNavigationBarColor(Color.rgb(15,23,42));
+        getWindow().setStatusBarColor(Color.rgb(6,15,19)); getWindow().setNavigationBarColor(Color.rgb(6,15,19));
         sessionDir=new File(getCacheDir(),"hinote-session-"+UUID.randomUUID());
         worker=new ThreadPoolExecutor(1,1,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(8)){
             @Override protected void terminated(){deleteTree(sessionDir);}
