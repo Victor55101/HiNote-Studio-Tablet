@@ -41,3 +41,6 @@ button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-vis
 @media(max-width:760px){.mathDialog:not(.graphMode) .mathModeTools>label:nth-child(n){flex:1 1 calc(50% - 8px);min-width:100px}.graphMode .graphPreview svg.uiIcon{min-height:0}.tableCellTools{display:flex}.tableCellTools>label{min-width:110px}}
 
 .caseField{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px}.caseField #caseSel{font-size:17px;min-height:25px}
+@media(min-width:761px){.workspace>.card{height:auto;min-height:0}}
+@media(max-width:900px){.previewFooter{gap:5px;padding:10px}.previewFooter .center{gap:6px}.previewFooter .btn{min-width:40px;min-height:44px;padding:8px}#zoomLabel{min-width:36px;font-size:14px}}
+@media(max-width:760px){.topbar{flex-wrap:wrap;gap:8px}.titlewrap h1{white-space:nowrap}.topactions{width:100%;gap:6px}.topactions .btn{flex:1;font-size:11px;min-height:44px}#refreshBtn{display:inline-flex}.viewState{display:none}}

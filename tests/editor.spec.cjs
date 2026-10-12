@@ -983,7 +983,9 @@ test('V41 calibration tabs preserve profile management, templates and preview ac
 });
 test('V41 layout adapts to portrait and a reduced editing height without losing actions',async page=>{
   for(const [width,height] of [[1536,960],[1024,500],[768,1024],[390,850]]){
-    await page.setViewportSize({width,height});await setup(page);await page.click('[data-tab=insert]');await page.click('#insertGraph');
+    await page.setViewportSize({width,height});await setup(page);
+    for(const id of ['refreshBtn','exportBtn','exportNotesBtn','prevPage','nextPage']){const box=await page.locator('#'+id).boundingBox();assert.ok(box&&box.width>0&&box.x>=0&&box.x+box.width<=width,`${id} is accessible at ${width}px`);}
+    await page.click('[data-tab=insert]');await page.click('#insertGraph');
     const b=await page.locator('#mathDone').boundingBox();assert.ok(b.x>=0&&b.x+b.width<=width&&b.y+b.height<=height+1);
     await page.click('#mathCancel');await assertPinnedVisible(page,'#undoBtn');
   }
