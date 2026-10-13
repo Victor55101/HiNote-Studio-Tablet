@@ -1198,6 +1198,59 @@ test('V43 notebook preview follows long lists and clears after page or source re
   assert.equal(await page.isVisible('#notebookThumb'),false);assert.equal(await page.getAttribute('#notebookThumb','src'),null);
 });
 
+test('V45 taps place the caret on text nodes in every keyboard mode',async page=>{
+  await setup(page,'Primera línea\nSegunda línea');
+  await page.evaluate(()=>{window.tapSelections=[];document.addEventListener('selectstart',e=>tapSelections.push({type:e.target.nodeType,blocked:e.defaultPrevented}),false);});
+  for(const mode of ['physical','auto','virtual']){
+    await page.evaluate(mode=>onKeyboardState(JSON.stringify({nativeGate:true,mode,suppress:mode==='physical'})),mode);
+    await select(page,{line:1,offset:13});
+    // Separate deliberate taps from Chromium's double-tap word selection.
+    await page.waitForTimeout(400);
+    const point=await page.evaluate(()=>{const text=document.createTreeWalker(editor.querySelector('.line'),NodeFilter.SHOW_TEXT).nextNode(),r=document.createRange();r.setStart(text,3);r.setEnd(text,4);const b=r.getBoundingClientRect();return {x:b.left+1,y:b.top+b.height/2};});
+    await page.touchscreen.tap(point.x,point.y);
+    assert.deepEqual(await page.evaluate(()=>bookmark().start),{line:0,offset:3},mode+' tap must position the cursor');
+  }
+  assert.ok((await page.evaluate(()=>tapSelections)).every(e=>!e.blocked));
+});
+test('V45 table resize outline follows both axes before release and delete stays red',async page=>{
+  await setup(page);await openTable(page);await page.click('#tableDone');
+  await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'resize',page_count:1,table_pages:[[{id:t.id,x:40/.675,y:100,width:600/.675,height:240/.675,rows:[0,1,2]}]]};previewRevision=revision;zoom=.7;applyZoom();TableEditor.selectPreview(t.id);});
+  assert.equal(await page.locator('.tableDelete').evaluate(n=>getComputedStyle(n).color),'rgb(255, 145, 152)');
+  for(const [dx,dy] of [[0,84],[-84,84]]){
+    const box=await page.locator('.tableTarget').boundingBox(),grip=await page.locator('.tableResize').boundingBox();
+    const x=grip.x+22,y=grip.y+22;await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy);
+    const during=await page.locator('.tableTarget').boundingBox();
+    assert.ok(Math.abs(during.width-(box.width+dx))<1,JSON.stringify({box,during,dx}));
+    assert.ok(Math.abs(during.height-(box.height+dy))<1,JSON.stringify({box,during,dy}));
+    await page.locator('.tableResize').dispatchEvent('pointercancel',{pointerId:1});await page.mouse.up();
+  }
+});
+test('V45 styled text and table cells retain native tap selection',async page=>{
+  await setup(page,'Texto con formato');await select(page,{line:0,offset:0},{line:0,offset:17});await page.selectOption('#sizeSel','150');await select(page,{line:0,offset:17});
+  const tapText=async(selector,offset)=>{
+    const p=await page.locator(selector).evaluate((node,offset)=>{const text=document.createTreeWalker(node,NodeFilter.SHOW_TEXT).nextNode(),r=document.createRange();r.setStart(text,offset);r.setEnd(text,offset+1);const b=r.getBoundingClientRect();return {x:b.left+1,y:b.top+b.height/2};},offset);
+    await page.touchscreen.tap(p.x,p.y);
+  };
+  await tapText('#editor .line',3);assert.deepEqual(await page.evaluate(()=>bookmark().start),{line:0,offset:3});
+  await openTable(page);await page.locator('.cellEditor').first().fill('Texto de celda');await tapText('.cellEditor >> nth=0',4);
+  assert.equal(await page.evaluate(()=>getSelection().focusOffset),4);
+  await page.click('#tableCancel');
+  assert.equal(await page.locator('[data-tab=insert]').evaluate(n=>n.firstChild.dispatchEvent(new Event('selectstart',{bubbles:true,cancelable:true}))),false,'UI labels remain unselectable');
+});
+test('V45 image controls avoid image bounds and rotation shows only angle feedback',async page=>{
+  await setup(page);await importImage(page);
+  for(const geometry of [{x:620,y:5,width:210,height:150,angle:0},{x:0,y:0,width:980,height:1550,angle:0}]){
+    await page.evaluate(geometry=>{const data=ImageEditor.state();Object.assign(data.images[0],geometry);ImageEditor.restore(data);ImageEditor.select(data.images[0].id);zoom=.55;applyZoom();},geometry);
+    const a=await page.locator('#imageQuickActions').boundingBox(),b=await page.locator('#imageSelection').boundingBox();
+    assert.ok(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y,JSON.stringify({a,b}));
+  }
+  await page.evaluate(()=>{const data=ImageEditor.state();Object.assign(data.images[0],{x:200,y:220,width:300,height:220,angle:0});ImageEditor.restore(data);ImageEditor.select(data.images[0].id);});
+  const button=await page.locator('#rotateImageRight').boundingBox();await page.mouse.move(button.x+18,button.y+20);await page.mouse.down();await page.mouse.move(button.x+90,button.y+60);
+  assert.equal(await page.isVisible('#imageQuickActions'),false);assert.equal(await page.isVisible('#imageRotationReadout'),true);
+  assert.equal(await page.locator('#imageRotationReadout').textContent(),await page.evaluate(()=>`${Math.round(((ImageEditor.selected().angle%360+360)%360)*10)/10}°`));
+  await page.mouse.up();assert.equal(await page.isVisible('#imageRotationReadout'),false);assert.equal(await page.isVisible('#imageQuickActions'),true);
+});
+
 (async () => {
   const server = http.createServer((request,response) => {
     const url=request.url.split('?')[0],file=['/editor.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';

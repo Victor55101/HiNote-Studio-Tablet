@@ -5,6 +5,9 @@ import android.content.Context;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.WindowManager;
+import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
@@ -19,10 +22,43 @@ import static org.junit.Assert.*;
 public class EditorWebViewTest {
     static class RecordingWebView extends EditorWebView {
         final List<KeyEvent> delivered=new ArrayList<>();
+        int connections;
+        boolean connectionAvailable=true;
         RecordingWebView(Context context){super(context);}
+        @Override protected InputConnection createEditorConnection(EditorInfo attributes){connections++;return connectionAvailable?new BaseInputConnection(this,true):null;}
         @Override protected boolean deliverHardwareKey(KeyEvent event){delivered.add(event);return true;}
     }
     private static KeyEvent key(int action,int code,int modifiers){return new KeyEvent(1,2,action,code,0,modifiers,4,0,0,InputDevice.SOURCE_KEYBOARD);}
+    @Test public void coldPhysicalModeInitializesNativeComposerOnceBeforeUnmodifiedKeyPairs(){
+        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();
+        activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode","physical").commit();
+        var web=new RecordingWebView(activity);activity.setContentView(web);var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();web.setEditing(true);
+        try{
+            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
+            // Robolectric cannot run Chromium's composer. Check its connection
+            // lifecycle and unchanged input stream; no app-side text conversion.
+            for(int code:new int[]{KeyEvent.KEYCODE_APOSTROPHE,KeyEvent.KEYCODE_A,KeyEvent.KEYCODE_SPACE,KeyEvent.KEYCODE_GRAVE,KeyEvent.KEYCODE_N}){
+                KeyEvent down=key(KeyEvent.ACTION_DOWN,code,KeyEvent.META_ALT_RIGHT_ON),up=KeyEvent.changeAction(down,KeyEvent.ACTION_UP);
+                web.dispatchKeyEvent(down);web.dispatchKeyEvent(up);
+                assertEquals(1,web.connections);assertSame(down,web.delivered.get(web.delivered.size()-2));assertSame(up,web.delivered.get(web.delivered.size()-1));
+                assertFalse(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
+            }
+            keyboard.setMode("virtual");keyboard.setMode("physical");web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_E,0));assertEquals(1,web.connections);
+            web.onWindowFocusChanged(false);web.onWindowFocusChanged(true);web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_APOSTROPHE,0));assertEquals(2,web.connections);
+            web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_E,0));assertEquals(2,web.connections);
+            web.setEditing(true);web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_I,0));assertEquals(3,web.connections); // another DOM field
+        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
+    }
+    @Test public void systemCreatedConnectionIsReusedAndUnavailableConnectionsCanRetry(){
+        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();var web=new RecordingWebView(activity);activity.setContentView(web);
+        var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();web.setEditing(true);
+        try{
+            web.onCreateInputConnection(new EditorInfo());web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_APOSTROPHE,0));assertEquals(1,web.connections);
+            web.setEditing(true);web.connectionAvailable=false;web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_SHIFT_LEFT,0));assertEquals(2,web.connections);
+            web.connectionAvailable=true;web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,KeyEvent.META_SHIFT_ON));assertEquals(3,web.connections);
+            web.dispatchKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_A,KeyEvent.META_SHIFT_ON));assertEquals(3,web.connections);
+        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
+    }
     @Test public void firstPhysicalCharacterAndKeyUpReachEditorExactlyOnce(){
         var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();var web=new RecordingWebView(activity);activity.setContentView(web);
         var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();keyboard.setMode("auto");

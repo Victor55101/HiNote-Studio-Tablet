@@ -245,7 +245,8 @@ const TableEditor = (() => {
     if(target.matches('.tableSelect')&&ImageEditor.hitAt(e))return;
     const node=target.closest('.tableHit'),id=node.dataset.id;if(!tables[id])return;
     e.preventDefault();e.stopPropagation();checkpoint();const previousSelection=selectedId;selectedId=id;
-    drag={previousSelection,kind:target.matches('.tableResize')?'tableResize':'tableMove',id,pointer:e.pointerId,x:e.clientX,y:e.clientY,before:clone(tables[id]),node};
+    const pageTable=composition.table_pages[currentPage].find(t=>t.id===id);
+    drag={previousSelection,kind:target.matches('.tableResize')?'tableResize':'tableMove',id,pointer:e.pointerId,x:e.clientX,y:e.clientY,before:clone(tables[id]),node,pageTable};
     ImageEditor.finishGesture(true);ImageEditor.select(null);MathGraphEditor.clearSelection();
     el('previewWrap').classList.add('objectManipulating');node.classList.add('tableTarget');target.setPointerCapture(e.pointerId);
   }
@@ -266,6 +267,11 @@ const TableEditor = (() => {
       if(widths.reduce((a,b)=>a+b,0)+old.left<=16)t.widths=widths;
       t.rows=old.rows.map(r=>({...r,height:clamp(snap(r.height+dy/old.rows.length),.5,25)}));
       drag.node.style.width=`${t.widths.reduce((a,b)=>a+b,0)*k}px`;
+      // The outline uses the visible page fragment (including rows expanded
+      // by text), then applies the same per-row height delta as the model.
+      const rows=drag.pageTable.rows||old.rows.map((_,i)=>i);
+      const delta=rows.reduce((sum,i)=>sum+t.rows[i].height-old.rows[i].height,0);
+      drag.node.style.height=`${Math.max(k*.5,drag.pageTable.height*.675*zoom+delta*k)}px`;
     }
   }
   function dragEnd(e,cancel=false){

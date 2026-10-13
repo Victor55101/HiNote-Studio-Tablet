@@ -86,6 +86,13 @@ select.nativeSelect{position:absolute!important;left:0!important;top:0!important
 .imageQuickActions .field{width:91px;min-height:42px;padding:3px 9px;background:#16464a;border-radius:10px;font-size:10px;gap:0}
 .imageQuickActions .field input{width:49px;min-height:24px;font-size:13px}
 #imageSelection{z-index:8}
+/* Keep floating controls clear of the image, including at the page edges. */
+.imageQuickActions{position:fixed}
+.previewCard.imageToolsDocked>.cardhead>*{visibility:hidden}
+.previewCard.imageRotating #pageBadge{visibility:hidden}
+.imageRotating #imageSelection{visibility:hidden}
+.imageRotationReadout{position:fixed;z-index:10;pointer-events:none;background:var(--active);color:#9ce7df;border:1px solid var(--accent);border-radius:12px;padding:8px 14px;font-size:16px;font-variant-numeric:tabular-nums;min-width:78px;text-align:center}
+.tableTarget button.tableDelete:not(.tableSelect){color:var(--danger)}
 .objectManipulating .imageQuickActions,.objectManipulating .tableQuickActions,.objectManipulating .objectQuickActions,.objectManipulating .tableResize,.objectManipulating .objectResize{visibility:hidden!important;pointer-events:none!important}
 .notebookThumb{position:sticky;top:8px;align-self:start;max-height:min(420px,55vh)}
 @media(max-width:800px){.notebookDetails{grid-template-columns:minmax(0,1fr) 155px}.notebookThumb{max-height:38vh}.notebookQueue button{margin:3px}}

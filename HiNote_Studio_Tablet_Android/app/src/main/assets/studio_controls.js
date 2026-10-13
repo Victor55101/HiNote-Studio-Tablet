@@ -122,6 +122,8 @@
   }
   $('canvasShell').append(actions);
   actions.append($('imageAngle').closest('.field'));
+  const angleReadout=document.createElement('output');angleReadout.id='imageRotationReadout';angleReadout.className='imageRotationReadout hidden';angleReadout.setAttribute('aria-label','Ángulo de giro');
+  $('previewWrap').closest('.previewCard').append(angleReadout);
   ImageEditor.selection();
   for(const [id,key] of [['mathMoveUp','up'],['mathMoveDown','down'],['tableMoveUp','up'],['tableMoveDown','down']]){const b=$(id);b.textContent=b.textContent.replace(/^[↑↓]\s*/, '');b.prepend(StudioUI.icon(key));}
 
@@ -136,11 +138,15 @@
   };
 
   const writable=target=>{
-    const n=target instanceof Element?target.closest('input,textarea,[contenteditable]'):null;
+    // selectstart targets the text node itself on Chromium/WebView. Treat it
+    // like its editable parent; cancelling it also cancels a simple caret tap.
+    const element=target instanceof Element?target:target?.parentElement;
+    const n=element?.closest('input,textarea,[contenteditable]');
     if(!n||n.disabled||n.readOnly||n.closest('[inert]'))return null;
     return n.isContentEditable||n.matches('textarea,input:not([type]),input[type=text],input[type=search],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=password]')?n:null;
   };
-  function editing(){window.AndroidBridge?.setEditingField?.(!!writable(document.activeElement));}
+  let editingField=null;
+  function editing(){const field=writable(document.activeElement);if(field===editingField)return;editingField=field;window.AndroidBridge?.setEditingField?.(!!field);}
   document.addEventListener('focusin',editing);document.addEventListener('focusout',()=>queueMicrotask(editing));
   document.addEventListener('selectstart',e=>{if(!writable(e.target))e.preventDefault();});
   document.addEventListener('keydown',e=>{

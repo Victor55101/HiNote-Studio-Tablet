@@ -45,13 +45,33 @@ const ImageEditor = (() => {
   }
   function positionTools(){
     const bar=el('imageQuickActions'),im=selected();if(!bar)return;
-    const visible=active&&im&&!exporting&&!busy;bar.classList.toggle('hidden',!visible);if(!visible)return;
-    const wrap=el('previewWrap').getBoundingClientRect(),shell=el('canvasShell').getBoundingClientRect(),box=el('imageSelection').getBoundingClientRect();
-    const left=Math.max(wrap.left,shell.left)+7,right=Math.min(wrap.right,shell.right)-7,top=Math.max(wrap.top,shell.top)+7,bottom=Math.min(wrap.bottom,shell.bottom)-7;
+    const card=el('previewWrap').closest('.previewCard'),heading=card.querySelector('.cardhead'),readout=el('imageRotationReadout');
+    card.classList.remove('imageToolsDocked');if(!gesture?.image)heading.style.minHeight='';
+    const visible=active&&im&&!exporting&&!busy;bar.classList.toggle('hidden',!visible);
+    const rotating=!!(visible&&gesture?.image&&gesture.moved&&(gesture.type==='rotate'||(gesture.type==='pairImage'&&Math.abs(im.angle-gesture.base.angle)>.5)));
+    el('previewWrap').classList.toggle('imageRotating',rotating);card.classList.toggle('imageRotating',rotating);readout?.classList.toggle('hidden',!rotating);
+    if(!visible)return;
+    const wrap=el('previewWrap').getBoundingClientRect(),box=el('imageSelection').getBoundingClientRect();
+    const left=wrap.left+8,right=wrap.right-8,top=wrap.top+8,bottom=wrap.bottom-8;
     bar.style.maxWidth=Math.max(44,right-left)+'px';
-    bar.style.visibility=box.right>left&&box.left<right&&box.bottom>top&&box.top<bottom?'visible':'hidden';
-    bar.style.left=clamp(box.left,left,Math.max(left,right-bar.offsetWidth))-shell.left+'px';
-    bar.style.top=clamp(box.top-bar.offsetHeight-8,top,Math.max(top,bottom-bar.offsetHeight))-shell.top+'px';
+    const onscreen=box.right>left&&box.left<right&&box.bottom>top&&box.top<bottom;
+    bar.style.visibility=onscreen?'visible':'hidden';
+    const w=bar.offsetWidth,h=bar.offsetHeight,x=clamp(box.left,left,Math.max(left,right-w)),y=clamp(box.top,top,Math.max(top,bottom-h));
+    // Never clamp a bar onto the image. Try all four sides, then dock in the
+    // preview heading when the image fills the available viewport.
+    // Leave the 28px corner hit tolerance unobstructed too.
+    const free=[[x,box.top-h-32],[x,box.bottom+32],[box.left-w-32,y],[box.right+32,y]].find(([x,y])=>x>=left&&x+w<=right&&y>=top&&y+h<=bottom);
+    let position=free;
+    if(!position&&onscreen){
+      if(!gesture?.moved)card.classList.add('imageToolsDocked');heading.style.minHeight=h+'px';
+      const head=heading.getBoundingClientRect();position=[head.left+(head.width-w)/2,head.top+(head.height-h)/2];
+    }
+    if(position){bar.style.left=position[0]+'px';bar.style.top=position[1]+'px';}
+    if(rotating&&readout){
+      card.classList.remove('imageToolsDocked');
+      readout.textContent=`${Math.round(normalizeAngle(im.angle)*10)/10}°`;
+      const head=heading.getBoundingClientRect();readout.style.left=(head.right-readout.offsetWidth-20)+'px';readout.style.top=(head.top+(head.height-readout.offsetHeight)/2)+'px';
+    }
   }
   function renderGrid() {
     const c=el('gridCanvas'),resolution=previewResolution(),step=(composition?.layout?.table_grid_step || composition?.layout?.grid_step || 58.8)*.675;
