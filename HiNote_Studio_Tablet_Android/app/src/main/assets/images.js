@@ -140,6 +140,12 @@ const ImageEditor = (() => {
   function point(event){const rect=el('canvasShell').getBoundingClientRect(),k=factor();return {x:(event.clientX-rect.left)/k,y:(event.clientY-rect.top)/k};}
   function local(p,im){const r=-im.angle*Math.PI/180,dx=p.x-im.x-im.width/2,dy=p.y-im.y-im.height/2;return {x:dx*Math.cos(r)-dy*Math.sin(r),y:dx*Math.sin(r)+dy*Math.cos(r)};}
   function hit(p){return [...images].reverse().find(im=>{if(im.page!==currentPage)return false;const q=local(p,im);return Math.abs(q.x)<=im.width/2&&Math.abs(q.y)<=im.height/2;});}
+  function cornerAt(e){
+    const im=selected();if(!active||!im||exporting||busy||e.target.closest('.imageQuickActions'))return null;
+    const q=local(point(e),im),k=factor();
+    // Screen pixels, independent of page zoom and image rotation.
+    return [['nw',-1,-1],['ne',1,-1],['sw',-1,1],['se',1,1]].find(([,x,y])=>Math.hypot(q.x-x*im.width/2,q.y-y*im.height/2)*k<=28)?.[0]||null;
+  }
   function pointerData(e){return {clientX:e.clientX,clientY:e.clientY};}
   const distance=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
   const direction=(a,b)=>Math.atan2(b.clientY-a.clientY,b.clientX-a.clientX)*180/Math.PI;
@@ -151,24 +157,26 @@ const ImageEditor = (() => {
       scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function pointerDown(e){
-    if(e.target.closest('.tableQuickActions,.tableResize,.objectQuickActions,.objectResize')||MathGraphEditor.isDragging())return;
+    const corner=cornerAt(e);
+    if((!corner&&e.target.closest('.tableQuickActions,.tableResize,.objectQuickActions,.objectResize'))||MathGraphEditor.isDragging())return;
     if(e.target.closest('.imageQuickActions')&&!e.target.closest('[data-handle]'))return;
     if(exporting||CalibrationUI.isBusy()||busy||e.button>0||!el('cropDialog').classList.contains('hidden'))return;
     if(pointers.size>=2){e.preventDefault();return;}
     e.preventDefault();pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);
     if(pointers.size===2){if(gesture)gesture.mathTap=false;startPair();return;}
-    const math=e.target.closest('.objectSelect,.tableSelect'),p=point(e),handle=e.target.closest('[data-handle]')?.dataset.handle;
+    const math=e.target.closest('.objectSelect,.tableSelect'),p=point(e),handle=e.target.closest('[data-handle]')?.dataset.handle||corner;
     // Geometric image hit-testing works even when ink/table overlays are above
     // it. Outside the (possibly rotated) image bounds the table remains usable.
     const im=active?(handle?selected():hit(p)):null;
     const mathObject=math?.closest('.objectHit,.tableHit')?.dataset.id;
     if(im){
-      select(im.id);checkpoint();gesture={type:handle==='rotate'?'rotate':handle&&handle!=='move'?'resize':'move',image:true,handle,base:clone(im),original:state(),start:point(e),mathObject,angle:Math.atan2(p.y-im.y-im.height/2,p.x-im.x-im.width/2)*180/Math.PI};
+      select(im.id);checkpoint();gesture={type:handle==='rotate'?'rotate':handle&&handle!=='move'?'resize':'move',image:true,handle,base:clone(im),original:state(),start:point(e),startClient:pointerData(e),moved:false,mathObject,angle:Math.atan2(p.y-im.y-im.height/2,p.x-im.x-im.width/2)*180/Math.PI};
     }else gesture={type:'pan',image:false,imageTap:im?.id||null,start:pointerData(e),scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop,mathObject,tableTap:!!math?.classList.contains('tableSelect'),mathTap:!im&&!!math,moved:false};
   }
   function pointerMove(e){
     if(!pointers.has(e.pointerId)||!gesture)return;e.preventDefault();pointers.set(e.pointerId,pointerData(e));
     const g=gesture,im=selected();
+    if(g.image&&(pointers.size>=2||g.moved||distance(pointerData(e),g.startClient)>4)){g.moved=true;el('previewWrap').classList.add('objectManipulating');}
     if(g.type==='pan'&&Math.hypot(e.clientX-g.start.clientX,e.clientY-g.start.clientY)>8){g.mathTap=false;g.moved=true;}
     if(pointers.size>=2){
       const [a,b]=[...pointers.values()],ratio=distance(a,b)/g.distance,mid={clientX:(a.clientX+b.clientX)/2,clientY:(a.clientY+b.clientY)/2};
@@ -196,11 +204,13 @@ const ImageEditor = (() => {
   function finishGesture(cancel){
     if(!gesture){pointers.clear();return;}
     const g=gesture;gesture=null;pointers.clear();
-    if(g.image){if(cancel&&g.original){images=clone(g.original.images);minimumPages=g.original.minimumPages;}checkpoint();modified();}
+    if(g.image){el('previewWrap').classList.remove('objectManipulating');if(cancel&&g.original){images=clone(g.original.images);minimumPages=g.original.minimumPages;}checkpoint();modified();}
   }
   function pointerUp(e){
     if(!pointers.has(e.pointerId))return;pointers.delete(e.pointerId);
-    if(e.type==='pointercancel'){finishGesture(true);return;}
+    if(e.type!=='pointerup'){finishGesture(true);return;}
+    if(pointers.size===0&&gesture?.image)window.StudioUI?.absorbTap?.(e);
+    if(pointers.size===0&&gesture?.type==='rotate'&&!gesture.moved){const im=selected();if(im)im.angle=normalizeAngle(gesture.base.angle+90);}
     if(pointers.size===0){const g=gesture,math=g?.mathTap?g.mathObject:null,table=g?.tableTap,im=g?.imageTap&&!g?.moved?g.imageTap:null;if(g?.image||g?.mathObject||g?.moved||im)suppressMathClickUntil=Date.now()+500;finishGesture(false);if(im)select(im);else if(math){if(table)TableEditor.selectPreview(math);else MathGraphEditor.selectPreview(math);}else if(g?.type==='pan'&&!g.moved)select(null);return;}
     // After a two-finger gesture, the remaining finger pans/moves from its new position.
     const a=[...pointers.values()][0],im=selected();
@@ -234,7 +244,8 @@ const ImageEditor = (() => {
   for(const type of ['pointerup','pointercancel'])el('cropStage').addEventListener(type,()=>cropStart=null);
   el('cancelCrop').onclick=closeCrop;el('applyCrop').onclick=applyCrop;el('resetCrop').onclick=()=>{crop=fullCrop();updateCrop();};
   el('insertImage').onclick=()=>insert();el('replaceImage').onclick=()=>insert(true);el('cropImage').onclick=openCrop;
-  el('rotateImageLeft').onclick=()=>setAngle((selected()?.angle||0)-90);el('rotateImageRight').onclick=()=>setAngle((selected()?.angle||0)+90);
+  // Pointer gestures rotate on release; Enter/Space activate the same button.
+  el('rotateImageRight').onclick=e=>{if(e.detail===0)setAngle((selected()?.angle||0)+90);};
   el('imageAngle').onchange=e=>setAngle(Number(e.target.value));
   el('imagePage').onchange=e=>{const page=Number(e.target.value)-1;if(!Number.isInteger(page)||page<0||page>=500){updateControls();return;}if(page!==currentPage&&images.filter(im=>im.page===page).length>=20){toast('La página destino ya tiene 20 imágenes');updateControls();return;}edit(()=>{const im=selected();if(im){im.page=page;currentPage=page;}});drawCurrent();};
   el('imageBack').onclick=()=>reorder(false);el('imageFront').onclick=()=>reorder(true);
@@ -254,6 +265,10 @@ const ImageEditor = (() => {
   el('previewWrap').addEventListener('pointermove',e=>{if(previewTouches.has(e.pointerId))previewTouches.set(e.pointerId,pointerData(e));},true);
   for(const type of ['pointerup','pointercancel'])el('previewWrap').addEventListener(type,e=>previewTouches.delete(e.pointerId),true);
   el('previewWrap').addEventListener('pointerdown',pointerDown);
+  el('previewWrap').addEventListener('pointerdown',e=>{
+    // Selected image handles win over transparent table/formula hit areas.
+    if(!pointers.size&&cornerAt(e)){pointerDown(e);e.stopPropagation();}
+  },true);
   el('previewWrap').addEventListener('scroll',positionTools,{passive:true});
   el('previewWrap').addEventListener('click',e=>{const suppress=Date.now()<suppressMathClickUntil&&(e.target===el('previewWrap')||e.target.closest('.objectSelect,.tableSelect'));suppressMathClickUntil=0;if(suppress){e.preventDefault();e.stopPropagation();}},true);
   el('previewWrap').addEventListener('pointermove',pointerMove);
@@ -267,5 +282,5 @@ const ImageEditor = (() => {
     if(e.key==='Escape'&&active){finishGesture(true);select(null);}
   });
   return {state,restore,count,render,updateControls,mode,finishGesture,sanitize,selected,select,normalizeAngle,
-    hitAt:e=>active?hit(point(e)):null,isBusy:()=>busy||folderBusy,exportJSON:()=>JSON.stringify(images),selection,modified};
+    hitAt:e=>active?(cornerAt(e)?selected():hit(point(e))):null,isBusy:()=>busy||folderBusy,exportJSON:()=>JSON.stringify(images),selection,modified};
 })();

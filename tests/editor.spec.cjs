@@ -1070,6 +1070,97 @@ test('V43 keyboard mode touch selection updates native mode and visible text onc
   await page.evaluate(()=>onKeyboardState('{"nativeGate":true,"mode":"physical","hardware":true,"suppress":true}'));
   assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),'Solo físico');
 });
+test('V44 keyboard mode remains enabled through native startup calibration loading',async page=>{
+  await page.addInitScript(()=>{
+    AndroidBridge.requestCalibration=(action,args,id)=>{window.catalogTicket=id;};
+    AndroidBridge.getKeyboardState=()=>JSON.stringify({nativeGate:true,mode:'auto',suppress:false});
+    AndroidBridge.setKeyboardMode=mode=>{window.modeCalls=(window.modeCalls||[]).concat(mode);onKeyboardState(JSON.stringify({nativeGate:true,mode,suppress:mode==='physical'}));};
+  });
+  await page.reload();await page.waitForFunction(()=>CalibrationUI.isBusy());
+  assert.equal(await page.isEnabled('[data-select-for=keyboardMode]'),true,'Native catalog loading must not disable the header keyboard selector');
+  await page.evaluate(()=>onCalibrationResult(catalogTicket,null,'Prueba de carga terminada'));
+  for(const [mode,label] of [['virtual','Mostrar virtual'],['physical','Solo físico'],['auto','Automático']]){
+    await page.locator('[data-select-for=keyboardMode]').tap();await page.locator('.selectMenu [data-value='+mode+']').tap();
+    assert.equal(await page.inputValue('#keyboardMode'),mode);assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),label);
+  }
+  assert.deepEqual(await page.evaluate(()=>modeCalls),['virtual','physical','auto']);
+});
+test('V44 touch menu choices absorb the compatibility click above a document block',async page=>{
+  await setup(page);await openTable(page);await page.click('#tableDone');await page.click('[data-tab=text]');
+  await page.locator('[data-select-for=sizeSel]').tap();
+  const target=await page.locator('.tableBlock button').boundingBox();
+  await page.evaluate(({x,y})=>{
+    const m=document.querySelector('.selectMenu'),o=m.querySelector('[data-value="100"]'),r=o.getBoundingClientRect(),b=m.getBoundingClientRect();
+    m.style.left=(b.left+x-r.left-r.width/2)+'px';m.style.top=(b.top+y-r.top-r.height/2)+'px';
+    window.selectionEvents=0;$('sizeSel').addEventListener('change',()=>selectionEvents++);
+  },{x:target.x+target.width/2,y:target.y+target.height/2});
+  const choice=await page.locator('.selectMenu [data-value="100"]').boundingBox(),x=choice.x+choice.width/2,y=choice.y+choice.height/2;
+  await page.touchscreen.tap(x,y);
+  // Android WebView may target this delayed compatibility click at the newly
+  // exposed node after a pointerup handler removed its menu.
+  await page.evaluate(({x,y})=>document.elementFromPoint(x,y).dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,clientX:x,clientY:y,detail:1})),{x,y});
+  assert.equal(await page.isVisible('#tableDialog'),false,'A select choice must not open the table behind it');
+  assert.equal(await page.evaluate(()=>selectionEvents),1);assert.equal(await page.locator('.selectMenu').count(),0);
+  await page.locator('.tableBlock button').tap();assert.equal(await page.isVisible('#tableDialog'),true,'A new deliberate tap is not swallowed');
+});
+
+test('V44 menus isolate outside taps and scrolling without changing an option',async page=>{
+  await setup(page,'Texto');await page.locator('[data-select-for=sizeSel]').tap();
+  const scrollBefore=await page.locator('.selectMenu').evaluate(n=>n.scrollTop);
+  const box=await page.locator('.selectMenu').boundingBox(),session=await page.context().newCDPSession(page),x=box.x+box.width/2,y=box.y+box.height-30;
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-100}]});
+  await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await page.locator('.selectMenu').count(),1);assert.equal(await page.inputValue('#sizeSel'),'100');
+  assert.ok(await page.locator('.selectMenu').evaluate(n=>n.scrollTop)>scrollBefore,'Options remain scrollable by touch');
+  const graph=await page.locator('[data-tab=insert]').boundingBox();await page.touchscreen.tap(graph.x+graph.width/2,graph.y+graph.height/2);
+  assert.equal(await page.locator('.selectMenu').count(),0);assert.equal(await page.locator('[data-tab=text]').getAttribute('aria-selected'),'true');
+  await page.locator('[data-tab=insert]').tap();assert.equal(await page.locator('[data-tab=insert]').getAttribute('aria-selected'),'true');
+});
+test('V44 selected image corners have touch and mouse tolerance over a table',async page=>{
+  await setup(page);await openTable(page);await page.click('#tableDone');await importImage(page);
+  await page.evaluate(()=>{
+    const data=ImageEditor.state(),im=data.images[0];Object.assign(im,{x:250,y:250,width:220,height:160,angle:27});ImageEditor.restore(data);ImageEditor.select(im.id);
+    zoom=.65;applyZoom();const t=serializeDocument().paragraphs[0].table;
+    composition={snapshot:'overlap-corners',page_count:1,table_pages:[[{id:t.id,x:40,y:100,width:900,height:900}]]};previewRevision=revision;TableEditor.render();
+  });
+  const session=await page.context().newCDPSession(page);
+  for(const kind of ['touch','mouse']){
+    const before=(await imageState(page)).images[0],shell=await page.locator('#canvasShell').boundingBox(),k=.675*.65,angle=before.angle*Math.PI/180;
+    const rx=before.width/2,ry=before.height/2,length=Math.hypot(rx,ry),vx=(rx*Math.cos(angle)-ry*Math.sin(angle))/length,vy=(rx*Math.sin(angle)+ry*Math.cos(angle))/length;
+    const cx=shell.x+(before.x+before.width/2)*k,cy=shell.y+(before.y+before.height/2)*k,x=cx+vx*(length*k+25),y=cy+vy*(length*k+25);
+    if(kind==='touch'){
+      await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+      await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+vx*35,y:y+vy*35}]});
+    }else{await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+vx*35,y+vy*35);}
+    assert.equal(await page.isVisible('#imageQuickActions'),false,'Image actions hide while resizing');
+    if(kind==='touch')await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});else await page.mouse.up();
+    const after=(await imageState(page)).images[0];assert.ok(after.width>before.width+30,kind);assert.equal(after.angle,before.angle);assert.equal(await page.locator('.tableTarget').count(),0);
+    assert.equal(await page.isVisible('#imageQuickActions'),true);assert.equal(await page.evaluate(()=>ImageEditor.selected().id),before.id);
+  }
+});
+test('V44 floating actions hide during movement and return on release or cancellation',async page=>{
+  const session=await page.context().newCDPSession(page);
+  for(const kind of ['table','formula','graph']){
+    await setup(page);
+    if(kind==='table'){
+      await openTable(page);await page.click('#tableDone');
+      await page.evaluate(()=>{zoom=.7;applyZoom();const t=serializeDocument().paragraphs[0].table;composition={snapshot:'drag-table',page_count:1,table_pages:[[{id:t.id,x:60,y:120,width:800,height:250}]]};previewRevision=revision;TableEditor.render();});
+    }else{await openMath(page,kind);if(kind==='formula')await page.locator('.mathSlot').first().fill('x=2');await page.click('#mathDone');await mathPreview(page);}
+    const body=kind==='table'?'.tableSelect':'.objectSelect',bar=kind==='table'?'.tableQuickActions':'.objectQuickActions';
+    await page.locator(body).tap();assert.equal(await page.isVisible(bar),true);
+    const b=await page.locator(body).boundingBox(),x=b.x+b.width/2,y=b.y+b.height/2;
+    await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+32}]});
+    assert.equal(await page.isVisible(bar),false,kind+' toolbar must hide');
+    await session.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
+    assert.equal(await page.isVisible(bar),true,kind+' toolbar returns after cancel');assert.equal(await page.locator('#previewWrap').evaluate(n=>n.classList.contains('objectManipulating')),false);
+  }
+  await setup(page);await importImage(page);await page.evaluate(()=>{zoom=.5;applyZoom();});
+  const b=await page.locator('#imageSelection').boundingBox(),x=b.x+b.width/2,y=b.y+b.height/2;
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+30,y:y+20}]});
+  assert.equal(await page.isVisible('#imageQuickActions'),false);await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});assert.equal(await page.isVisible('#imageQuickActions'),true);
+});
+
 test('V43 Shift Home End and Ctrl navigation select text without priming another shortcut',async page=>{
   await setup(page,'Hola mundo');await select(page,{line:0,offset:5});
   await page.keyboard.press('Shift+End');assert.equal(await page.evaluate(()=>getSelection().toString()),'mundo');
@@ -1079,9 +1170,13 @@ test('V43 Shift Home End and Ctrl navigation select text without priming another
   await openMath(page,'formula');await page.locator('.mathSlot').fill('Hola mundo');await page.locator('.mathSlot').evaluate(n=>n.setSelectionRange(5,5));await page.keyboard.press('Shift+Home');
   assert.deepEqual(await page.locator('.mathSlot').evaluate(n=>[n.selectionStart,n.selectionEnd]),[0,5]);
 });
-test('V43 free rotation lives in image actions and drag rotates without moving the image',async page=>{
+test('V44 one rotation button handles tap keyboard and free drag',async page=>{
   await setup(page);await importImage(page);await page.evaluate(()=>{zoom=.6;applyZoom();});
   assert.equal(await page.locator('#imageSelection [data-handle=rotate]').count(),0);assert.equal(await page.locator('[data-handle=move]').count(),0);
+  assert.equal(await page.locator('[data-handle=rotate]').count(),1);assert.equal(await page.locator('#rotateImageLeft').count(),0);
+  await page.locator('#rotateImageRight').tap();assert.equal((await imageState(page)).images[0].angle,90);assert.equal(await page.isVisible('#cropDialog'),false);
+  await page.locator('#rotateImageRight').focus();await page.keyboard.press('Enter');assert.equal((await imageState(page)).images[0].angle,180);
+  await page.keyboard.press('Space');assert.equal((await imageState(page)).images[0].angle,270);
   const before=(await imageState(page)).images[0],button=await page.locator('#imageQuickActions [data-handle=rotate]').boundingBox();
   await page.mouse.move(button.x+20,button.y+20);await page.mouse.down();await page.mouse.move(button.x+100,button.y+30);await page.mouse.up();
   const after=(await imageState(page)).images[0];assert.notEqual(after.angle,before.angle);assert.equal(after.x,before.x);assert.equal(after.y,before.y);

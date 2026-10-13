@@ -46,7 +46,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div class="topbar">
 <div class="logo"><img alt="" src="logo-hinote.svg"/></div>
 <div class="titlewrap"><h1>HiNote Studio</h1><small id="noteSubtitle">Nueva nota · Borrador guardado</small></div>
-<div class="topactions"><span class="viewState" id="viewState" role="status">Vista pendiente</span><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar vista</button><button class="btn primary" id="exportBtn">Guardar .hinote</button><button class="btn accent" id="exportNotesBtn">Exportar a Notes</button></div>
+<div class="topactions"><label class="field headerKeyboard">Teclado <select aria-label="Teclado en HiNote" id="keyboardMode"><option value="auto">Automático</option><option value="virtual">Mostrar virtual</option><option value="physical">Solo físico</option></select></label><span class="viewState" id="viewState" role="status">Vista pendiente</span><button class="btn ghost hidden" id="cancelBtn">Cancelar</button><button class="btn ghost" id="refreshBtn">Actualizar vista</button><button class="btn primary" id="exportBtn">Guardar .hinote</button><button class="btn accent" id="exportNotesBtn">Exportar a Notes</button></div>
 </div>
 <div class="toolbar"><div class="ribbonMain"><div aria-label="Acciones rápidas" class="toolbarPinned" id="toolbarPinned" role="group">
 <button aria-label="Deshacer nota" class="btn iconBtn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button><button aria-label="Rehacer nota" class="btn iconBtn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
@@ -72,15 +72,13 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div class="field"><label>Espacio entre palabras</label><input id="wordSpacing" max="60" min="12" step="1" type="number" value="26"/></div>
 <label class="field"><input checked="" id="autoPreview" type="checkbox"/> Vista automática</label>
 <label class="field"><input checked="" id="gridCheck" type="checkbox"/> Cuadrícula</label>
-<label class="field">Teclado <select aria-label="Teclado en HiNote" id="keyboardMode"><option value="auto">Automático</option><option value="virtual">Mostrar virtual</option><option value="physical">Solo físico</option></select></label>
 </div>
 <div class="toolpanel contextPanel hidden" id="panelImages"><strong class="contextTag">Imagen</strong>
 
 
 <button class="btn" data-image-action="" id="replaceImage">Reemplazar</button>
 <button class="btn" data-image-action="" id="cropImage">Recortar</button>
-<button aria-label="Girar imagen 90 grados a la izquierda" class="btn" data-image-action="" id="rotateImageLeft">↶ 90°</button>
-<button aria-label="Girar imagen 90 grados a la derecha" class="btn" data-image-action="" id="rotateImageRight">↷ 90°</button>
+<button aria-label="Girar imagen: toca para 90°, arrastra para giro libre" class="btn" data-handle="rotate" data-image-action="" id="rotateImageRight">↷ 90°</button>
 <div class="field"><label for="imageAngle">Ángulo</label><input data-image-action="" id="imageAngle" max="359.9" min="0" step="1" type="number" value="0"/><span>°</span></div>
 <div class="field"><label for="imagePage">Página</label><input data-image-action="" id="imagePage" max="500" min="1" type="number" value="1"/></div>
 <button class="btn" data-image-action="" id="imageBack">Atrás</button><button class="btn" data-image-action="" id="imageFront">Adelante</button>
@@ -112,7 +110,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div class="cardhead"><h2>Previsualización</h2><span class="badge" id="pageBadge">Página 1/1</span></div>
 <details class="warningPanel hidden" id="warningPanel"><summary id="warningCount"></summary><ul id="warnings"></ul></details>
 <div class="imageHint hidden" id="imageHint" role="status">Toca una imagen para editarla. Arrastra para mover; usa dos dedos para cambiar tamaño y girar. La escritura siempre queda encima.</div>
-<div class="previewWrap" id="previewWrap"><div class="canvasShell" id="canvasShell"><canvas height="1080" id="gridCanvas" width="675"></canvas><div id="imageLayer"></div><canvas height="1080" id="previewCanvas" width="675"></canvas><div class="hidden" id="imageSelection"><button aria-label="Redimensionar esquina superior izquierda" data-handle="nw"></button><button aria-label="Redimensionar esquina superior derecha" data-handle="ne"></button><button aria-label="Redimensionar esquina inferior izquierda" data-handle="sw"></button><button aria-label="Redimensionar esquina inferior derecha" data-handle="se"></button><button aria-label="Girar imagen" data-handle="rotate">↻</button></div></div></div>
+<div class="previewWrap" id="previewWrap"><div class="canvasShell" id="canvasShell"><canvas height="1080" id="gridCanvas" width="675"></canvas><div id="imageLayer"></div><canvas height="1080" id="previewCanvas" width="675"></canvas><div class="hidden" id="imageSelection"><button aria-label="Redimensionar esquina superior izquierda" data-handle="nw"></button><button aria-label="Redimensionar esquina superior derecha" data-handle="ne"></button><button aria-label="Redimensionar esquina inferior izquierda" data-handle="sw"></button><button aria-label="Redimensionar esquina inferior derecha" data-handle="se"></button></div></div></div>
 <div class="previewFooter">
 <button class="btn" id="prevPage">←</button>
 <div class="center"><button class="btn" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="btn" id="zoomIn">+</button><button class="btn" id="zoomFit">Ajustar</button><span aria-live="polite" class="status" id="status" role="status">Listo</span></div>

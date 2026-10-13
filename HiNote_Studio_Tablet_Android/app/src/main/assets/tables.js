@@ -247,7 +247,7 @@ const TableEditor = (() => {
     e.preventDefault();e.stopPropagation();checkpoint();const previousSelection=selectedId;selectedId=id;
     drag={previousSelection,kind:target.matches('.tableResize')?'tableResize':'tableMove',id,pointer:e.pointerId,x:e.clientX,y:e.clientY,before:clone(tables[id]),node};
     ImageEditor.finishGesture(true);ImageEditor.select(null);MathGraphEditor.clearSelection();
-    node.classList.add('tableTarget');target.setPointerCapture(e.pointerId);
+    el('previewWrap').classList.add('objectManipulating');node.classList.add('tableTarget');target.setPointerCapture(e.pointerId);
   }
   function dragMove(e){
     if(!drag||e.pointerId!==drag.pointer)return;e.preventDefault();
@@ -271,9 +271,11 @@ const TableEditor = (() => {
   function dragEnd(e,cancel=false){
     if(!drag||e.pointerId!==drag.pointer)return;const d=drag;drag=null;
     if(d.kind==='row'||d.kind==='column'){if(cancel){if(d.kind==='row')working.rows[d.index].height=d.value;else working.widths[d.index]=d.value;}draw();queueDraft();return;}
+    window.StudioUI?.absorbTap?.(e);
+    el('previewWrap').classList.remove('objectManipulating');
     if(cancel)tables[d.id]=d.before;else if(JSON.stringify(tables[d.id])!==JSON.stringify(d.before)){renderLines(readLines());checkpoint();changed();}render();
   }
-  function cancelPreviewDrag(){if(!drag||!drag.id)return;const d=drag;drag=null;tables[d.id]=d.before;selectedId=d.previousSelection||null;render();}
+  function cancelPreviewDrag(){if(!drag||!drag.id)return;const d=drag;drag=null;tables[d.id]=d.before;selectedId=d.previousSelection||null;el('previewWrap').classList.remove('objectManipulating');render();}
   function init(){
     document.addEventListener('click',e=>{if(selectedId&&!drag&&!e.target.closest('#tableOverlay,#tableDialog,#pasteMath'))clearSelection();});
     el('insertTable').onclick=()=>open();el('tableDone').onclick=commit;el('tableCancel').onclick=close;el('tableRemove').onclick=remove;

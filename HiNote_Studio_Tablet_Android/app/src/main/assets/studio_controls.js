@@ -2,7 +2,14 @@
 /* Shared controls retain the original select elements as the model/API. */
 (()=>{
   const $=id=>document.getElementById(id), controls=new Map();
-  let opened=null, popup=null, activeIndex=-1, typeAhead='', typedAt=0;
+  let opened=null, popup=null, shield=null, activeIndex=-1, typeAhead='', typedAt=0, completedTap=null;
+  // WebView can retarget a compatibility click after pointerup removes a menu.
+  // Keep that completed gesture isolated; the next deliberate press is free.
+  function absorbTap(e){if(Number.isFinite(e.clientX)&&Number.isFinite(e.clientY))completedTap={x:e.clientX,y:e.clientY,until:Date.now()+800};}
+  window.addEventListener('pointerdown',()=>completedTap=null,true);
+  window.addEventListener('click',e=>{
+    if(completedTap&&Date.now()<completedTap.until&&(e.detail>0||e.sourceCapabilities?.firesTouchEvents)&&Math.hypot(e.clientX-completedTap.x,e.clientY-completedTap.y)<32){e.preventDefault();e.stopImmediatePropagation();}
+  },true);
   function label(select){
     if(select.getAttribute('aria-label'))return select.getAttribute('aria-label');
     const l=select.labels?.[0]?.cloneNode(true);l?.querySelectorAll('select,button,.selectControl').forEach(n=>n.remove());
@@ -10,7 +17,7 @@
   }
   function options(select){return [...select.options].filter(o=>!o.hidden);}
   function closeSelect(focus=true){
-    if(!opened)return false;const c=controls.get(opened);opened=null;popup?.remove();popup=null;
+    if(!opened)return false;const c=controls.get(opened);opened=null;popup?.remove();popup=null;shield?.remove();shield=null;
     c.button.setAttribute('aria-expanded','false');c.button.removeAttribute('aria-activedescendant');
     if(focus&&c.button.isConnected)c.button.focus({preventScroll:true});return true;
   }
@@ -34,15 +41,21 @@
   function openSelect(select){
     if(select.disabled)return;if(opened===select){closeSelect();return;}closeSelect(false);captureSelection();
     const c=controls.get(select);opened=select;popup=document.createElement('div');popup.className='selectMenu';popup.id=select.id+'-options';popup.setAttribute('role','listbox');popup.setAttribute('aria-label',label(select));
+    shield=document.createElement('div');shield.className='selectShield';shield.setAttribute('aria-hidden','true');
+    shield.onpointerdown=e=>e.stopPropagation();
+    shield.onpointerup=e=>{e.stopPropagation();if(e.pointerType!=='mouse'){e.preventDefault();absorbTap(e);closeSelect();}};
+    shield.onclick=e=>{e.preventDefault();e.stopPropagation();closeSelect();};
+    popup.onpointerdown=e=>e.stopPropagation();popup.onpointerup=e=>e.stopPropagation();popup.onclick=e=>e.stopPropagation();
     for(const [i,o] of options(select).entries()){
       const b=document.createElement('button');b.type='button';b.tabIndex=-1;b.id=select.id+'-option-'+i;b.setAttribute('role','option');b.setAttribute('aria-selected',String(o.selected));b.disabled=o.disabled||o.parentElement.disabled===true;b.textContent=o.label;b.dataset.value=o.value;
       let tap=null;
-      b.onpointerdown=e=>{if(e.pointerType!=='mouse')tap={id:e.pointerId,x:e.clientX,y:e.clientY};e.preventDefault();};
+      b.onpointerdown=e=>{if(e.pointerType!=='mouse'){tap={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};b.setPointerCapture(e.pointerId);}else e.preventDefault();};
+      b.onpointermove=e=>{if(tap?.id===e.pointerId&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>=10)tap.moved=true;};
       b.onpointercancel=()=>tap=null;
-      b.onpointerup=e=>{const start=tap;tap=null;if(start?.id===e.pointerId&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<10){e.preventDefault();e.stopPropagation();choose(select,o.value);}};
+      b.onpointerup=e=>{const start=tap;tap=null;if(start?.id===e.pointerId&&!start.moved&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<10){e.preventDefault();e.stopPropagation();absorbTap(e);choose(select,o.value);}};
       b.onclick=e=>{e.preventDefault();e.stopPropagation();if(opened===select)choose(select,o.value);};popup.append(b);
     }
-    (select.closest('[role=dialog]')||document.body).append(popup);c.button.setAttribute('aria-controls',popup.id);c.button.setAttribute('aria-expanded','true');c.button.focus({preventScroll:true});place();
+    (select.closest('[role=dialog]')||document.body).append(shield,popup);c.button.setAttribute('aria-controls',popup.id);c.button.setAttribute('aria-expanded','true');c.button.focus({preventScroll:true});place();
     highlight(Math.max(0,options(select).findIndex(o=>o.selected)));
   }
   function key(select,event){
@@ -95,19 +108,16 @@
       for(const n of r.addedNodes||[])if(n instanceof Element){if(n.matches('select')){build(n);changed=true;}n.querySelectorAll('select:not(.nativeSelect)').forEach(s=>{build(s);changed=true;});}
     }if(changed)sync();
   }).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','selected','value','label']});
-  const syncColors=StudioUI.syncColors;StudioUI.syncColors=()=>{syncColors();sync();};StudioUI.syncSelects=sync;
+  const syncColors=StudioUI.syncColors;StudioUI.syncColors=()=>{syncColors();sync();};StudioUI.syncSelects=sync;StudioUI.absorbTap=absorbTap;
   document.addEventListener('input',sync);document.addEventListener('change',()=>queueMicrotask(sync));document.addEventListener('selectionchange',sync);
-  document.addEventListener('pointerdown',e=>{if(opened&&!e.target.closest('.selectMenu')&&!controls.get(opened).wrapper.contains(e.target))closeSelect(false);},true);
   document.addEventListener('keydown',e=>{if(opened&&e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeSelect();}else if(opened&&e.key==='Tab')closeSelect(false);},true);
   window.addEventListener('resize',place);document.addEventListener('scroll',e=>{if(!e.target.closest?.('.selectMenu'))place();},true);window.visualViewport?.addEventListener('resize',place);
 
   // A single horizontal strip: image tools enter from the right, list tools
   // continue after the text controls. Neither changes the preview height.
   $('toolbarScroll').prepend($('panelImages'));
-  const keyboard=$('keyboardMode').closest('label');keyboard.classList.add('headerKeyboard');document.querySelector('.topactions').prepend(keyboard);
   const actions=document.createElement('div');actions.id='imageQuickActions';actions.className='imageQuickActions hidden';actions.setAttribute('role','group');actions.setAttribute('aria-label','Acciones de imagen');
-  const rotation=$('imageSelection').querySelector('[data-handle=rotate]');rotation.className='btn';rotation.title='Arrastra para girar libremente';rotation.setAttribute('aria-label','Girar imagen libremente');rotation.replaceChildren(StudioUI.icon('rotate'));actions.append(rotation);
-  for(const [id,key] of [['cropImage','crop'],['rotateImageLeft','undo'],['rotateImageRight','rotate'],['duplicateImage','copy'],['replaceImage','replace'],['deleteImage','trash']]){
+  for(const [id,key] of [['cropImage','crop'],['rotateImageRight','rotate'],['duplicateImage','copy'],['replaceImage','replace'],['deleteImage','trash']]){
     const b=$(id),name=b.getAttribute('aria-label')||b.textContent.trim();b.setAttribute('aria-label',name);b.title=name;b.replaceChildren(StudioUI.icon(key));actions.append(b);
   }
   $('canvasShell').append(actions);
