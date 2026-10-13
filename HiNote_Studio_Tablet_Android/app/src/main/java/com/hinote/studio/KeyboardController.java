@@ -32,13 +32,13 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     // Connection is informational. Auto follows actual interaction, even when
     // the NearLink keyboard stays connected throughout a touch editing session.
     static boolean suppress(String mode,boolean physicalInput){return "physical".equals(mode)||("auto".equals(mode)&&physicalInput);}
-    static boolean physicalKey(KeyEvent event){
-        return event.getAction()==KeyEvent.ACTION_DOWN&&(event.getFlags()&KeyEvent.FLAG_SOFT_KEYBOARD)==0
-            &&event.getDeviceId()!=KeyCharacterMap.VIRTUAL_KEYBOARD&&event.isFromSource(InputDevice.SOURCE_KEYBOARD)
-            &&(event.isPrintingKey()||event.getKeyCode()==KeyEvent.KEYCODE_DEL||event.getKeyCode()==KeyEvent.KEYCODE_FORWARD_DEL
-                ||event.getKeyCode()==KeyEvent.KEYCODE_ENTER||event.getKeyCode()==KeyEvent.KEYCODE_TAB
-                ||(event.getKeyCode()>=KeyEvent.KEYCODE_DPAD_UP&&event.getKeyCode()<=KeyEvent.KEYCODE_DPAD_RIGHT));
+    static boolean hardwareKey(KeyEvent event){
+        return (event.getAction()==KeyEvent.ACTION_DOWN||event.getAction()==KeyEvent.ACTION_UP)
+            &&(event.getFlags()&KeyEvent.FLAG_SOFT_KEYBOARD)==0
+            &&event.getDeviceId()!=KeyCharacterMap.VIRTUAL_KEYBOARD
+            &&event.isFromSource(InputDevice.SOURCE_KEYBOARD)&&!event.isSystem();
     }
+    static boolean physicalKey(KeyEvent event){return event.getAction()==KeyEvent.ACTION_DOWN&&hardwareKey(event);}
     static boolean physicalPointer(MotionEvent event){
         int action=event.getActionMasked();
         if(action!=MotionEvent.ACTION_DOWN&&action!=MotionEvent.ACTION_MOVE&&action!=MotionEvent.ACTION_HOVER_MOVE
@@ -48,7 +48,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
             ||event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE);
     }
     void start(){if(active)return;active=true;if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
-    void stop(){active=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);}
+    void stop(){active=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
     void refresh(){
         boolean found=false;if(inputs!=null)for(int id:inputs.getInputDeviceIds()){
             InputDevice device=inputs.getInputDevice(id);
@@ -59,7 +59,8 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         hardware=found||keyObserved||(config.keyboard==Configuration.KEYBOARD_QWERTY&&config.hardKeyboardHidden==Configuration.HARDKEYBOARDHIDDEN_NO);
         if(wasConnected&&!hardware){physicalInput=false;cancelTouch();}publish();
     }
-    boolean routeBeforeIme(KeyEvent event){return active&&!"virtual".equals(mode)&&physicalKey(event);}
+    // Keep Shift/Ctrl/Alt/Fn and their releases out of a separate IME stream.
+    boolean routeBeforeIme(KeyEvent event){return active&&hardwareKey(event);}
     void windowFocused(){
         refresh();
         // Drop any stale resize frame from the IME in the previous activity.

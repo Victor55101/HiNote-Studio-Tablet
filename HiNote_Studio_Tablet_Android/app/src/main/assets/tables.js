@@ -112,7 +112,7 @@ const TableEditor = (() => {
     if(locked()||ime)return;captureSelection();checkpoint();
     if(!id&&Object.keys(live()).length>=50){toast('La nota admite hasta 50 tablas');return;}
     originalId=id;insertion=bookmark();
-    working=id?get(id):{id:newId(),widths:[5,5,5],rows:Array.from({length:4},(_,r)=>({height:r?2:1,cells:Array.from({length:3},()=>({...blank(),align:r?'left':'center'}))})),left:1,gap:0,mode:'standard',border:2,color:'#000000',repeat_header:true};
+    working=id?get(id):{id:newId(),widths:[5,5,5],rows:Array.from({length:3},(_,r)=>({height:2,cells:Array.from({length:3},()=>({...blank(),align:r?'left':'center'}))})),left:1,gap:0,mode:'standard',border:2,color:'#000000',repeat_header:true};
     selecting=false;singleCell(0,0);activate();
   }
   function activate(){el('tableDialog').classList.remove('hidden');document.querySelector('.app').inert=true;draw();show('Estándar: 60 %. Ajustar al espacio reduce hasta 50 % si hace falta. La fila crece para conservar todo el texto.');el('tableDone').focus();window.StudioUI?.syncColors();}
@@ -207,6 +207,7 @@ const TableEditor = (() => {
     const left=Math.max(wrap.left,shell.left)+6,right=Math.min(wrap.right,shell.right)-6,top=Math.max(wrap.top,shell.top)+6,bottom=Math.min(wrap.bottom,shell.bottom)-6;
     el('tableOverlay').querySelectorAll('.tableTarget').forEach(box=>{
       const r=box.getBoundingClientRect(),bar=box.querySelector('.tableQuickActions'),resize=box.querySelector('.tableResize');
+      if(!bar||!resize)return;
       const visible=r.right>left&&r.left<right&&r.bottom>top&&r.top<bottom;
       bar.style.visibility=resize.style.visibility=visible?'visible':'hidden';if(!visible)return;
       const w=bar.offsetWidth,h=bar.offsetHeight;
@@ -227,7 +228,7 @@ const TableEditor = (() => {
       const choose=document.createElement('button');choose.type='button';choose.className='tableSelect';choose.setAttribute('aria-label','Seleccionar tabla');choose.setAttribute('aria-pressed',String(selectedId===t.id));choose.onclick=e=>{e.stopPropagation();selectPreview(t.id);};box.append(choose);layer.append(box);
       if(selectedId!==t.id)continue;
       const bar=document.createElement('div');bar.className='tableQuickActions';box.append(bar);
-      for(const [action,label,help] of [['tableMove','↔','Mover tabla'],['tableOpen','Editar','Editar tabla'],['tableCopy','⧉','Copiar tabla'],['tableDelete','×','Eliminar tabla'],['tableResize','↘','Redimensionar tabla']]){const b=document.createElement('button');b.type='button';b.className=action;b.textContent=label;window.StudioUI?.objectIcon(b,action);b.setAttribute('aria-label',help);b.title=help;(action==='tableResize'?box:bar).append(b);b.onclick=e=>{e.stopPropagation();if(action==='tableCopy')copyObject(t.id);if(action==='tableDelete')quickRemove(t.id);};}
+      for(const [action,label,help] of [['tableOpen','Editar','Editar tabla'],['tableCopy','⧉','Copiar tabla'],['tableDelete','×','Eliminar tabla'],['tableResize','↘','Redimensionar tabla']]){const b=document.createElement('button');b.type='button';b.className=action;b.textContent=label;window.StudioUI?.objectIcon(b,action);b.setAttribute('aria-label',help);b.title=help;(action==='tableResize'?box:bar).append(b);b.onclick=e=>{e.stopPropagation();if(action==='tableCopy')copyObject(t.id);if(action==='tableDelete')quickRemove(t.id);};}
       const edit=box.querySelector('.tableOpen');let tap=null;
       edit.onclick=()=>{if(!working)open(t.id);};
       // Touch browsers can omit the compatibility click immediately after a drag.
@@ -239,9 +240,14 @@ const TableEditor = (() => {
     positionTools();
   }
   function previewStart(e){
-    if(!e.target.matches('.tableMove,.tableResize')||locked()||working||drag)return;
-    const id=e.target.closest('.tableTarget').dataset.id;if(!tables[id])return;e.preventDefault();checkpoint();
-    drag={kind:e.target.className,id,pointer:e.pointerId,x:e.clientX,y:e.clientY,before:clone(tables[id]),node:e.target.closest('.tableTarget')};e.target.setPointerCapture(e.pointerId);
+    const target=e.target.closest('.tableSelect,.tableResize');
+    if(!target||locked()||working||drag||e.button>0)return;
+    if(target.matches('.tableSelect')&&ImageEditor.hitAt(e))return;
+    const node=target.closest('.tableHit'),id=node.dataset.id;if(!tables[id])return;
+    e.preventDefault();e.stopPropagation();checkpoint();const previousSelection=selectedId;selectedId=id;
+    drag={previousSelection,kind:target.matches('.tableResize')?'tableResize':'tableMove',id,pointer:e.pointerId,x:e.clientX,y:e.clientY,before:clone(tables[id]),node};
+    ImageEditor.finishGesture(true);ImageEditor.select(null);MathGraphEditor.clearSelection();
+    node.classList.add('tableTarget');target.setPointerCapture(e.pointerId);
   }
   function dragMove(e){
     if(!drag||e.pointerId!==drag.pointer)return;e.preventDefault();
@@ -265,8 +271,9 @@ const TableEditor = (() => {
   function dragEnd(e,cancel=false){
     if(!drag||e.pointerId!==drag.pointer)return;const d=drag;drag=null;
     if(d.kind==='row'||d.kind==='column'){if(cancel){if(d.kind==='row')working.rows[d.index].height=d.value;else working.widths[d.index]=d.value;}draw();queueDraft();return;}
-    if(cancel)tables[d.id]=d.before;else{renderLines(readLines());checkpoint();changed();}render();
+    if(cancel)tables[d.id]=d.before;else if(JSON.stringify(tables[d.id])!==JSON.stringify(d.before)){renderLines(readLines());checkpoint();changed();}render();
   }
+  function cancelPreviewDrag(){if(!drag||!drag.id)return;const d=drag;drag=null;tables[d.id]=d.before;selectedId=d.previousSelection||null;render();}
   function init(){
     document.addEventListener('click',e=>{if(selectedId&&!drag&&!e.target.closest('#tableOverlay,#tableDialog,#pasteMath'))clearSelection();});
     el('insertTable').onclick=()=>open();el('tableDone').onclick=commit;el('tableCancel').onclick=close;el('tableRemove').onclick=remove;
@@ -291,5 +298,5 @@ const TableEditor = (() => {
     el('tableDialog').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'&&!e.target.closest('.cellEditor')){const focus=[...el('tableDialog').querySelectorAll('button,input,select,[contenteditable=true]')].filter(n=>!n.disabled&&n.getClientRects().length);const i=focus.indexOf(document.activeElement);if((e.shiftKey&&i===0)||(!e.shiftKey&&i===focus.length-1)){e.preventDefault();focus[e.shiftKey?focus.length-1:0].focus();}}});
     if(resume?.table){try{validate(resume.table);working=resume.table;originalId=resume.originalId;insertion=resume.insertion;activate();show('Se recuperó la tabla que estabas editando. Aplica los cambios o cancela para conservar la versión anterior.');}catch(e){resume=null;}}
   }
-  return {init,open,get,block,isLine,state,restore,count,mode,render,clearSelection,selectPreview,pasteObject,isOpen:()=>!!working};
+  return {init,open,get,block,isLine,state,restore,count,mode,render,clearSelection,selectPreview,pasteObject,cancelPreviewDrag,isDragging:()=>!!drag,isOpen:()=>!!working};
 })();

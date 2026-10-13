@@ -1,38 +1,59 @@
 package com.hinote.studio;
 
 import android.content.Context;
+import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.webkit.WebView;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 
-/** Deliver real hardware keys to Chromium before an open IME can swallow them. */
+/** Keep physical key pairs together; never inject events into other apps. */
 class EditorWebView extends WebView {
     private KeyboardController keyboard;
-    private final Set<Long> directKeys=new HashSet<>();
+    private final Map<Long,KeyEvent> pressed=new HashMap<>();
     private boolean editing;
     EditorWebView(Context context){super(context);}
     void setKeyboard(KeyboardController controller){keyboard=controller;}
     void setEditing(boolean value){editing=value;}
     protected boolean deliverHardwareKey(KeyEvent event){return super.dispatchKeyEvent(event);}
-    @Override public boolean dispatchKeyEventPreIme(KeyEvent event){
+    static KeyEvent navigationKey(KeyEvent event){
+        if(!event.isFunctionPressed())return event;
+        int code=event.getKeyCode(),mapped=code;
+        if(code==KeyEvent.KEYCODE_DPAD_LEFT)mapped=KeyEvent.KEYCODE_MOVE_HOME;
+        else if(code==KeyEvent.KEYCODE_DPAD_RIGHT)mapped=KeyEvent.KEYCODE_MOVE_END;
+        else if(code==KeyEvent.KEYCODE_DPAD_UP)mapped=KeyEvent.KEYCODE_PAGE_UP;
+        else if(code==KeyEvent.KEYCODE_DPAD_DOWN)mapped=KeyEvent.KEYCODE_PAGE_DOWN;
+        return mapped==code?event:new KeyEvent(event.getDownTime(),event.getEventTime(),event.getAction(),mapped,event.getRepeatCount(),event.getMetaState()&~KeyEvent.META_FUNCTION_ON,event.getDeviceId(),event.getScanCode(),event.getFlags(),event.getSource());
+    }
+    private boolean route(KeyEvent event){
         long key=((long)event.getDeviceId()<<32)|(event.getKeyCode()&0xffffffffL);
-        boolean down=event.getAction()==KeyEvent.ACTION_DOWN;
-        if(keyboard!=null&&((down&&keyboard.routeBeforeIme(event))||directKeys.contains(key))){
-            if(down)directKeys.add(key);else directKeys.remove(key);
-            // Send the original event once, including modifiers, repeat count,
-            // dead keys and the matching key-up. Then change the window policy.
-            // Returning true prevents a second trip through the soft IME.
-            deliverHardwareKey(event);
-            keyboard.observe(event);
-            return true;
+        KeyEvent down=pressed.get(key),sent=navigationKey(event);
+        if(event.getAction()==KeyEvent.ACTION_DOWN)pressed.put(key,sent);
+        else if(event.getAction()==KeyEvent.ACTION_UP){
+            pressed.remove(key);
+            // Fn can be released before the arrow: its key-up still matches.
+            if(down!=null&&sent.getKeyCode()!=down.getKeyCode())sent=new KeyEvent(event.getDownTime(),event.getEventTime(),KeyEvent.ACTION_UP,down.getKeyCode(),0,event.getMetaState()&~KeyEvent.META_FUNCTION_ON,event.getDeviceId(),event.getScanCode(),event.getFlags(),event.getSource());
+        }
+        boolean handled=deliverHardwareKey(sent);
+        if(keyboard!=null)keyboard.observe(event);
+        return handled;
+    }
+    @Override public boolean dispatchKeyEventPreIme(KeyEvent event){
+        if(keyboard!=null&&keyboard.routeBeforeIme(event)){
+            route(event);
+            return true; // no second delivery to the IME or Chromium
         }
         return super.dispatchKeyEventPreIme(event);
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
-        boolean handled=super.dispatchKeyEvent(event);
+        // The disconnected IME can send keys directly here instead of pre-IME.
+        boolean handled=keyboard!=null&&keyboard.routeBeforeIme(event)?route(event):super.dispatchKeyEvent(event);
         int key=event.getKeyCode();
         return handled||(editing&&key>=KeyEvent.KEYCODE_DPAD_UP&&key<=KeyEvent.KEYCODE_DPAD_RIGHT);
     }
-    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(!focused)directKeys.clear();}
+    void releaseHardwareKeys(){
+        for(KeyEvent down:pressed.values())deliverHardwareKey(new KeyEvent(down.getDownTime(),SystemClock.uptimeMillis(),KeyEvent.ACTION_UP,down.getKeyCode(),0,0,down.getDeviceId(),down.getScanCode(),down.getFlags()|KeyEvent.FLAG_CANCELED,down.getSource()));
+        pressed.clear();
+    }
+    @Override public void onWindowFocusChanged(boolean focused){if(!focused)releaseHardwareKeys();super.onWindowFocusChanged(focused);}
 }

@@ -6,7 +6,7 @@ const ImageEditor = (() => {
   const fullCrop = () => ({left:0,top:0,right:1,bottom:1});
   let images = [], minimumPages = 1, selectedId = null, active = false, busy = false, ticket = 0, pending = null;
   let gesture = null, pointers = new Map(), crop = null, cropStart = null, frame = null, suppressMathClickUntil=0;
-  let gridKey='';
+  let gridKey='';const previewTouches=new Map();
   const selected = () => images.find(im => im.id === selectedId && im.page === currentPage);
   const src = asset => `https://hinote.local/images/${asset}`;
   const newId = () => 'im_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,12);
@@ -162,7 +162,7 @@ const ImageEditor = (() => {
     // it. Outside the (possibly rotated) image bounds the table remains usable.
     const im=active?(handle?selected():hit(p)):null;
     const mathObject=math?.closest('.objectHit,.tableHit')?.dataset.id;
-    if(im&&(handle||e.pointerType==='mouse')){
+    if(im){
       select(im.id);checkpoint();gesture={type:handle==='rotate'?'rotate':handle&&handle!=='move'?'resize':'move',image:true,handle,base:clone(im),original:state(),start:point(e),mathObject,angle:Math.atan2(p.y-im.y-im.height/2,p.x-im.x-im.width/2)*180/Math.PI};
     }else gesture={type:'pan',image:false,imageTap:im?.id||null,start:pointerData(e),scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop,mathObject,tableTap:!!math?.classList.contains('tableSelect'),mathTap:!im&&!!math,moved:false};
   }
@@ -201,7 +201,7 @@ const ImageEditor = (() => {
   function pointerUp(e){
     if(!pointers.has(e.pointerId))return;pointers.delete(e.pointerId);
     if(e.type==='pointercancel'){finishGesture(true);return;}
-    if(pointers.size===0){const g=gesture,math=g?.mathTap?g.mathObject:null,table=g?.tableTap,im=g?.imageTap&&!g?.moved?g.imageTap:null;if(g?.mathObject||g?.moved||im)suppressMathClickUntil=Date.now()+500;finishGesture(false);if(im)select(im);else if(math){if(table)TableEditor.selectPreview(math);else MathGraphEditor.selectPreview(math);}else if(g?.type==='pan'&&!g.moved)select(null);return;}
+    if(pointers.size===0){const g=gesture,math=g?.mathTap?g.mathObject:null,table=g?.tableTap,im=g?.imageTap&&!g?.moved?g.imageTap:null;if(g?.image||g?.mathObject||g?.moved||im)suppressMathClickUntil=Date.now()+500;finishGesture(false);if(im)select(im);else if(math){if(table)TableEditor.selectPreview(math);else MathGraphEditor.selectPreview(math);}else if(g?.type==='pan'&&!g.moved)select(null);return;}
     // After a two-finger gesture, the remaining finger pans/moves from its new position.
     const a=[...pointers.values()][0],im=selected();
     if(gesture?.image&&im)gesture={...gesture,type:'move',base:clone(im),start:point(a)};
@@ -241,12 +241,24 @@ const ImageEditor = (() => {
   el('deleteImage').onclick=()=>edit(()=>{images=images.filter(im=>im.id!==selectedId);selectedId=null;});
   el('duplicateImage').onclick=()=>{if(images.length>=200||images.filter(im=>im.page===currentPage).length>=20){toast('Límite: 20 imágenes por página y 200 por nota');return;}edit(()=>{const im=selected();if(im){const copy=clone(im);copy.id=newId();copy.x+=25;copy.y+=25;fit(copy);images.push(copy);selectedId=copy.id;}});};
   el('imageNewPage').onclick=()=>{if(count()>=500)return;edit(()=>{minimumPages=count()+1;currentPage=minimumPages-1;selectedId=null;});drawCurrent();};
+  // A second finger switches an object-body drag to a page pinch. Track in
+  // capture phase because the object owns the first pointer's drag events.
+  el('previewWrap').addEventListener('pointerdown',e=>{
+    if(e.pointerType!=='touch')return;previewTouches.set(e.pointerId,pointerData(e));
+    if(previewTouches.size!==2||(!MathGraphEditor.isDragging()&&!TableEditor.isDragging()))return;
+    e.preventDefault();e.stopImmediatePropagation();
+    MathGraphEditor.cancelPreviewDrag();TableEditor.cancelPreviewDrag();finishGesture(true);
+    pointers=new Map(previewTouches);gesture={type:'pan',image:false,moved:true};startPair();
+    for(const id of pointers.keys())el('previewWrap').setPointerCapture(id);
+  },true);
+  el('previewWrap').addEventListener('pointermove',e=>{if(previewTouches.has(e.pointerId))previewTouches.set(e.pointerId,pointerData(e));},true);
+  for(const type of ['pointerup','pointercancel'])el('previewWrap').addEventListener(type,e=>previewTouches.delete(e.pointerId),true);
   el('previewWrap').addEventListener('pointerdown',pointerDown);
   el('previewWrap').addEventListener('scroll',positionTools,{passive:true});
   el('previewWrap').addEventListener('click',e=>{const suppress=Date.now()<suppressMathClickUntil&&(e.target===el('previewWrap')||e.target.closest('.objectSelect,.tableSelect'));suppressMathClickUntil=0;if(suppress){e.preventDefault();e.stopPropagation();}},true);
   el('previewWrap').addEventListener('pointermove',pointerMove);
   for(const type of ['pointerup','pointercancel','lostpointercapture'])el('previewWrap').addEventListener(type,pointerUp);
-  window.addEventListener('blur',()=>finishGesture(false));
+  window.addEventListener('blur',()=>{previewTouches.clear();finishGesture(false);});
   document.addEventListener('keydown',e=>{
     if(!el('cropDialog').classList.contains('hidden')){
       if(e.key==='Escape'){e.preventDefault();closeCrop();}
@@ -255,5 +267,5 @@ const ImageEditor = (() => {
     if(e.key==='Escape'&&active){finishGesture(true);select(null);}
   });
   return {state,restore,count,render,updateControls,mode,finishGesture,sanitize,selected,select,normalizeAngle,
-    isBusy:()=>busy||folderBusy,exportJSON:()=>JSON.stringify(images),selection,modified};
+    hitAt:e=>active?hit(point(e)):null,isBusy:()=>busy||folderBusy,exportJSON:()=>JSON.stringify(images),selection,modified};
 })();

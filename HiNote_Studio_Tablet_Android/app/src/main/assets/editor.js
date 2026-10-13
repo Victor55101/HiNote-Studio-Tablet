@@ -568,7 +568,7 @@ NotebookUI.init();
   }
   window.onKeyboardState=raw=>{try{
     const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;mode=data.mode||'auto';$('keyboardMode').value=mode;
-    if(suppress){touch=null;touchRevision++;}updateFields();
+    if(suppress){touch=null;touchRevision++;}updateFields();window.StudioUI?.syncSelects?.();
   }catch(_){}};
   window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);
   document.addEventListener('pointerdown',event=>{
@@ -590,7 +590,7 @@ NotebookUI.init();
         window.AndroidBridge?.requestTouchKeyboard?.();
     });
   },true);
-  $('keyboardMode').onchange=()=>{if(window.AndroidBridge?.setKeyboardMode)AndroidBridge.setKeyboardMode($('keyboardMode').value);else toast('La detección del teclado está disponible en Android.');};
+  $('keyboardMode').onchange=()=>{mode=$('keyboardMode').value;touch=null;touchRevision++;if(window.AndroidBridge?.setKeyboardMode)AndroidBridge.setKeyboardMode(mode);else toast('La detección del teclado está disponible en Android.');};
   new MutationObserver(updateFields).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['contenteditable']});
   if(window.AndroidBridge?.getKeyboardState)onKeyboardState(AndroidBridge.getKeyboardState());
 })();

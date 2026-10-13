@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V42
+# HiNote Studio Tablet — V43
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V43 mantiene las pulsaciones y liberaciones del teclado físico en una misma ruta, sincroniza el selector de modo y admite Fn con navegación y selección. Los objetos se arrastran desde su cuerpo, la rotación libre está en las acciones de imagen, las tablas nuevas son de 3 × 3 (columnas de 5 cuadros, filas de 2) y la miniatura de combinación sigue la lista y se limpia al retirar páginas. Detalles: [docs/V43.md](docs/V43.md).
 
 V42 pule el rediseño de V41: desplegables propios, herramientas de imagen sobre la selección, cintas contextuales horizontales, formato de tablas sin botón adicional y edición confinada al campo de texto. Corrige el primer carácter al alternar teclados, el espacio del IME al regresar a la app y Atrás dentro de los editores. Consulta [docs/V42.md](docs/V42.md).
 

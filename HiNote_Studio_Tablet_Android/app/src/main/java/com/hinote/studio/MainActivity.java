@@ -513,10 +513,10 @@ public class MainActivity extends Activity {
     @Override protected void onResume(){super.onResume();if(keyboardController!=null)keyboardController.start();}
     @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.windowFocused();}
     @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
-    @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchKeyEvent(event);}
+    @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){boolean handled=super.dispatchKeyEvent(event);if(keyboardController!=null)keyboardController.observe(event);return handled;}
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchTouchEvent(event);}
     @Override public boolean dispatchGenericMotionEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchGenericMotionEvent(event);}
-    @Override protected void onPause(){if(keyboardController!=null)keyboardController.stop();if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
+    @Override protected void onPause(){if(webView instanceof EditorWebView)((EditorWebView)webView).releaseHardwareKeys();if(keyboardController!=null)keyboardController.stop();if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(notesProbe!=null){notesProbe.receive(intent);send("onNotesProbeShared","");}}
     @Override protected void onDestroy(){destroyed=true;if(keyboardController!=null)keyboardController.stop();if(notesProbe!=null)notesProbe.close();if(worker!=null)worker.shutdownNow();if(webView!=null){disposeWebView(webView);webView=null;}super.onDestroy();}
 }
