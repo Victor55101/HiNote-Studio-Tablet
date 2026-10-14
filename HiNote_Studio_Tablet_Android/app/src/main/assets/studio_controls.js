@@ -170,7 +170,7 @@
           else s.setBaseAndExtent(anchor,ao,focus,fo);
         }
       }
-      root.focus({preventScroll:true});captureSelection();
+      root.focus({preventScroll:true});captureSelection();scrollCaretIntoView(root);
     }else if(root.selectionStart!==null&&root.selectionStart===root.selectionEnd){
       const p=root.selectionStart,len=root.value.length;
       if((e.key==='ArrowLeft'&&p===0)||(e.key==='ArrowRight'&&p===len))e.preventDefault();

@@ -60,10 +60,12 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div class="field"><label>Opacidad</label><input id="opacity" max="100" min="1" type="number" value="100"/><span>%</span></div>
 <div class="field"><label for="thicknessSel">Grosor</label><select id="thicknessSel"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
 <select class="btn" id="caseSel"><option value="">Aa</option><option value="sentence">Tipo oración.</option><option value="lower">minúscula</option><option value="upper">MAYÚSCULAS</option><option value="title">Mayúsculas Cada Palabra</option><option value="toggle">tIPO iNVERSO</option></select>
+<button class="btn scriptButton" id="subscriptBtn" aria-label="Subíndice" title="Subíndice" aria-pressed="false">x<sub>2</sub></button><button class="btn scriptButton" id="superscriptBtn" aria-label="Superíndice" title="Superíndice" aria-pressed="false">x<sup>2</sup></button>
 <button aria-expanded="false" class="btn" id="listToggle">Lista</button></div>
 <div class="toolpanel contextPanel hidden" id="panelLists"><strong class="contextTag">Lista</strong>
-<select class="btn" id="listType"><option value="bullet">• Viñeta</option><option value="dash">- Guion</option><option value="asterisk">* Asterisco</option><option value="num_dot">1. Numérica</option><option value="num_paren">1) Numérica</option><option value="alpha_lower_dot">a. Alfabética</option><option value="alpha_lower_paren">a) Alfabética</option><option value="alpha_upper_dot">A. Alfabética</option><option value="alpha_upper_paren">A) Alfabética</option></select>
-<button class="btn" id="applyList">Aplicar lista</button><button class="btn" id="removeList">Quitar</button><button aria-label="Aumentar sangría" class="btn" id="indentBtn">→</button><button aria-label="Reducir sangría" class="btn" id="outdentBtn">←</button>
+<select class="btn" id="listType"><option value="bullet">• Viñeta</option><option value="dash">- Guion</option><option value="asterisk">* Asterisco</option><option value="num_dot">1. Numérica</option><option value="num_paren">1) Numérica</option><option value="alpha_lower_dot">a. Alfabética</option><option value="alpha_lower_paren">a) Alfabética</option><option value="alpha_upper_dot">A. Alfabética</option><option value="alpha_upper_paren">A) Alfabética</option><option value="roman_lower_dot">i. Romana</option><option value="roman_upper_dot">I. Romana</option><option value="multi_decimal">1.1. Multinivel</option></select>
+<button class="btn" id="applyList">Aplicar lista</button><button class="btn" id="removeList">Quitar</button><button aria-label="Aumentar nivel" class="btn" id="indentBtn">→</button><button aria-label="Reducir nivel" class="btn" id="outdentBtn">←</button>
+<button class="btn" id="continueList">Continuar</button><button class="btn" id="restartList">Reiniciar en 1</button><div class="field"><label for="listStart">Comenzar en</label><input id="listStart" type="number" min="1" max="999999" value="1"/></div><button class="btn" id="setListStart">Establecer</button>
 <div class="field"><label for="listIndent">Sangría</label><input id="listIndent" max="12" min="0" step="1" type="number" value="0"/><span>cuadros</span></div>
 </div>
 <div class="toolpanel hidden" id="panelPage">
@@ -206,6 +208,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <script src="tables.js"></script>
 <script src="math_graph.js"></script>
 <script src="notebooks.js"></script>
+<script src="text_model.js"></script>
 <script src="editor.js"></script>
 <script src="notes_probe.js"></script>
 <script src="studio.js"></script>

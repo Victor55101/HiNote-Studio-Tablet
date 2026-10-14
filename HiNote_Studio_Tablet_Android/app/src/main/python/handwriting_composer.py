@@ -193,12 +193,15 @@ def _normalize_hex_color(value: str | None) -> str:
 
 def _flatten_segments(segments: list[dict], base_scale: float) -> list[dict]:
     for seg in segments or []:
-        seg_scale = max(0.35, float(seg.get("scale", 1.0)) * base_scale)
+        body_scale = max(0.35, float(seg.get("scale", 1.0)) * base_scale)
+        script = seg.get("script")
+        seg_scale = body_scale * (0.65 if script in ("sub", "sup") else 1.0)
         color = _normalize_hex_color(seg.get("color", "#000000"))
         opacity = max(1.0, min(100.0, float(seg.get("opacity", 100.0))))
         for ch in unicodedata.normalize("NFC", str(seg.get("text", ""))):
             yield {"ch": ch, "scale": seg_scale, "color": color, "opacity": opacity,
-                   "thickness": width_level(seg.get("thickness", 0))}
+                   "thickness": width_level(seg.get("thickness", 0)),
+                   "body_scale": body_scale, "script": script}
 
 
 def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word_spacing: float, warnings: list[str]):
@@ -207,7 +210,9 @@ def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word
         scale = c["scale"]
         color = _normalize_hex_color(c.get("color", "#000000"))
         opacity = max(1.0, min(100.0, float(c.get("opacity", 100.0))))
-        if ch == "\t":
+        if ch == "\n":
+            yield {"kind": "break", "ch": ch, "scale": scale}
+        elif ch == "\t":
             yield {"kind": "space", "ch": ch, "scale": scale, "width": word_spacing * scale * 4.0, "color": color, "opacity": opacity}
         elif ch.isspace():
             yield {"kind": "space", "ch": ch, "scale": scale, "width": word_spacing * scale, "color": color, "opacity": opacity}
@@ -231,6 +236,11 @@ def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word
                 "color": color,
                 "opacity": opacity,
                 "thickness": c.get("thickness", 0),
+                "body_scale": c.get("body_scale", scale),
+                "script": c.get("script"),
+                # Coordinates shrink; calibrated/native pen widths do not.
+                "width_scale": 1,
+                "baseline_shift": (-25 if c.get("script") == "sup" else 11 if c.get("script") == "sub" else 0) * c.get("body_scale", scale),
             }
 
 
@@ -322,6 +332,7 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
     start_x, first = first_x, True
     long_word = False
     emitted = False
+    ended_with_break = False
     def fits(sequence, x):
         return x + _sequence_metrics(sequence, letter_spacing)[2] <= right_limit
     def flush():
@@ -353,6 +364,14 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
         if width > 0:
             current = [{**space, 'width': width}]
     for item in items:
+        ended_with_break = item["kind"] == "break"
+        if ended_with_break:
+            if word:
+                yield from place_word()
+            pending_space = None
+            long_word = False
+            yield flush()
+            continue
         if item["kind"] == "space":
             if word:
                 yield from place_word()
@@ -382,12 +401,12 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
             long_word = True
     if word:
         yield from place_word()
-    if current or not emitted:
+    if current or not emitted or ended_with_break:
         yield flush()
 
 
 def _line_max_scale(items: list[dict], marker_scale: float | None = None) -> float:
-    values = [float(i.get("scale", 1.0)) for i in items if i.get("kind") == "glyph"]
+    values = [float(i.get("body_scale", i.get("scale", 1.0))) for i in items if i.get("kind") == "glyph"]
     if marker_scale:
         values.append(float(marker_scale))
     return max(values) if values else 1.0
@@ -438,7 +457,7 @@ def _place_glyph_sequence(
         dy = rng.uniform(-jitter_y, jitter_y) * scale if jitter_y else 0.0
         glyph_x = origin_x + dx + float(item.get("origin_shift", 0))
         y_offset = float(placement_y_offsets.get(ch, 0.0)) * scale
-        glyph_baseline = baseline_y + dy + y_offset
+        glyph_baseline = baseline_y + dy + y_offset + float(item.get("baseline_shift", 0))
 
         page["placements"].append({
             "char": ch,
@@ -668,7 +687,7 @@ def compose_document(
         marker_scale = 1.0 * base_scale
         level = 0
         if list_info:
-            level = min(6, max(0, int(list_info.get("level", 0))))
+            level = min(8, max(0, int(list_info.get("level", 0))))
             marker_scale = max(0.35, float(list_info.get("marker_scale", 1.0)) * base_scale)
             marker_color = _normalize_hex_color(list_info.get("marker_color", "#000000"))
             marker_opacity = max(1.0, min(100.0, float(list_info.get("marker_opacity", 100.0))))
@@ -680,14 +699,18 @@ def compose_document(
             # This lets one numbered list start at square 0 while an independent
             # bullet list starts at square 1, without moving all lists together.
             para_indent = max(0, int(list_info.get("base_indent_squares", list_indent_squares)))
-            marker_center = (para_indent + level + 0.5) * grid_step
-            body_start_x = (para_indent + level + 1.0) * grid_step + 14.0
+            indent = max(0, min(12, float(list_info.get("indent_squares", para_indent + level))))
+            marker_left_edge = indent * grid_step
+            _logical, marker_left, marker_right = _sequence_metrics(marker_items, float(letter_spacing))
+            marker_width = max(grid_step, marker_right - marker_left + 12)
+            marker_center = marker_left_edge + marker_width / 2
+            body_start_x = marker_left_edge + marker_width + 14.0
             first_x = body_start_x
             continuation_x = body_start_x
         else:
             marker_center = None
-            first_x = float(margin_left)
-            continuation_x = float(margin_left)
+            first_x = float(margin_left) + max(0, min(12, float(para.get("indent_squares", 0)))) * grid_step
+            continuation_x = first_x
 
         right_limit = float(page_width) - float(margin_right) + float(wrap_tolerance) - 4.0
         lines = _layout_paragraph_lines(items, first_x, continuation_x, right_limit, float(letter_spacing))
@@ -706,7 +729,7 @@ def compose_document(
                 baseline_y = math.ceil(table_bottom / grid_step - .000001) * grid_step + phase
                 top_ink = min((
                     ((i["glyph"].get("bbox") or i["glyph"].get("raw_bbox") or [0, 0, 0, 0])[1]
-                     + float(placement_y_offsets.get(i["ch"], 0))) * i["scale"]
+                     + float(placement_y_offsets.get(i["ch"], 0))) * i["scale"] + float(i.get("baseline_shift", 0))
                     for i in line["items"] + (marker_items if line_idx == 0 else [])
                     if i["kind"] == "glyph"
                 ), default=0.0)
@@ -717,7 +740,7 @@ def compose_document(
 
             descender = max((
                 ((i["glyph"].get("bbox") or i["glyph"].get("raw_bbox") or [0, 0, 0, 0])[3]
-                 + float(placement_y_offsets.get(i["ch"], 0))) * i["scale"]
+                 + float(placement_y_offsets.get(i["ch"], 0))) * i["scale"] + float(i.get("baseline_shift", 0))
                 for i in line["items"] + (marker_items if line_idx == 0 else [])
                 if i["kind"] == "glyph"
             ), default=0.0)

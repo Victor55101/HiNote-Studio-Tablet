@@ -16,9 +16,9 @@ window.StudioUI = (() => {
   let activeTab='text',listExpanded=false,graphTabs,profileTabs,sharedMathTools;
   function ribbon(){
     for(const [name,id] of [['text','panelText'],['insert','panelInsert'],['page','panelPage'],['save','panelSave'],['calibration','panelCalibration']])el(id).classList.toggle('hidden',activeTab!==name);
-    const mark=bookmark(),lines=readLines(),inList=!!mark&&selectedLineIndexes(mark).some(i=>listRegex.test(lineText(lines[i]||[])));
+    const mark=bookmark(),lines=readLines(),inList=!!mark&&selectedLineIndexes(mark).some(i=>!!paragraphOf(lines[i]).list);
     el('panelLists').classList.toggle('hidden',activeTab!=='text'||(!listExpanded&&!inList));el('listToggle').setAttribute('aria-expanded',String(listExpanded||inList));
-    if(inList&&document.activeElement!==el('listType')){const m=lineText(lines[mark.start.line]||[]).match(listRegex);if(m){const v=m[2],end=v.endsWith(')')?'paren':'dot';el('listType').value=v==='•'?'bullet':v==='-'?'dash':v==='*'?'asterisk':/^\d/.test(v)?'num_'+end:'alpha_'+(v[0]===v[0].toUpperCase()?'upper':'lower')+'_'+end;}}
+    if(inList&&document.activeElement!==el('listType')){const list=paragraphOf(lines[mark.start.line]).list;if(list)el('listType').value=list.type;}
     el('panelImages').classList.toggle('hidden',!ImageEditor.selected());
     syncColors();
   }

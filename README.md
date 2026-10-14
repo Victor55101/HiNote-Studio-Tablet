@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V45
+# HiNote Studio Tablet — V46
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V46 añade listas estructuradas con identidad y numeración dinámica, formato activo del cursor, subíndice/superíndice con grosor constante y desplazamiento que mantiene visible el cursor al navegar con las flechas. Conserva los porcentajes de tamaño y la sangría en cuadros. Detalles: [docs/V46.md](docs/V46.md).
 
 V45 conserva la composición nativa de acentos al iniciar en Solo físico y permite colocar el cursor con un toque. El contorno de redimensionado de tablas sigue ambos ejes, el botón de eliminar vuelve a ser rojo y las herramientas de imagen buscan espacio libre o se sitúan en la cabecera. Durante el giro se muestra solo el ángulo. Detalles: [docs/V45.md](docs/V45.md).
 

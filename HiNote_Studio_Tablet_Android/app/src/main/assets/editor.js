@@ -22,12 +22,15 @@ function bounded(value, min, max, fallback) {
 function cleanStyle(st = DEFAULT_STYLE) {
   return {scale: bounded(st.scale, .35, 2, 1),
     color: /^#[\da-f]{6}$/i.test(st.color || '') ? st.color.toUpperCase() : '#000000',
-    opacity: bounded(st.opacity, 1, 100, 100), thickness: Math.round(bounded(st.thickness,0,10,0))};
+    opacity: bounded(st.opacity, 1, 100, 100), thickness: Math.round(bounded(st.thickness,0,10,0)),
+    ...(['sub','sup'].includes(st.script)?{script:st.script}:{}),
+    ...(['upper','lower','title','sentence','toggle'].includes(st.caseMode)?{caseMode:st.caseMode}:{})};
 }
-function sameStyle(a, b) { return a.scale === b.scale && a.color === b.color && a.opacity === b.opacity && (a.thickness||0) === (b.thickness||0); }
+function sameStyle(a, b) { return a.scale === b.scale && a.color === b.color && a.opacity === b.opacity && (a.thickness||0) === (b.thickness||0) && (a.script||'normal') === (b.script||'normal') && (a.caseMode||'normal') === (b.caseMode||'normal'); }
 function mergeSegments(segments) {
   const out = [];
   for (const seg of segments) {
+    if(seg.paragraph){out.push({text:'',paragraph:seg.paragraph});continue;}
     if (seg.tableId) { out.push({text:'\uFFFC',tableId:seg.tableId}); continue; }
     if (seg.objectId) { out.push({text:'\uFFFC',objectId:seg.objectId}); continue; }
     if (!seg.text) continue;
@@ -50,7 +53,7 @@ function sliceSegments(line, start, end = Infinity) {
 function styleAt(line, offset) {
   let pos = 0;
   for (const s of line) { pos += s.text.length; if (offset < pos) return cleanStyle(s); }
-  return cleanStyle(line[line.length - 1]);
+  return cleanStyle(line.filter(s=>!s.paragraph).at(-1)||paragraphOf(line).format);
 }
 function readLines() {
   const lines = []; let loose = [];
@@ -67,7 +70,9 @@ function readLines() {
     }
     if (node.nodeType === Node.ELEMENT_NODE && /^(DIV|P)$/.test(node.tagName)) {
       if (loose.length) { lines.push(mergeSegments(loose)); loose = []; }
-      const segments = []; walk(node, DEFAULT_STYLE, segments); lines.push(mergeSegments(segments));
+      const segments = []; walk(node, DEFAULT_STYLE, segments);
+      let meta={};try{meta=JSON.parse(node.dataset.paragraph||'{}');}catch(_){}
+      lines.push(withParagraph(segments,meta));
     } else walk(node, DEFAULT_STYLE, loose);
   }
   if (loose.length) lines.push(mergeSegments(loose));
@@ -77,24 +82,30 @@ function rgba(hex, opacity) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${opacity / 100})`;
 }
-function renderLines(lines) {
-  const fragment = document.createDocumentFragment();
-  for (const line of lines) {
-    if(TableEditor.isLine(line)){fragment.append(TableEditor.block(line));continue;}
-    if(MathGraphEditor.isLine(line)){fragment.append(MathGraphEditor.block(line));continue;}
-    const div = document.createElement('div'); div.className = 'line';
-    for (const s of mergeSegments(line)) {
-      if (sameStyle(s, DEFAULT_STYLE)) div.append(document.createTextNode(s.text));
-      else {
-        const span = document.createElement('span'); Object.assign(span.dataset, cleanStyle(s));
-        span.style.fontSize = `${s.scale}em`; span.style.color = rgba(s.color.toUpperCase()==='#000000'?'#E4EDF0':s.color, s.opacity);
-        span.textContent = s.text; div.append(span);
-      }
+function renderParagraph(line,marker='') {
+  const div=document.createElement('div');div.className='line';decorateParagraph(div,line,marker);
+  for(const s of mergeSegments(line)){
+    if(s.paragraph)continue;
+    if(sameStyle(s,DEFAULT_STYLE))div.append(document.createTextNode(s.text));
+    else{
+      const span=document.createElement('span');Object.assign(span.dataset,cleanStyle(s));
+      span.style.fontSize=`${s.scale*(s.script? .65:1)}em`;
+      if(s.script)span.style.verticalAlign=s.script==='sup'?'super':'sub';
+      span.style.color=rgba(s.color.toUpperCase()==='#000000'?'#E4EDF0':s.color,s.opacity);
+      span.style.fontWeight=s.thickness?String(Math.min(850,400+s.thickness*35)):'400';
+      span.textContent=s.text;div.append(span);
     }
-    if (!div.childNodes.length) div.append(document.createElement('br'));
-    fragment.append(div);
   }
-  editor.replaceChildren(fragment);
+  if(!div.childNodes.length || lineText(line).endsWith('\n'))div.append(document.createElement('br'));
+  return div;
+}
+function renderLines(lines) {
+  const fragment=document.createDocumentFragment(),markers=listMarkers(lines);
+  lines.forEach((line,i)=>{
+    if(TableEditor.isLine(line))fragment.append(TableEditor.block(line));
+    else if(MathGraphEditor.isLine(line))fragment.append(MathGraphEditor.block(line));
+    else fragment.append(renderParagraph(line,markers[i]));
+  });editor.replaceChildren(fragment);
 }
 function characterCount() { return readLines().reduce((n,l)=>n+(isBlockLine(l)?0:lineText(l).length),0)+Math.max(0,editor.childElementCount-1)+TableEditor.count()+MathGraphEditor.count(); }
 function rangeInside(range) { return range && (range.commonAncestorContainer === editor || editor.contains(range.commonAncestorContainer)); }
@@ -122,13 +133,14 @@ function captureSelection() {
   const sel = getSelection();
   if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
     savedSelection = bookmark();
+    if(!ime && typingState && (!collapsed(savedSelection)||!pointEqual(typingState.point,savedSelection.start)))typingState=null;
     if (!document.activeElement?.closest('#panelText,#colorDialog')) syncTextControls();
     syncListControls();
   }
 }
 function selectionStyles() {
   const mark=bookmark(),lines=readLines();if(!mark)return [];
-  if(collapsed(mark))return isBlockLine(lines[mark.start.line])?[]:[styleAt(lines[mark.start.line],Math.max(0,mark.start.offset-1))];
+  if(collapsed(mark))return isBlockLine(lines[mark.start.line])?[]:[insertionStyle(mark,lines)];
   return selectedLineIndexes(mark).flatMap(i=>isBlockLine(lines[i])?[]:sliceSegments(lines[i],i===mark.start.line?mark.start.offset:0,i===mark.end.line?mark.end.offset:Infinity).map(cleanStyle));
 }
 function syncTextControls() {
@@ -144,12 +156,18 @@ function syncTextControls() {
   $('opacity').value=opacity??'';$('opacity').placeholder=opacity===null?'Mixta':'';
   $('hexInput').value=color??'';$('hexInput').placeholder=color===null?'Mixto':'';
   $('colorPick').value=color||'#000000';$('colorPick').dataset.mixed=String(color===null);
+  for(const [id,value] of [['subscriptBtn','sub'],['superscriptBtn','sup']]){const active=styles.every(s=>s.script===value),mixed=!active&&styles.some(s=>s.script===value);$(id).setAttribute('aria-pressed',mixed?'mixed':String(active));$(id).classList.toggle('active',active);}
+  $('caseSel').value=common('caseMode')||'';
 }
 function syncListControls(){
   if(document.activeElement===$('listIndent'))return;
   const mark=bookmark();if(!mark)return;const lines=readLines();
-  const values=selectedLineIndexes(mark).filter(i=>!isBlockLine(lines[i])).map(i=>Math.min(12,Math.floor((lineText(lines[i]).match(/^[ \t]*/)[0]).replace(/\t/g,'    ').length/4)));
+  const values=selectedLineIndexes(mark).filter(i=>!isBlockLine(lines[i])).map(i=>paragraphIndent(paragraphOf(lines[i])));
   if(values.length){$('listIndent').value=values.every(v=>v===values[0])?values[0]:'';$('listIndent').placeholder='Mixta';}
+  const list=paragraphOf(lines[mark.start.line]).list;
+  if(list){$('listType').value=list.type;$('listStart').value=list.start;}
+  for(const id of ['continueList','restartList','setListStart'])$(id).disabled=!list;
+
 }
 function domPoint(point) {
   const line = editor.childNodes[Math.min(point.line, editor.childNodes.length - 1)] || editor;
@@ -193,7 +211,10 @@ function edit(operation, keepControlFocus=false) {
   const n = result.lines.reduce((sum, line) => sum + lineText(line).length, 0) + result.lines.length - 1;
   if (n + TableEditor.count()+MathGraphEditor.count() > MAX_CHARS) { toast('El documento admite hasta 200000 caracteres'); return; }
   if (result.lines.length > 10000) { toast('El documento admite hasta 10000 párrafos'); return; }
-  renderLines(result.lines); restoreSelection(result.selection || mark,!keepControlFocus);
+  renderLines(result.lines);
+  if(result.typingStyle)setTypingStyle(result.typingStyle,(result.selection||mark).start);
+  restoreSelection(result.selection || mark,!keepControlFocus);
+  if(!keepControlFocus)scrollCaretIntoView();
   if(held){held.focus({preventScroll:true});if(fieldRange)held.setSelectionRange(...fieldRange);}
   checkpoint(); changed();
 }
@@ -203,43 +224,55 @@ function undoRedo(direction) {
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
   historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines)&&JSON.stringify(TableEditor.state().tables)===JSON.stringify(data.tables||{})&&JSON.stringify(MathGraphEditor.state().mathObjects)===JSON.stringify(data.mathObjects||{});
-  TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
+  typingState=null;TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
   if(sameText){ImageEditor.modified();drawCurrent();}else changed();
 }
-function replaceText(lines, mark, text) {
+function replaceText(lines, mark, text, soft=false, rich=null) {
   if(isBlockLine(lines[mark.start.line]))mark={...mark,start:{...mark.start,offset:0}};
   if(isBlockLine(lines[mark.end.line]))mark={...mark,end:{...mark.end,offset:1}};
-  const {start, end} = mark, before = sliceSegments(lines[start.line], 0, start.offset);
-  const after = sliceSegments(lines[end.line], end.offset), st = styleAt(lines[start.line], start.offset);
-  const pieces = text.replace(/\r\n?/g, '\n').split('\n');
-  const replacement = pieces.map(piece => piece ? [{text: piece, ...st}] : []);
-  replacement[0] = mergeSegments([...before, ...replacement[0]]);
-  const caret = {line: start.line + pieces.length - 1, offset: (pieces.length === 1 ? start.offset : 0) + pieces[pieces.length - 1].length};
-  replacement[replacement.length - 1] = mergeSegments([...replacement[replacement.length - 1], ...after]);
-  lines.splice(start.line, end.line - start.line + 1, ...replacement);
-  return {lines, selection: {start: caret, end: {...caret}}};
+  const {start,end}=mark,before=sliceSegments(lines[start.line],0,start.offset),after=sliceSegments(lines[end.line],end.offset);
+  const st=insertionStyle(mark,lines),meta=paragraphOf(lines[start.line]);
+  const pieces=soft?[text]:text.replace(/\r\n?/g,'\n').split('\n');
+  let replacement=rich||pieces.map(piece=>withParagraph(piece?[{text:caseText(piece,st.caseMode,lineText(lines[start.line]).slice(0,start.offset)),...st}]:[],{...meta,...(!piece?{format:st}:{})}));
+  replacement[0]=withParagraph([...before,...replacement[0].filter(s=>!s.paragraph)],start.offset?meta:paragraphOf(replacement[0]));
+  const last=replacement.length-1,point={line:start.line+last,offset:lineText(replacement[last]).length};
+  replacement[last]=withParagraph([...replacement[last].filter(s=>!s.paragraph),...after],paragraphOf(replacement[last]));
+  lines.splice(start.line,end.line-start.line+1,...replacement);
+  return {lines,selection:{start:point,end:{...point}},typingStyle:st};
 }
 function insertText(text) {
   if (text.length > MAX_CHARS) { toast('El texto supera 200000 caracteres'); return; }
-  edit((lines, mark) => replaceText(lines, mark, text));
+  edit((lines, mark) => {
+    const result=replaceText(lines,mark,text),before=result.lines.map(lineText),last=result.selection.start.line;
+    // Plain clipboard list markers become structure too, including when the
+    // destination already belongs to a list. Do not duplicate a literal number.
+    if(text!=='\t')for(let i=mark.start.line;i<=last;i++){
+      if(i===mark.start.line&&mark.start.offset)continue;
+      const line=result.lines[i],meta=paragraphOf(line),prefix=parseListPrefix(lineText(line));
+      if(meta.list&&prefix)result.lines[i]=withParagraph(sliceSegments(line,prefix.length),meta);
+    }
+    result.lines=migrateTextLists(result.lines);
+    const removed=before[last].length-lineText(result.lines[last]).length;
+    result.selection.start.offset=Math.max(0,result.selection.start.offset-removed);result.selection.end={...result.selection.start};return result;
+  });
 }
 function selectedLineIndexes(mark) {
   const last = mark.end.line > mark.start.line && mark.end.offset === 0 ? mark.end.line - 1 : mark.end.line;
   return Array.from({length: last - mark.start.line + 1}, (_, i) => mark.start.line + i);
 }
 function applyStyle(patch) {
-  const mark = bookmark(); if (!mark || collapsed(mark)) { toast('Selecciona texto primero'); return; }
+  const mark=bookmark();if(!mark)return;
+  if(collapsed(mark)){
+    if(isBlockLine(readLines()[mark.start.line]))return;
+    setTypingStyle({...insertionStyle(mark),...patch},mark.start);
+    const node=editor.children[mark.start.line],line=readLines()[mark.start.line];
+    if(!lineText(line)){const meta={...paragraphOf(line),format:typingState.style};decorateParagraph(node,withParagraph(line,meta),node.dataset.marker||'');queueDraft();}
+    syncTextControls();return;
+  }
+  typingState=null;
   const focused=document.activeElement,keep=!!focused?.closest('#panelText,#colorDialog');
-  edit((lines, selection) => {
-    for (const i of selectedLineIndexes(selection)) {
-      if(isBlockLine(lines[i]))continue;
-      const a = i === selection.start.line ? selection.start.offset : 0;
-      const b = i === selection.end.line ? selection.end.offset : Infinity;
-      lines[i] = mergeSegments([...sliceSegments(lines[i], 0, a), ...sliceSegments(lines[i], a, b).map(s => ({...s, ...patch})), ...sliceSegments(lines[i], b)]);
-    }
-    return {lines, selection};
-  },keep);
-  if(!keep)syncTextControls();
+  edit((lines,selection)=>({lines:patchRuns(lines,selection,patch),selection}),keep);
+  syncTextControls();
 }
 function alphaMarker(number, upper = false) {
   let out = ''; do { number--; out = String.fromCharCode((upper ? 65 : 97) + number % 26) + out; number = Math.floor(number / 26); } while (number > 0); return out;
@@ -257,41 +290,20 @@ function markerFor(type, i) {
   const ending = type.endsWith('paren') ? ')' : '.';
   return (type.startsWith('alpha') ? alphaMarker(i + 1, type.includes('upper')) : String(i + 1)) + ending;
 }
-function modifyLists(action) {
-  edit((lines, selection) => {
-    selectedLineIndexes(selection).forEach((i, index) => {
-      if(isBlockLine(lines[i]))return;
-      const text = lineText(lines[i]), match = text.match(listRegex);
-      let oldLength = match ? text.length - match[4].length : (text.match(/^[ \t]*/)[0].length);
-      let prefix = match ? text.slice(0, oldLength) : text.slice(0, oldLength);
-      const indent = Math.min(12, Math.floor((match ? match[1] : prefix).replace(/\t/g, '    ').length / 4));
-      if (action === 'apply') prefix = '    '.repeat(indent) + markerFor($('listType').value, index) + ' ';
-      else if (action === 'remove') prefix = '';
-      else {
-        const level = action==='setIndent'?Math.round(bounded($('listIndent').value,0,12,indent)):Math.max(0, Math.min(12, indent + (action === 'indent' ? 1 : -1)));
-        prefix = '    '.repeat(level) + (match ? match[2] + ' ' : '');
-      }
-      const st = styleAt(lines[i], Math.max(0, oldLength));
-      lines[i] = mergeSegments([{text: prefix, ...st}, ...sliceSegments(lines[i], oldLength)]);
-      for (const point of [selection.start, selection.end]) if (point.line === i) point.offset = point.offset < oldLength ? Math.min(prefix.length, point.offset) : point.offset + prefix.length - oldLength;
-    });
-    return {lines, selection};
-  });
-}
-function enter() {
-  edit((lines, mark) => {
+function modifyLists(action){changeLists(action);}
+function enter(soft=false) {
+  edit((lines,mark)=>{
     if(isBlockLine(lines[mark.start.line])){const at=mark.start.line+1;lines.splice(at,0,[]);return {lines,selection:{start:{line:at,offset:0},end:{line:at,offset:0}}};}
-    const text = lineText(lines[mark.start.line]), match = text.match(listRegex);
-    if (match && !match[4].trim() && collapsed(mark)) {
-      lines[mark.start.line] = []; const point = {line: mark.start.line, offset: 0};
-      return {lines, selection: {start: point, end: {...point}}};
+    const meta=paragraphOf(lines[mark.start.line]);
+    if(!soft && meta.list && !lineText(lines[mark.start.line]).trim() && collapsed(mark)){
+      const next={...meta};if(meta.list.level>0)next.list={...meta.list,level:meta.list.level-1};else delete next.list;
+      lines[mark.start.line]=withParagraph([],next);return {lines,selection:mark,typingStyle:insertionStyle(mark,lines)};
     }
-    const prefix = match && mark.start.offset >= text.length - match[4].length ? match[1] + nextMarker(match[2]) + ' ' : '';
-    return replaceText(lines, mark, '\n' + prefix);
+    return replaceText(lines,mark,'\n',soft);
   });
 }
 function changeCase(mode) {
-  const mark = bookmark(); if (!mark || collapsed(mark)) { toast('Selecciona texto primero'); return; }
+  const mark=bookmark();if(!mark)return;if(collapsed(mark)){applyStyle({caseMode:mode||'normal'});return;}
   edit((lines, selection) => {
     let wordStart = true, sentenceStart = true;
     for (const i of selectedLineIndexes(selection)) {
@@ -310,7 +322,7 @@ function changeCase(mode) {
         wordStart = !/[\p{L}\p{N}]/u.test(c); return out;
       }).join('')}));
       const length = selected.reduce((n, s) => n + s.text.length, 0);
-      lines[i] = mergeSegments([...sliceSegments(lines[i], 0, a), ...selected, ...sliceSegments(lines[i], b)]);
+      lines[i] = withParagraph([...sliceSegments(lines[i], 0, a), ...selected.map(s=>({...s,caseMode:mode})), ...sliceSegments(lines[i], b)],paragraphOf(lines[i]));
       if (i === selection.end.line) selection.end.offset += length - (b - a);
       wordStart = true;
     }
@@ -323,15 +335,15 @@ function settings() {
 }
 function serializeDocument() {
   const config = settings();
-  return {paragraphs: readLines().map(line => {
+  const lines=readLines(),markers=listMarkers(lines);
+  return {paragraphs:lines.map((line,i)=>{
     if(TableEditor.isLine(line))return {type:'table',table:TableEditor.get(line[0].tableId)};
     if(MathGraphEditor.isLine(line)){const object=MathGraphEditor.get(line[0].objectId);return {type:object.kind,object};}
-    const text = lineText(line), match = text.match(listRegex);
-    if (!match) return {segments: line};
-    const prefix = text.length - match[4].length, style = styleAt(line, match[1].length);
-    const indent=Math.min(12,Math.floor(match[1].replace(/\t/g,'    ').length/4));
-    return {segments: sliceSegments(line, prefix), list: {marker: match[2], level: Math.min(6,indent),
-      marker_scale: style.scale, marker_color: style.color, marker_opacity: style.opacity, marker_thickness: style.thickness, base_indent_squares: Math.max(0,indent-6)}};
+    const meta=paragraphOf(line),l=meta.list,segments=line.filter(s=>!s.paragraph);
+    if(!l)return {segments,...(meta.indent?{indent_squares:meta.indent}:{})};
+    const indent=paragraphIndent(meta),style=l.markerStyle;
+    return {segments,list:{id:l.id,type:l.type,marker:markers[i],level:l.level,indent_squares:indent,base_indent_squares:0,
+      marker_scale:style.scale,marker_color:style.color,marker_opacity:style.opacity,marker_thickness:style.thickness}};
   })};
 }
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.add('show'); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500); }
@@ -339,7 +351,7 @@ function saveDraft() {
   ImageEditor.finishGesture(false);
   clearTimeout(draftTimer);
   try {
-    const raw=JSON.stringify({version:38,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
+    const raw=JSON.stringify({version:46,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
     const nativeSaved=window.AndroidBridge?.saveDraft ? AndroidBridge.saveDraft(raw) : false;
     try{localStorage.setItem(DRAFT_KEY,raw);}catch(e){if(!nativeSaved)throw e;}
     $('draftStatus').textContent = 'Borrador guardado';
@@ -350,7 +362,7 @@ function restoreDraft() {
   try {
     const native=window.AndroidBridge?.getDraft?AndroidBridge.getDraft():'';
     const draft = JSON.parse(native||localStorage.getItem(DRAFT_KEY)||localStorage.getItem('hinote-draft-v21'));
-    if (!draft || ![21,23,25,27,30,31,32,38].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
+    if (!draft || ![21,23,25,27,30,31,32,38,46].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
     let count = draft.lines.length - 1, segments = 0;
     for (const line of draft.lines) {
       if (!Array.isArray(line)) return false;
@@ -364,7 +376,8 @@ function restoreDraft() {
     // V35 added a hidden global base to each list level. Encode the actual
     // indentation in the paragraph so level 0 now really reaches the margin.
     if(draft.version<38){const base=Math.floor(bounded(draft.settings?.list_indent_squares,0,6,1));draft.lines=draft.lines.map(line=>!isBlockLine(line)&&listRegex.test(lineText(line))?mergeSegments([{text:'    '.repeat(base),...styleAt(line,0)},...line]):line);}
-    renderLines(draft.lines); $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
+    if(draft.version<46)draft.lines=migrateTextLists(draft.lines);
+    renderLines(draft.lines);typingState=null; $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
     for (const [id, key, min, max, fallback] of [['letterSpacing','letter_spacing',-8,8,0],['wordSpacing','word_spacing',12,60,26],['lineRows','line_grid_rows',1,4,1],['listIndent','list_indent_squares',0,6,1]]) $(id).value = bounded(draft.settings?.[key], min, max, fallback);
     $('gridCheck').checked = draft.grid !== false; $('autoPreview').checked = draft.auto !== false; return true;
   } catch (_) { return false; }
@@ -503,26 +516,31 @@ $('hexInput').addEventListener('input', () => { const color=$('hexInput').value.
 $('opacity').addEventListener('input',()=>{if($('opacity').value!==''&&$('opacity').validity.valid)applyStyle({opacity:Number($('opacity').value)});});
 $('sizeSel').addEventListener('change', () => {if($('sizeSel').value!=='mixed')applyStyle({scale: bounded($('sizeSel').value, 35, 200, 100) / 100});});
 $('thicknessSel').addEventListener('change', () => {if($('thicknessSel').value!=='mixed')applyStyle({thickness: Math.round(bounded($('thicknessSel').value,0,10,0))});});
-$('caseSel').addEventListener('change', () => { const mode = $('caseSel').value; if (mode) changeCase(mode); $('caseSel').value = ''; });
-for (const [id, action] of [['applyList','apply'],['removeList','remove'],['indentBtn','indent'],['outdentBtn','outdent']]) $(id).onclick = () => modifyLists(action);
+$('caseSel').addEventListener('change', () => { const mode = $('caseSel').value; changeCase(mode); });
+for (const [id, action] of [['applyList','apply'],['removeList','remove'],['indentBtn','indent'],['outdentBtn','outdent'],['continueList','continue'],['restartList','restart'],['setListStart','start']]) $(id).onclick = () => modifyLists(action);
+$('subscriptBtn').onclick=()=>toggleScript('sub');$('superscriptBtn').onclick=()=>toggleScript('sup');
 $('undoBtn').onclick = () => undoRedo(-1); $('redoBtn').onclick = () => undoRedo(1);
 editor.addEventListener('keydown', event => {
   if (ime || event.isComposing) return;
   if ((event.ctrlKey || event.metaKey) && !event.altKey && ['z','y'].includes(event.key.toLowerCase())) {
     event.preventDefault(); undoRedo(event.key.toLowerCase() === 'y' || event.shiftKey ? 1 : -1);
-  } else if (event.key === 'Enter') { event.preventDefault(); enter(); }
-  else if (event.key === 'Tab') { event.preventDefault(); modifyLists(event.shiftKey ? 'outdent' : 'indent'); }
+  } else if (event.key === 'Enter') { event.preventDefault(); enter(event.shiftKey); }
+  else if (event.key === 'Tab') { event.preventDefault();const mark=bookmark();if(mark&&paragraphOf(readLines()[mark.start.line]).list&&(mark.start.offset===0||!collapsed(mark)))modifyLists(event.shiftKey?'outdent':'indent');else insertText('\t'); }
+  else if ((event.key==='Backspace'||event.key==='Delete') && deleteStructure(event.key==='Backspace'))event.preventDefault();
 });
 editor.addEventListener('beforeinput', event => {
   if (ime || event.isComposing) return;
+  if(event.inputType?.startsWith('insert')||event.inputType?.startsWith('delete'))startNativeEdit();
+  if(event.inputType?.startsWith('delete') && event.cancelable && deleteStructure(event.inputType.includes('Backward'))){event.preventDefault();return;}
   if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') { event.preventDefault(); undoRedo(event.inputType === 'historyUndo' ? -1 : 1); }
-  else if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') { event.preventDefault(); enter(); }
+  else if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') { event.preventDefault(); enter(event.inputType==='insertLineBreak'); }
   else if (event.inputType === 'insertText' && characterCount() >= MAX_CHARS && (!bookmark() || collapsed(bookmark()))) { event.preventDefault(); toast('El documento admite hasta 200000 caracteres'); }
 });
-editor.addEventListener('input', () => { if (ime) return; captureSelection(); changed(); clearTimeout(historyTimer); historyTimer = setTimeout(checkpoint, 500); });
-editor.addEventListener('compositionstart', () => { ime = true; clearTimeout(refreshTimer); });
-editor.addEventListener('compositionend', () => { ime = false; captureSelection(); checkpoint(); changed(); });
-editor.addEventListener('paste', event => { event.preventDefault(); insertText((event.clipboardData || window.clipboardData).getData('text/plain')); });
+editor.addEventListener('input', event => { if (ime || event.isComposing) return; finishNativeEdit();autoListAtCaret();refreshListMarkers();captureSelection();scrollCaretIntoView();changed(); clearTimeout(historyTimer); historyTimer = setTimeout(checkpoint, 500); });
+editor.addEventListener('compositionstart', () => { startNativeEdit();ime = true; clearTimeout(refreshTimer); });
+editor.addEventListener('compositionend', () => { ime = false;finishNativeEdit();captureSelection();scrollCaretIntoView();checkpoint();changed(); });
+editor.addEventListener('paste',pasteEditorSelection);
+editor.addEventListener('copy',e=>copyEditorSelection(e));editor.addEventListener('cut',e=>copyEditorSelection(e,true));
 editor.addEventListener('drop', event => event.preventDefault());
 ['letterSpacing','wordSpacing','lineRows','autoPreview'].forEach(id => $(id).addEventListener('change', changed));
 $('listIndent').addEventListener('change',()=>{if($('listIndent').value!=='')modifyLists('setIndent');});

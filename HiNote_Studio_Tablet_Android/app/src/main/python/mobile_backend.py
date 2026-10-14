@@ -70,14 +70,20 @@ def _document(raw):
             seg["scale"] = _number(seg.get("scale", 1), .35, 2)
             seg["opacity"] = _number(seg.get("opacity", 100), 1, 100)
             seg["thickness"] = width_level(seg.get("thickness", 0))
+            if seg.get("script") not in (None, "normal", "sub", "sup"):
+                raise ValueError("Posición de texto no válida.")
+        if "indent_squares" in para:
+            para["indent_squares"] = _number(para["indent_squares"], 0, 12)
         info = para.get("list")
         if info:
-            info["level"] = int(_number(info.get("level", 0), 0, 6))
+            info["level"] = int(_number(info.get("level", 0), 0, 8))
+            if "indent_squares" in info:
+                info["indent_squares"] = _number(info["indent_squares"], 0, 12)
             info["base_indent_squares"] = int(_number(info.get("base_indent_squares", 1), 0, 6))
             info["marker_scale"] = _number(info.get("marker_scale", 1), .35, 2)
             info["marker_opacity"] = _number(info.get("marker_opacity", 100), 1, 100)
             info["marker_thickness"] = width_level(info.get("marker_thickness", 0))
-            if len(str(info.get("marker", ""))) > 16:
+            if len(str(info.get("marker", ""))) > 80:
                 raise ValueError("Marcador de lista demasiado largo.")
     if chars + max(0,len(paragraphs)-1) > MAX_CHARACTERS or segments > 20_000:
         raise ValueError("La nota supera 200 000 caracteres o 20 000 segmentos; divídela en varias notas.")

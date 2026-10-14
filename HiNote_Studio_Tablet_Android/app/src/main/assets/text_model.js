@@ -1,0 +1,228 @@
+'use strict';
+// Paragraph properties use a zero-length record. Unlike properties added to an
+// Array, this survives JSON history/drafts and leaves every text offset intact.
+const LIST_TYPES = new Set(['bullet','dash','asterisk','num_dot','num_paren','alpha_lower_dot','alpha_lower_paren','alpha_upper_dot','alpha_upper_paren','roman_lower_dot','roman_upper_dot','multi_decimal']);
+let typingState = null, nativeEdit = null;
+function paragraphOf(line) { return line?.find(s=>s.paragraph)?.paragraph || {}; }
+function withParagraph(line, properties = {}) {
+  const meta = {};
+  if(properties.list && LIST_TYPES.has(properties.list.type)) {
+    const l=properties.list;
+    meta.list={id:String(l.id||newListId()).slice(0,80),type:l.type,level:Math.round(bounded(l.level,0,8,0)),start:Math.round(bounded(l.start,1,999999,1)),markerStyle:cleanStyle(l.markerStyle)};
+    if(l.indent!==undefined)meta.list.indent=Math.round(bounded(l.indent,0,12,0));
+  }
+  if(properties.indent)meta.indent=Math.round(bounded(properties.indent,0,12,0));
+  if(properties.format && !sameStyle(cleanStyle(properties.format),DEFAULT_STYLE))meta.format=cleanStyle(properties.format);
+  const runs=mergeSegments(line.filter(s=>!s.paragraph));
+  return Object.keys(meta).length ? [{text:'',paragraph:meta},...runs] : runs;
+}
+function newListId(){return 'list-'+(crypto.randomUUID?.() || Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));}
+function romanNumber(n){let out='';for(const [v,t] of [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']])while(n>=v){out+=t;n-=v;}return out;}
+function listMarkers(lines){
+  const sequences=new Map();
+  return lines.map(line=>{
+    const l=paragraphOf(line).list;if(!l)return '';
+    let c=sequences.get(l.id);if(!c){c=Array(9).fill(0);sequences.set(l.id,c);}
+    for(let i=0;i<l.level;i++)if(!c[i])c[i]=l.start;
+    c[l.level]=c[l.level]?c[l.level]+1:(l.level===0?l.start:1);c.fill(0,l.level+1);
+    if(l.type==='multi_decimal')return c.slice(0,l.level+1).join('.')+'.';
+    if(l.type.startsWith('roman')){const r=romanNumber(c[l.level]);return (l.type.includes('lower')?r.toLowerCase():r)+'.';}
+    return markerFor(l.type,c[l.level]-1);
+  });
+}
+function paragraphIndent(meta){return meta.list ? (meta.list.indent??meta.list.level) : (meta.indent||0);}
+function decorateParagraph(node,line,marker){
+  const meta=paragraphOf(line),encoded=Object.keys(meta).length?JSON.stringify(meta):'';
+  const signature=encoded+'|'+marker;if(node._paragraphSignature===signature)return;node._paragraphSignature=signature;
+  if(encoded)node.dataset.paragraph=encoded;else delete node.dataset.paragraph;
+  if(meta.list){
+    node.dataset.list=meta.list.id;node.dataset.marker=marker;node.setAttribute('role','listitem');node.setAttribute('aria-level',meta.list.level+1);
+    node.style.setProperty('--marker-width',Math.max(2,marker.length*.65+.6)+'em');
+    const s=meta.list.markerStyle;node.style.setProperty('--marker-color',rgba(s.color==='#000000'?'#E4EDF0':s.color,s.opacity));
+    node.style.setProperty('--marker-size',s.scale+'em');
+  }else{delete node.dataset.list;delete node.dataset.marker;node.removeAttribute('role');node.removeAttribute('aria-level');}
+  node.style.setProperty('--paragraph-indent',paragraphIndent(meta)*1.5+'em');
+}
+function refreshListMarkers(){const lines=readLines(),markers=listMarkers(lines);[...editor.children].forEach((node,i)=>{if(!isBlockLine(lines[i]))decorateParagraph(node,lines[i],markers[i]);});}
+function parseListPrefix(text){
+  const m=text.match(/^([ \t]*)([•*\-]|\d+(?:\.\d+)*[.)]|[a-zA-Z][.)]|[ivxlcdmIVXLCDM]{2,8}\.)[ \t]+/);if(!m)return null;
+  const token=m[2],body=token.slice(0,-1),ending=token.endsWith(')')?'paren':'dot';let type,start=1;
+  if(token==='•'||token==='*'||token==='-')type=token==='•'?'bullet':token==='*'?'asterisk':'dash';
+  else if(/^\d+(?:\.\d+)+$/.test(body)){type='multi_decimal';start=+body.split('.')[0];}
+  else if(/^\d+$/.test(body)){type='num_'+ending;start=+body;}
+  else if(/^[ivxlcdm]{2,8}$/i.test(body)){type='roman_'+(body===body.toUpperCase()?'upper':'lower')+'_dot';const values={i:1,v:5,x:10,l:50,c:100,d:500,m:1000};start=0;for(let i=0;i<body.length;i++){const n=values[body[i].toLowerCase()],next=values[body[i+1]?.toLowerCase()]||0;start+=n<next?-n:n;}}
+  else{type='alpha_'+(body===body.toUpperCase()?'upper':'lower')+'_'+ending;start=body.toLowerCase().charCodeAt(0)-96;}
+  return {length:m[0].length,type,start,level:Math.min(8,type==='multi_decimal'?body.split('.').length-1:Math.floor(m[1].replace(/\t/g,'    ').length/4))};
+}
+function migrateTextLists(lines){
+  let previous=null;const counts=new Map();
+  return lines.map(line=>{
+    if(isBlockLine(line)||paragraphOf(line).list){previous=null;return line;}
+    const p=parseListPrefix(lineText(line));if(!p){previous=null;return line;}
+    const key=p.level,numbered=!['bullet','dash','asterisk'].includes(p.type);
+    const reuse=previous&&previous.type===p.type&&(!numbered||p.level!==previous.level||p.start===(counts.get(key)||0)+1);
+    const l={id:reuse?previous.id:newListId(),type:p.type,level:p.level,start:reuse?previous.start:p.start,markerStyle:styleAt(line,0)};
+    if(!reuse)counts.clear();counts.set(key,p.start);previous=l;
+    return withParagraph(sliceSegments(line,p.length),{...paragraphOf(line),list:l});
+  });
+}
+function changeLists(action){
+  const type=$('listType').value;
+  edit((lines,selection)=>{
+    const indexes=selectedLineIndexes(selection).filter(i=>!isBlockLine(lines[i]));if(!indexes.length)return;
+    const first=indexes[0],current=paragraphOf(lines[first]).list;
+    if(['continue','restart','start'].includes(action)){
+      if(!current)return;
+      let target=null;
+      if(action==='continue')for(let i=first-1;i>=0;i--){const l=paragraphOf(lines[i]).list;if(l&&l.id!==current.id&&l.type===current.type){target=l;break;}}
+      if(action==='continue'&&!target){toast('No hay una lista anterior del mismo tipo');return;}
+      target=target||{...current,id:newListId(),start:action==='start'?Math.round(bounded($('listStart').value,1,999999,1)):1};
+      for(let i=first;i<lines.length;i++){const m=paragraphOf(lines[i]);if(m.list?.id===current.id)lines[i]=withParagraph(lines[i],{...m,list:{...m.list,id:target.id,start:target.start}});}
+    }else{
+      const previous=paragraphOf(lines[first-1]).list;
+      const definition=current?.type===type?current:previous?.type===type?previous:{id:newListId(),type,start:1,markerStyle:styleAt(lines[first],0)};
+      for(const i of indexes){const meta={...paragraphOf(lines[i])},l=meta.list;
+        if(action==='apply')meta.list={...definition,level:l?.level||0,...(l?.indent!==undefined?{indent:l.indent}:{})};
+        else if(action==='remove'){delete meta.list;delete meta.indent;}
+        else if(action==='setIndent'){const indent=Math.round(bounded($('listIndent').value,0,12,0));if(l)meta.list={...l,indent};else meta.indent=indent;}
+        else if(l){meta.list={...l,level:Math.round(bounded(l.level+(action==='indent'?1:-1),0,8,0))};delete meta.list.indent;}
+        else meta.indent=Math.round(bounded((meta.indent||0)+(action==='indent'?1:-1),0,12,0));
+        lines[i]=withParagraph(lines[i],meta);
+      }
+    }
+    return {lines,selection};
+  });
+}
+function pointEqual(a,b){return a?.line===b?.line&&a?.offset===b?.offset;}
+function insertionStyle(mark=bookmark(),lines=readLines()){
+  if(!mark)return cleanStyle();
+  if(collapsed(mark)&&pointEqual(typingState?.point,mark.start))return {...typingState.style};
+  const line=lines[mark.start.line]||[];
+  const selection=getSelection();
+  if(collapsed(mark)&&selection?.isCollapsed&&selection.focusNode?.nodeType===Node.TEXT_NODE&&editor.contains(selection.focusNode)){
+    const actual=modelPoint(selection.focusNode,selection.focusOffset);
+    if(pointEqual(actual,mark.start)){
+      let node=selection.focusNode.parentElement,style={};
+      while(node&&node!==editor&&!node.classList.contains('line')){style={...node.dataset,...style};node=node.parentElement;}
+      return cleanStyle(style);
+    }
+  }
+  return lineText(line)?styleAt(line,Math.max(0,mark.start.offset-(collapsed(mark)?1:0))):cleanStyle(paragraphOf(line).format);
+}
+function caseText(text,mode,context=''){
+  if(!mode)return text;
+  let wordStart=!/[\p{L}\p{N}]$/u.test(context),sentenceStart=!context.trim()||/[.!?]\s*$/.test(context);
+  return [...text].map(c=>{
+    let out=c;
+    if(mode==='upper')out=c.toLocaleUpperCase('es');
+    if(mode==='lower')out=c.toLocaleLowerCase('es');
+    if(mode==='toggle')out=c===c.toUpperCase()?c.toLowerCase():c.toUpperCase();
+    if(mode==='title')out=wordStart?c.toUpperCase():c.toLowerCase();
+    if(mode==='sentence')out=sentenceStart?c.toUpperCase():c.toLowerCase();
+    if(/\p{L}/u.test(c))sentenceStart=false;else if(/[.!?]/.test(c))sentenceStart=true;
+    wordStart=!/[\p{L}\p{N}]/u.test(c);return out;
+  }).join('');
+}
+function setTypingStyle(style,point){typingState={point:{...point},style:cleanStyle(style)};}
+function keepTypingStyleAtCaret(style){const m=bookmark();if(m&&collapsed(m))setTypingStyle(style,m.start);}
+function patchRuns(lines,selection,patch){
+  for(const i of selectedLineIndexes(selection)){
+    if(isBlockLine(lines[i]))continue;const meta=paragraphOf(lines[i]);
+    const a=i===selection.start.line?selection.start.offset:0,b=i===selection.end.line?selection.end.offset:Infinity;
+    lines[i]=withParagraph([...sliceSegments(lines[i],0,a),...sliceSegments(lines[i],a,b).map(s=>({...s,...patch})),...sliceSegments(lines[i],b)],meta);
+  }return lines;
+}
+function toggleScript(script){const values=selectionStyles();applyStyle({script:values.length&&values.every(s=>(s.script||'normal')===script)?'normal':script});}
+function startNativeEdit(){
+  const mark=bookmark();if(!mark)return;
+  nativeEdit={lines:readLines(),mark,style:insertionStyle(mark)};
+}
+function finishNativeEdit(){
+  const before=nativeEdit;nativeEdit=null;if(!before)return;
+  const mark=bookmark();if(!mark)return;const lines=readLines();
+  // Only decorate the text the native input connection actually committed.
+  // Never cancel/reconstruct composing events or implement dead-key mapping.
+  if(lines.length===before.lines.length && mark.start.line===before.mark.start.line){
+    const i=mark.start.line,old=lineText(before.lines[i]),now=lineText(lines[i]);let a=0,b=0;
+    while(a<old.length&&a<now.length&&old[a]===now[a])a++;
+    while(b<old.length-a&&b<now.length-a&&old[old.length-1-b]===now[now.length-1-b])b++;
+    const end=now.length-b;
+    if(end>a){
+      const current=sliceSegments(lines[i],a,end);
+      const converted=caseText(now.slice(a,end),before.style.caseMode,now.slice(0,a));
+      if(current.some(s=>!sameStyle(cleanStyle(s),before.style))||converted!==now.slice(a,end)){
+        lines[i]=withParagraph([...sliceSegments(lines[i],0,a),{text:converted,...before.style},...sliceSegments(lines[i],end)],paragraphOf(lines[i]));
+        const delta=converted.length-(end-a);for(const point of [mark.start,mark.end])if(point.line===i&&point.offset>=end)point.offset+=delta;
+        const fresh=renderParagraph(lines[i],listMarkers(lines)[i]);editor.children[i].replaceWith(fresh);restoreSelection(mark,false);
+      }
+    }
+  }
+  if(collapsed(mark))setTypingStyle(before.style,mark.start);
+}
+function copyEditorSelection(event,cut=false){
+  const mark=bookmark();if(!mark||collapsed(mark)||!event.clipboardData)return;
+  const lines=readLines(),markers=listMarkers(lines),copy=[];
+  for(let i=mark.start.line;i<=mark.end.line;i++){
+    if(isBlockLine(lines[i]))continue;
+    const a=i===mark.start.line?mark.start.offset:0,b=i===mark.end.line?mark.end.offset:Infinity;
+    copy.push(withParagraph(sliceSegments(lines[i],a,b),a===0?paragraphOf(lines[i]):{}));
+  }
+  if(!copy.length)return;
+  const plain=copy.map((line,i)=>(paragraphOf(line).list?markers[mark.start.line+i]+' ':'')+lineText(line)).join('\n');
+  event.preventDefault();event.clipboardData.setData('text/plain',plain);
+  event.clipboardData.setData('application/x-hinote-paragraphs+json',JSON.stringify({version:46,lines:copy}));
+  if(cut)edit((ls,m)=>replaceText(ls,m,''));
+}
+function pasteEditorSelection(event){
+  event.preventDefault();const data=event.clipboardData||window.clipboardData;
+  try{
+    const raw=data.getData('application/x-hinote-paragraphs+json');
+    if(raw && raw.length<8*1024*1024){
+      const parsed=JSON.parse(raw);if(parsed.version===46&&Array.isArray(parsed.lines)&&parsed.lines.length&&parsed.lines.length<=10000){
+        const ids=new Map(),destination=paragraphOf(readLines()[bookmark()?.start.line]).list;
+        const lines=parsed.lines.map(line=>{
+          if(!Array.isArray(line)||line.some(s=>!s||typeof s.text!=='string'||s.tableId||s.objectId))throw Error('Invalid clipboard');
+          const meta={...paragraphOf(line)};
+          if(meta.list){const l=meta.list;if(!ids.has(l.id))ids.set(l.id,destination?.type===l.type?destination.id:newListId());meta.list={...l,id:ids.get(l.id),start:destination?.type===l.type?destination.start:l.start};}
+          return withParagraph(line,meta);
+        });
+        edit((ls,mark)=>replaceText(ls,mark,'',false,lines));return;
+      }
+    }
+  }catch(_){}
+  insertText(data.getData('text/plain'));
+}
+function autoListAtCaret(){
+  const mark=bookmark();if(!mark||!collapsed(mark))return;
+  const lines=readLines(),line=lines[mark.start.line];if(isBlockLine(line)||paragraphOf(line).list)return;
+  const p=parseListPrefix(lineText(line));if(!p||p.length!==mark.start.offset)return;
+  checkpoint();const previous=paragraphOf(lines[mark.start.line-1]).list;
+  const reuse=previous?.type===p.type && (['bullet','dash','asterisk'].includes(p.type)||p.start>1);
+  const list={id:reuse?previous.id:newListId(),type:p.type,level:p.level,start:reuse?previous.start:p.start,markerStyle:styleAt(line,0)};
+  lines[mark.start.line]=withParagraph(sliceSegments(line,p.length),{...paragraphOf(line),list,format:insertionStyle(mark)});
+  const point={line:mark.start.line,offset:0};renderLines(lines);restoreSelection({start:point,end:{...point}});checkpoint();
+}
+function deleteStructure(backwards){
+  const mark=bookmark();if(!mark)return false;const lines=readLines(),i=mark.start.line,line=lines[i];
+  if(!collapsed(mark)){edit((ls,m)=>replaceText(ls,m,''));return true;}
+  if(isBlockLine(line))return false;
+  if(backwards&&mark.start.offset===0&&paragraphOf(line).list){
+    edit((ls,m)=>{const meta={...paragraphOf(ls[i])};delete meta.list;ls[i]=withParagraph(ls[i],meta);return {lines:ls,selection:m};});return true;
+  }
+  const other=backwards?i-1:i+1;
+  if((backwards?mark.start.offset===0:mark.start.offset===lineText(line).length)&&other>=0&&other<lines.length&&!isBlockLine(lines[other])){
+    const a=backwards?other:i,b=a+1;edit((ls)=>replaceText(ls,{start:{line:a,offset:lineText(ls[a]).length},end:{line:b,offset:0}},''));return true;
+  }return false;
+}
+function scrollCaretIntoView(root=editor){
+  const selection=getSelection();if(!selection?.rangeCount||!root.contains(selection.focusNode))return;
+  const range=document.createRange();range.setStart(selection.focusNode,selection.focusOffset);range.collapse(true);
+  let rect=range.getBoundingClientRect();
+  if(!rect.height){const n=selection.focusNode.nodeType===1?selection.focusNode:selection.focusNode.parentElement;rect=n.getBoundingClientRect();}
+  for(let parent=root;parent&&parent!==document.body;parent=parent.parentElement){
+    const css=getComputedStyle(parent);if(!/(auto|scroll)/.test(css.overflowY)||parent.scrollHeight<=parent.clientHeight)continue;
+    const bounds=parent.getBoundingClientRect(),top=bounds.top+12,bottom=bounds.bottom-12;
+    const delta=rect.bottom>bottom?rect.bottom-bottom:rect.top<top?rect.top-top:0;
+    if(delta){parent.scrollTop+=delta;rect={...rect,top:rect.top-delta,bottom:rect.bottom-delta};}
+  }
+}
