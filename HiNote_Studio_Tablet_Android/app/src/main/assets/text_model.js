@@ -167,7 +167,14 @@ function finishNativeEdit(){
   let a=0,b=0;
   while(a<old.length&&a<now.length&&old[a]===now[a])a++;
   while(b<old.length-a&&b<now.length-a&&old[old.length-1-b]===now[now.length-1-b])b++;
-  const end=now.length-b;
+  let end=now.length-b;
+  if(!collapsed(before.mark)&&collapsed(mark)){
+    // Replacing a selection still inserts text when the first letters happen
+    // to equal the old text. String differencing alone cannot identify it.
+    const offset=point=>lines.slice(0,point.line).reduce((n,line)=>n+lineText(line).length+1,0)+point.offset;
+    a=sameParagraph?before.mark.start.offset:offset(before.mark.start);
+    end=sameParagraph?mark.start.offset:offset(mark.start);
+  }
   const at=offset=>{
     if(sameParagraph)return {line:mark.start.line,offset};
     for(let i=0;i<lines.length;i++){const n=lineText(lines[i]).length;if(offset<=n)return {line:i,offset};offset-=n+1;}

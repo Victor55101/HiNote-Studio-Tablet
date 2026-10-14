@@ -57,8 +57,10 @@ module.exports=({test,setup,select,lines,paste,assert,openTable})=>{
     assert.deepEqual(await page.evaluate(()=>bookmark()),before);assert.equal(await focused(page),'editor');await page.keyboard.press('Shift+ArrowLeft');assert.equal(await page.evaluate(()=>getSelection().toString()),'cdef');
   });
   test('V47 format selection on multiple paragraphs can be replaced immediately by typing',async page=>{
-    await setup(page,'Primero\n\nSegundo');await page.keyboard.press('Control+a');await choose(page,'sizeSel','90');
-    await page.keyboard.type('Nuevo');assert.deepEqual(await lines(page),['Nuevo']);assert.equal(await page.evaluate(()=>readLines()[0].find(s=>s.text).scale),.9);assert.equal(await focused(page),'editor');
+    for(const text of ['Primero\n\nSegundo','Nuevo\n\nSegundo']){
+      await setup(page,text);await page.keyboard.press('Control+a');await choose(page,'sizeSel','90');
+      await page.keyboard.type('Nuevo');assert.deepEqual(await lines(page),['Nuevo']);assert.equal(await page.evaluate(()=>readLines()[0].find(s=>s.text).scale),.9);assert.equal(await focused(page),'editor');
+    }
   });
   test('V47 keyboard mode selector restores the title field rather than keeping arrow focus',async page=>{
     await setup(page,'Texto');await page.fill('#noteTitle','Mi nota');await page.keyboard.press('Home');await page.keyboard.press('ArrowRight');
