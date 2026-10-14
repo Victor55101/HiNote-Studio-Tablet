@@ -118,4 +118,17 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
     await setup(page,'uno');await select(page,{line:0,offset:3});await list(page);await select(page,{line:0,offset:3});await page.keyboard.press('Enter');
     await paste(page,'1. dos\n2. tres');assert.deepEqual(await lines(page),['uno','dos','tres']);assert.deepEqual(await markers(page),['1.','2.','3.']);
   });
+  test('V46 pasted decimal descendants belong to the same root and renumber together',async page=>{
+    await setup(page);await paste(page,'1. Tema\n1.1. Uno\n1.2. Dos\n2. Tema siguiente\n2.1. Subtema');
+    assert.deepEqual(await markers(page),['1.','1.1.','1.2.','2.','2.1.']);
+    assert.equal(await page.evaluate(()=>new Set(readLines().map(l=>paragraphOf(l).list.id)).size),1);
+    await select(page,{line:1,offset:3});await page.keyboard.press('Enter');assert.deepEqual(await markers(page),['1.','1.1.','1.2.','1.3.','2.','2.1.']);
+    await select(page,{line:2,offset:0},{line:3,offset:0});await page.keyboard.press('Delete');assert.deepEqual(await markers(page),['1.','1.1.','1.2.','2.','2.1.']);
+  });
+  test('V46 migration preserves the actual marker ink after differently styled indentation',async page=>{
+    const raw=await page.evaluate(()=>JSON.stringify({version:38,lines:[[{text:'    ',...DEFAULT_STYLE},{text:'1. ',...DEFAULT_STYLE,color:'#CC4455',thickness:4},{text:'Texto',...DEFAULT_STYLE}]],settings:{},title:'Nota'}));
+    await page.addInitScript(raw=>{if(!sessionStorage.getItem('v46-migration-seeded')){localStorage.setItem('native-draft',raw);sessionStorage.setItem('v46-migration-seeded','true');}},raw);
+    await page.reload();await page.waitForSelector('#editor .line');const doc=await page.evaluate(()=>serializeDocument());
+    assert.equal(doc.paragraphs[0].list.marker_color,'#CC4455');assert.equal(doc.paragraphs[0].list.marker_thickness,4);assert.equal(doc.paragraphs[0].segments[0].color,'#000000');
+  });
 };

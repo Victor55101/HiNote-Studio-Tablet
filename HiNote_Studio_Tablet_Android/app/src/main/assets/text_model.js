@@ -52,17 +52,27 @@ function parseListPrefix(text){
   else if(/^\d+$/.test(body)){type='num_'+ending;start=+body;}
   else if(/^[ivxlcdm]{2,8}$/i.test(body)){type='roman_'+(body===body.toUpperCase()?'upper':'lower')+'_dot';const values={i:1,v:5,x:10,l:50,c:100,d:500,m:1000};start=0;for(let i=0;i<body.length;i++){const n=values[body[i].toLowerCase()],next=values[body[i+1]?.toLowerCase()]||0;start+=n<next?-n:n;}}
   else{type='alpha_'+(body===body.toUpperCase()?'upper':'lower')+'_'+ending;start=body.toLowerCase().charCodeAt(0)-96;}
-  return {length:m[0].length,type,start,level:Math.min(8,type==='multi_decimal'?body.split('.').length-1:Math.floor(m[1].replace(/\t/g,'    ').length/4))};
+  return {length:m[0].length,indentLength:m[1].length,type,start,ordinal:type==='multi_decimal'?+body.split('.').at(-1):start,
+    level:Math.min(8,type==='multi_decimal'?body.split('.').length-1:Math.floor(m[1].replace(/\t/g,'    ').length/4))};
 }
 function migrateTextLists(lines){
   let previous=null;const counts=new Map();
-  return lines.map(line=>{
+  const prefixes=lines.map(line=>isBlockLine(line)||paragraphOf(line).list?null:parseListPrefix(lineText(line)));
+  // A decimal root plus decimal descendants is one multilevel definition.
+  // Root markers such as "1." do not by themselves reveal that definition.
+  for(let i=0;i<prefixes.length;){
+    if(!['num_dot','multi_decimal'].includes(prefixes[i]?.type)){i++;continue;}
+    const first=i;let nested=false;
+    while(i<prefixes.length&&['num_dot','multi_decimal'].includes(prefixes[i]?.type)){nested ||= prefixes[i].type==='multi_decimal';i++;}
+    if(nested)for(let j=first;j<i;j++)prefixes[j].type='multi_decimal';
+  }
+  return lines.map((line,i)=>{
     if(isBlockLine(line)||paragraphOf(line).list){previous=null;return line;}
-    const p=parseListPrefix(lineText(line));if(!p){previous=null;return line;}
+    const p=prefixes[i];if(!p){previous=null;return line;}
     const key=p.level,numbered=!['bullet','dash','asterisk'].includes(p.type);
-    const reuse=previous&&previous.type===p.type&&(!numbered||p.level!==previous.level||p.start===(counts.get(key)||0)+1);
-    const l={id:reuse?previous.id:newListId(),type:p.type,level:p.level,start:reuse?previous.start:p.start,markerStyle:styleAt(line,0)};
-    if(!reuse)counts.clear();counts.set(key,p.start);previous=l;
+    const reuse=previous&&previous.type===p.type&&(!numbered||p.ordinal===(counts.get(key)||0)+1||(!counts.has(key)&&p.level>previous.level));
+    const l={id:reuse?previous.id:newListId(),type:p.type,level:p.level,start:reuse?previous.start:p.start,markerStyle:styleAt(line,p.indentLength)};
+    if(!reuse)counts.clear();for(const level of counts.keys())if(level>key)counts.delete(level);counts.set(key,p.ordinal);previous=l;
     return withParagraph(sliceSegments(line,p.length),{...paragraphOf(line),list:l});
   });
 }
