@@ -125,7 +125,9 @@ function bookmark() {
   const sel = getSelection();
   if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
     const r = sel.getRangeAt(0);
-    return {start: modelPoint(r.startContainer, r.startOffset), end: modelPoint(r.endContainer, r.endOffset)};
+    const anchor=modelPoint(sel.anchorNode,sel.anchorOffset),focus=modelPoint(sel.focusNode,sel.focusOffset);
+    const backward=anchor.line>focus.line||anchor.line===focus.line&&anchor.offset>focus.offset;
+    return {start: modelPoint(r.startContainer, r.startOffset), end: modelPoint(r.endContainer, r.endOffset),...(backward?{backward:true}:{})};
   }
   return savedSelection ? JSON.parse(JSON.stringify(savedSelection)) : null;
 }
@@ -182,9 +184,14 @@ function domPoint(point) {
 function restoreSelection(mark, focus=true) {
   if (!mark) return;
   const range = document.createRange(); range.setStart(...domPoint(mark.start)); range.setEnd(...domPoint(mark.end));
-  if(focus)editor.focus({preventScroll: true}); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  if(focus)editor.focus({preventScroll: true}); const sel = getSelection(); sel.removeAllRanges();
+  if(mark.backward)sel.setBaseAndExtent(...domPoint(mark.end),...domPoint(mark.start));else sel.addRange(range);
   savedSelection = bookmark();
   if(focus){syncTextControls();syncListControls();}
+}
+function resumeEditor(mark=bookmark()) {
+  if(!mark||!editor.isContentEditable||editor.closest('[inert]'))return false;
+  restoreSelection(mark);return true;
 }
 function collapsed(mark) { return mark.start.line === mark.end.line && mark.start.offset === mark.end.offset; }
 function normalizeRoots() {
@@ -262,15 +269,17 @@ function selectedLineIndexes(mark) {
 }
 function applyStyle(patch) {
   const mark=bookmark();if(!mark)return;
+  // A format command returns to the document. Only editable value fields and
+  // the open color dialog retain focus while the user is entering a value.
+  const focused=document.activeElement,keep=!!focused?.closest('#colorDialog')||!!(focused?.matches('input')&&focused.closest('#panelText'));
   if(collapsed(mark)){
     if(isBlockLine(readLines()[mark.start.line]))return;
     setTypingStyle({...insertionStyle(mark),...patch},mark.start);
     const node=editor.children[mark.start.line],line=readLines()[mark.start.line];
     if(!lineText(line)){const meta={...paragraphOf(line),format:typingState.style};decorateParagraph(node,withParagraph(line,meta),node.dataset.marker||'');queueDraft();}
-    syncTextControls();return;
+    if(!keep)resumeEditor(mark);syncTextControls();return;
   }
   typingState=null;
-  const focused=document.activeElement,keep=!!focused?.closest('#panelText,#colorDialog');
   edit((lines,selection)=>({lines:patchRuns(lines,selection,patch),selection}),keep);
   syncTextControls();
 }

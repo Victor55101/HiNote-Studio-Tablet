@@ -79,7 +79,16 @@ function migrateTextLists(lines){
 function changeLists(action){
   const type=$('listType').value;
   edit((lines,selection)=>{
-    const indexes=selectedLineIndexes(selection).filter(i=>!isBlockLine(lines[i]));if(!indexes.length)return;
+    const affected=selectedLineIndexes(selection).filter(i=>!isBlockLine(lines[i]));
+    const bulkApply=action==='apply'&&!collapsed(selection);
+    const indexes=affected.filter(i=>!bulkApply||lineText(lines[i]).trim());
+    // Word leaves blank separators unnumbered when converting a selection.
+    // An empty item created explicitly by Enter or a collapsed caret is a
+    // different operation and retains its marker until the user exits it.
+    if(bulkApply)for(const i of affected)if(!lineText(lines[i]).trim()){
+      const meta={...paragraphOf(lines[i])};delete meta.list;lines[i]=withParagraph(lines[i],meta);
+    }
+    if(!indexes.length)return bulkApply?{lines,selection}:undefined;
     const first=indexes[0],current=paragraphOf(lines[first]).list;
     if(['continue','restart','start'].includes(action)){
       if(!current)return;
@@ -152,19 +161,35 @@ function finishNativeEdit(){
   const mark=bookmark();if(!mark)return;const lines=readLines();
   // Only decorate the text the native input connection actually committed.
   // Never cancel/reconstruct composing events or implement dead-key mapping.
-  if(lines.length===before.lines.length && mark.start.line===before.mark.start.line){
-    const i=mark.start.line,old=lineText(before.lines[i]),now=lineText(lines[i]);let a=0,b=0;
-    while(a<old.length&&a<now.length&&old[a]===now[a])a++;
-    while(b<old.length-a&&b<now.length-a&&old[old.length-1-b]===now[now.length-1-b])b++;
-    const end=now.length-b;
-    if(end>a){
-      const current=sliceSegments(lines[i],a,end);
-      const converted=caseText(now.slice(a,end),before.style.caseMode,now.slice(0,a));
-      if(current.some(s=>!sameStyle(cleanStyle(s),before.style))||converted!==now.slice(a,end)){
-        lines[i]=withParagraph([...sliceSegments(lines[i],0,a),{text:converted,...before.style},...sliceSegments(lines[i],end)],paragraphOf(lines[i]));
-        const delta=converted.length-(end-a);for(const point of [mark.start,mark.end])if(point.line===i&&point.offset>=end)point.offset+=delta;
-        const fresh=renderParagraph(lines[i],listMarkers(lines)[i]);editor.children[i].replaceWith(fresh);restoreSelection(mark,false);
+  const sameParagraph=lines.length===before.lines.length&&mark.start.line===before.mark.start.line;
+  const old=sameParagraph?lineText(before.lines[mark.start.line]):before.lines.map(lineText).join('\n');
+  const now=sameParagraph?lineText(lines[mark.start.line]):lines.map(lineText).join('\n');
+  let a=0,b=0;
+  while(a<old.length&&a<now.length&&old[a]===now[a])a++;
+  while(b<old.length-a&&b<now.length-a&&old[old.length-1-b]===now[now.length-1-b])b++;
+  const end=now.length-b;
+  const at=offset=>{
+    if(sameParagraph)return {line:mark.start.line,offset};
+    for(let i=0;i<lines.length;i++){const n=lineText(lines[i]).length;if(offset<=n)return {line:i,offset};offset-=n+1;}
+    return {line:lines.length-1,offset:lineText(lines.at(-1)).length};
+  };
+  if(end>a){
+    const from=at(a),to=at(end);let decorated=false;
+    for(let i=from.line;i<=to.line;i++){
+      if(isBlockLine(lines[i]))continue;
+      const first=i===from.line?from.offset:0,last=i===to.line?to.offset:lineText(lines[i]).length;
+      const text=lineText(lines[i]).slice(first,last),current=sliceSegments(lines[i],first,last);
+      const converted=caseText(text,before.style.caseMode,lineText(lines[i]).slice(0,first));
+      if(current.some(s=>!sameStyle(cleanStyle(s),before.style))||converted!==text){
+        lines[i]=withParagraph([...sliceSegments(lines[i],0,first),{text:converted,...before.style},...sliceSegments(lines[i],last)],paragraphOf(lines[i]));
+        const delta=converted.length-text.length;for(const point of [mark.start,mark.end])if(point.line===i&&point.offset>=last)point.offset+=delta;
+        decorated=true;
       }
+    }
+    if(decorated){
+      if(sameParagraph&&editor.children[mark.start.line])editor.children[mark.start.line].replaceWith(renderParagraph(lines[mark.start.line],listMarkers(lines)[mark.start.line]));
+      else renderLines(lines);
+      restoreSelection(mark,false);
     }
   }
   if(collapsed(mark))setTypingStyle(before.style,mark.start);

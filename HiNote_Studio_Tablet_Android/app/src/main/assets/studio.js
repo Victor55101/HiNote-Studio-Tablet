@@ -93,7 +93,7 @@ window.StudioUI = (() => {
     if(p){const stats=el('profileStats');if(stats){stats.replaceChildren();for(const [value,label] of [[p.found.length,'encontrados'],[p.missing.length,'faltantes'],[p.fallback.length,'disponibles en Original'],[p.unavailable.length,'sin muestra']]){const card=node('div','profileStat');card.append(node('strong',null,String(value)),node('small',null,label));stats.append(card);}}}
     if(active)el('activeCoverage').textContent=active.name+' · '+active.found.length+' de '+(active.found.length+active.missing.length)+' caracteres';
   }
-  const colorButtons=new Map();let colorInput=null,returnFocus=null,colorInert=[],hsv={h:0,s:0,v:0},colorPointer=null;
+  const colorButtons=new Map();let colorInput=null,returnFocus=null,colorContext=null,colorInert=[],hsv={h:0,s:0,v:0},colorPointer=null;
   const valid=c=>/^#[\da-f]{6}$/i.test(c);
   function fromHex(c){const rgb=[1,3,5].map(i=>parseInt(c.slice(i,i+2),16)/255),max=Math.max(...rgb),min=Math.min(...rgb),d=max-min;let h=0;if(d){const i=rgb.indexOf(max);h=(i===0?(rgb[1]-rgb[2])/d+(rgb[1]<rgb[2]?6:0):i===1?(rgb[2]-rgb[0])/d+2:(rgb[0]-rgb[1])/d+4)*60;}return {h,s:max?d/max:0,v:max};}
   function toHex(){const {h,s,v}=hsv,c=v*s,x=c*(1-Math.abs(h/60%2-1)),m=v-c;const a=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];return '#'+a.map(n=>Math.round((n+m)*255).toString(16).padStart(2,'0')).join('').toUpperCase();}
@@ -103,12 +103,12 @@ window.StudioUI = (() => {
   function recentColors(){try{return JSON.parse(localStorage.getItem('hinote-recent-colors')||'[]').filter(valid).slice(0,8);}catch(_){return [];}}
   function palette(container,colors){container.replaceChildren();for(const c of colors){const b=node('button');b.style.background=c;b.type='button';b.setAttribute('aria-label','Color '+c);b.onclick=()=>{hsv=fromHex(c);colorPaint();commitColor();};container.append(b);}}
   function openColor(input){
-    if(input.disabled)return;captureSelection();colorInput=input;returnFocus=colorButtons.get(input);hsv=fromHex(input.value);palette(el('colorRecent'),recentColors());colorPaint();
+    if(input.disabled)return;captureSelection();colorInput=input;returnFocus=colorButtons.get(input);colorContext=window.StudioUI?.fieldContext?.();if(input.id==='colorPick')colorContext={field:editor,mark:bookmark()};hsv=fromHex(input.value);palette(el('colorRecent'),recentColors());colorPaint();
     // Inert only other top-level UI roots; the existing dialog's inert app state is restored exactly.
     colorInert=[...document.body.children].filter(n=>n!==el('colorDialog')&&n.tagName!=='SCRIPT'&&n.tagName!=='STYLE').map(n=>[n,n.inert]);for(const [n] of colorInert)n.inert=true;
     el('colorTitle').textContent=input.getAttribute('aria-label')||'Color de tinta';el('colorDialog').classList.remove('hidden');el('colorClose').focus({preventScroll:true});
   }
-  function closeColor(){if(!colorInput)return;const c=colorInput.value.toUpperCase();try{localStorage.setItem('hinote-recent-colors',JSON.stringify([c,...recentColors().filter(x=>x!==c)].slice(0,8)));}catch(_){}el('colorDialog').classList.add('hidden');for(const [n,state] of colorInert)n.inert=state;colorInert=[];colorInput=null;returnFocus?.focus({preventScroll:true});}
+  function closeColor(){if(!colorInput)return;const c=colorInput.value.toUpperCase();try{localStorage.setItem('hinote-recent-colors',JSON.stringify([c,...recentColors().filter(x=>x!==c)].slice(0,8)));}catch(_){}el('colorDialog').classList.add('hidden');for(const [n,state] of colorInert)n.inert=state;colorInert=[];colorInput=null;if(!window.StudioUI?.resumeField?.(colorContext))returnFocus?.focus({preventScroll:true});colorContext=null;}
   function buildColors(){
     for(const input of document.querySelectorAll('input[type=color]')){input.classList.add('nativeColor');input.tabIndex=-1;const b=node('button','colorButton');b.type='button';b.dataset.colorFor=input.id;b.append(node('span','colorSwatch'),node('span','colorCode'));input.after(b);colorButtons.set(input,b);b.onclick=()=>openColor(input);new MutationObserver(syncColors).observe(input,{attributes:true,attributeFilter:['disabled','aria-label']});}
     const d=node('div','colorDialog hidden');d.id='colorDialog';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.setAttribute('aria-labelledby','colorTitle');

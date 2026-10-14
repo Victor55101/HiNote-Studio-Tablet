@@ -2,14 +2,39 @@
 /* Shared controls retain the original select elements as the model/API. */
 (()=>{
   const $=id=>document.getElementById(id), controls=new Map();
-  let opened=null, popup=null, shield=null, activeIndex=-1, typeAhead='', typedAt=0, completedTap=null;
+  let opened=null, popup=null, shield=null, activeIndex=-1, typeAhead='', typedAt=0, completedTap=null, selectContext=null;
+  const textSelects=new Set(['sizeSel','thicknessSel','caseSel','listType']);
+  function fieldContext(){
+    const field=writable(document.activeElement);if(!field)return null;
+    if(field===editor)return {field,mark:bookmark()};
+    if(typeof field.selectionStart==='number')return {field,start:field.selectionStart,end:field.selectionEnd,direction:field.selectionDirection};
+    const s=getSelection();if(!s?.rangeCount||!field.contains(s.focusNode))return {field};
+    const r=s.getRangeAt(0),length=(node,offset)=>{const p=document.createRange();p.setStart(field,0);p.setEnd(node,offset);return p.toString().length;};
+    return {field,from:length(r.startContainer,r.startOffset),to:length(r.endContainer,r.endOffset),backward:s.anchorNode===r.endContainer&&s.anchorOffset===r.endOffset&&!s.isCollapsed};
+  }
+  function resumeField(context){
+    if(!context)return false;let field=context.field;
+    if(field===editor)return resumeEditor(context.mark);
+    if(!field.isConnected&&field.classList.contains('cellEditor'))field=[...document.querySelectorAll('.cellEditor')].find(n=>n.dataset.row===field.dataset.row&&n.dataset.col===field.dataset.col);
+    if(!field?.isConnected&&context.field.classList.contains('mathSlot'))field=[...document.querySelectorAll('.mathSlot')].find(n=>n.dataset.path===context.field.dataset.path);
+    if(!field?.isConnected||field.disabled||field.readOnly||field.closest('[inert]'))return false;
+    field.focus({preventScroll:true});
+    if(context.start!==undefined)field.setSelectionRange(Math.min(context.start,field.value.length),Math.min(context.end,field.value.length),context.direction);
+    else if(context.from!==undefined){
+      const point=offset=>{const w=document.createTreeWalker(field,NodeFilter.SHOW_TEXT);let n,last;while(n=w.nextNode()){last=n;if(offset<=n.length)return [n,offset];offset-=n.length;}return last?[last,last.length]:[field,0];};
+      const s=getSelection();s.setBaseAndExtent(...point(context.backward?context.to:context.from),...point(context.backward?context.from:context.to));
+    }
+    return true;
+  }
   // WebView can retarget a compatibility click after pointerup removes a menu.
   // Keep that completed gesture isolated; the next deliberate press is free.
   function absorbTap(e){if(Number.isFinite(e.clientX)&&Number.isFinite(e.clientY))completedTap={x:e.clientX,y:e.clientY,until:Date.now()+800};}
   window.addEventListener('pointerdown',()=>completedTap=null,true);
-  window.addEventListener('click',e=>{
+  function stopRetargetedMouse(e){
     if(completedTap&&Date.now()<completedTap.until&&(e.detail>0||e.sourceCapabilities?.firesTouchEvents)&&Math.hypot(e.clientX-completedTap.x,e.clientY-completedTap.y)<32){e.preventDefault();e.stopImmediatePropagation();}
-  },true);
+  }
+  // The compatibility mousedown can change focus before its click is blocked.
+  for(const event of ['mousedown','mouseup','click'])window.addEventListener(event,stopRetargetedMouse,true);
   function label(select){
     if(select.getAttribute('aria-label'))return select.getAttribute('aria-label');
     const l=select.labels?.[0]?.cloneNode(true);l?.querySelectorAll('select,button,.selectControl').forEach(n=>n.remove());
@@ -17,13 +42,14 @@
   }
   function options(select){return [...select.options].filter(o=>!o.hidden);}
   function closeSelect(focus=true){
-    if(!opened)return false;const c=controls.get(opened);opened=null;popup?.remove();popup=null;shield?.remove();shield=null;
+    if(!opened)return false;const c=controls.get(opened),context=selectContext;opened=null;selectContext=null;popup?.remove();popup=null;shield?.remove();shield=null;
     c.button.setAttribute('aria-expanded','false');c.button.removeAttribute('aria-activedescendant');
-    if(focus&&c.button.isConnected)c.button.focus({preventScroll:true});return true;
+    if(focus&&!resumeField(context)&&c.button.isConnected)c.button.focus({preventScroll:true});return true;
   }
   function choose(select,value){
-    closeSelect();select.value=value;
+    const context=selectContext;closeSelect(false);select.value=value;
     select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));sync();
+    if(textSelects.has(select.id))resumeEditor();else resumeField(context);
   }
   function highlight(index){
     if(!opened)return;const choices=options(opened);activeIndex=Math.max(0,Math.min(choices.length-1,index));
@@ -40,7 +66,9 @@
   }
   function openSelect(select){
     if(select.disabled)return;if(opened===select){closeSelect();return;}closeSelect(false);captureSelection();
-    const c=controls.get(select);opened=select;popup=document.createElement('div');popup.className='selectMenu';popup.id=select.id+'-options';popup.setAttribute('role','listbox');popup.setAttribute('aria-label',label(select));
+    const c=controls.get(select);selectContext=fieldContext();
+    if(textSelects.has(select.id)&&resumeEditor())selectContext={field:editor,mark:bookmark()};
+    opened=select;popup=document.createElement('div');popup.className='selectMenu';popup.id=select.id+'-options';popup.setAttribute('role','listbox');popup.setAttribute('aria-label',label(select));
     shield=document.createElement('div');shield.className='selectShield';shield.setAttribute('aria-hidden','true');
     shield.onpointerdown=e=>e.stopPropagation();
     shield.onpointerup=e=>{e.stopPropagation();if(e.pointerType!=='mouse'){e.preventDefault();absorbTap(e);closeSelect();}};
@@ -49,13 +77,13 @@
     for(const [i,o] of options(select).entries()){
       const b=document.createElement('button');b.type='button';b.tabIndex=-1;b.id=select.id+'-option-'+i;b.setAttribute('role','option');b.setAttribute('aria-selected',String(o.selected));b.disabled=o.disabled||o.parentElement.disabled===true;b.textContent=o.label;b.dataset.value=o.value;
       let tap=null;
-      b.onpointerdown=e=>{if(e.pointerType!=='mouse'){tap={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};b.setPointerCapture(e.pointerId);}else e.preventDefault();};
+      b.onpointerdown=e=>{e.preventDefault();if(e.pointerType!=='mouse'){tap={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};b.setPointerCapture(e.pointerId);}};
       b.onpointermove=e=>{if(tap?.id===e.pointerId&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>=10)tap.moved=true;};
       b.onpointercancel=()=>tap=null;
       b.onpointerup=e=>{const start=tap;tap=null;if(start?.id===e.pointerId&&!start.moved&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<10){e.preventDefault();e.stopPropagation();absorbTap(e);choose(select,o.value);}};
       b.onclick=e=>{e.preventDefault();e.stopPropagation();if(opened===select)choose(select,o.value);};popup.append(b);
     }
-    (select.closest('[role=dialog]')||document.body).append(shield,popup);c.button.setAttribute('aria-controls',popup.id);c.button.setAttribute('aria-expanded','true');c.button.focus({preventScroll:true});place();
+    (select.closest('[role=dialog]')||document.body).append(shield,popup);c.button.setAttribute('aria-controls',popup.id);c.button.setAttribute('aria-expanded','true');if(selectContext?.field!==editor)c.button.focus({preventScroll:true});place();
     highlight(Math.max(0,options(select).findIndex(o=>o.selected)));
   }
   function key(select,event){
@@ -109,8 +137,14 @@
     }if(changed)sync();
   }).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','selected','value','label']});
   const syncColors=StudioUI.syncColors;StudioUI.syncColors=()=>{syncColors();sync();};StudioUI.syncSelects=sync;StudioUI.absorbTap=absorbTap;
+  StudioUI.fieldContext=fieldContext;StudioUI.resumeField=resumeField;
   document.addEventListener('input',sync);document.addEventListener('change',()=>queueMicrotask(sync));document.addEventListener('selectionchange',sync);
-  document.addEventListener('keydown',e=>{if(opened&&e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeSelect();}else if(opened&&e.key==='Tab')closeSelect(false);},true);
+  document.addEventListener('keydown',e=>{
+    if(!opened||e.isComposing)return;
+    if(e.key==='Tab'){closeSelect(false);return;}
+    if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeSelect();return;}
+    key(opened,e);
+  },true);
   window.addEventListener('resize',place);document.addEventListener('scroll',e=>{if(!e.target.closest?.('.selectMenu'))place();},true);window.visualViewport?.addEventListener('resize',place);
 
   // A single horizontal strip: image tools enter from the right, list tools
@@ -145,6 +179,15 @@
     if(!n||n.disabled||n.readOnly||n.closest('[inert]'))return null;
     return n.isContentEditable||n.matches('textarea,input:not([type]),input[type=text],input[type=search],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=password]')?n:null;
   };
+  // Buttons issue commands to the active editor; they must not become a new
+  // physical-keyboard destination merely because they were tapped/clicked.
+  document.addEventListener('pointerdown',e=>{
+    const field=writable(document.activeElement),button=e.target.closest?.('button');
+    if(field&&(button?.matches('.selectButton,.colorButton')||field===editor&&button?.closest('.toolbar,.topbar')))e.preventDefault();
+  },true);
+  for(const input of document.querySelectorAll('.toolbar input:not([type=color]):not([type=checkbox])'))input.addEventListener('keydown',e=>{
+    if((e.key==='Enter'||e.key==='Escape')&&!e.isComposing){e.preventDefault();e.stopPropagation();input.dispatchEvent(new Event('change',{bubbles:true}));resumeEditor();}
+  });
   let editingField=null;
   function editing(){const field=writable(document.activeElement);if(field===editingField)return;editingField=field;window.AndroidBridge?.setEditingField?.(!!field);}
   document.addEventListener('focusin',editing);document.addEventListener('focusout',()=>queueMicrotask(editing));

@@ -1252,6 +1252,7 @@ test('V45 image controls avoid image bounds and rotation shows only angle feedba
 });
 
 require('./text_editing.spec.cjs')({test,setup,select,lines,paste,assert});
+require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTable});
 
 (async () => {
   const server = http.createServer((request,response) => {
