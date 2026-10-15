@@ -107,7 +107,7 @@ function renderLines(lines) {
     if(TableEditor.isLine(line))fragment.append(TableEditor.block(line));
     else if(MathGraphEditor.isLine(line))fragment.append(MathGraphEditor.block(line));
     else fragment.append(renderParagraph(line,markers[i]));
-  });editor.replaceChildren(fragment);
+  });editor.replaceChildren(fragment);syncMarkerSelection();
 }
 function characterCount() { return readLines().reduce((n,l)=>n+(isBlockLine(l)?0:lineText(l).length),0)+Math.max(0,editor.childElementCount-1)+TableEditor.count()+MathGraphEditor.count(); }
 function rangeInside(range) { return range && (range.commonAncestorContainer === editor || editor.contains(range.commonAncestorContainer)); }
@@ -137,6 +137,7 @@ function captureSelection() {
   const sel = getSelection();
   if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
     savedSelection = bookmark();
+    if(markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
     if(!ime && typingState && (!collapsed(savedSelection)||!pointEqual(typingState.point,savedSelection.start)))typingState=null;
     if (!document.activeElement?.closest('#panelText,#colorDialog')) syncTextControls();
     syncListControls();
@@ -144,6 +145,7 @@ function captureSelection() {
 }
 function selectionStyles() {
   const mark=bookmark(),lines=readLines();if(!mark)return [];
+  if(markerSelection)return selectedMarkerIndexes(lines).map(i=>cleanStyle(paragraphOf(lines[i]).list.markerStyle));
   if(collapsed(mark))return isBlockLine(lines[mark.start.line])?[]:[insertionStyle(mark,lines)];
   return selectedLineIndexes(mark).flatMap(i=>isBlockLine(lines[i])?[]:sliceSegments(lines[i],i===mark.start.line?mark.start.offset:0,i===mark.end.line?mark.end.offset:Infinity).map(cleanStyle));
 }
@@ -151,7 +153,12 @@ function syncTextControls() {
   const styles=selectionStyles();if(!styles.length)return;
   const common=key=>styles.every(s=>s[key]===styles[0][key])?styles[0][key]:null;
   for(const [id,key,factor] of [['sizeSel','scale',100],['thicknessSel','thickness',1]]){
-    const control=$(id),value=common(key);control.querySelectorAll('[data-selection-value]').forEach(o=>o.remove());
+    let value=common(key);
+    if(key==='scale'&&!markerSelection&&$('listFormatTarget').value!=='text'){
+      const mark=bookmark(),lines=readLines();
+      if(mark&&selectedLineIndexes(mark).some(i=>fullListItem(lines[i],mark,i)&&paragraphOf(lines[i]).list.markerStyle.scale!==value))value=null;
+    }
+    const control=$(id);control.querySelectorAll('[data-selection-value]').forEach(o=>o.remove());
     const text=value===null?'mixed':String(Math.round(value*factor*100)/100);
     if(![...control.options].some(o=>o.value===text)){const option=new Option(value===null?'Mixto':text,text);option.dataset.selectionValue='true';control.add(option);}
     control.value=text;control.dataset.mixed=String(value===null);
@@ -189,6 +196,7 @@ function restoreSelection(mark, focus=true) {
   if(focus)editor.focus({preventScroll: true}); const sel = getSelection(); sel.removeAllRanges();
   if(mark.backward)sel.setBaseAndExtent(...domPoint(mark.end),...domPoint(mark.start));else sel.addRange(range);
   savedSelection = bookmark();
+  if(markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
   if(focus){syncTextControls();syncListControls();}
 }
 function resumeEditor(mark=bookmark()) {
@@ -204,8 +212,9 @@ function checkpoint() {
   clearTimeout(historyTimer);
   const data = JSON.stringify({lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state()}), selection = bookmark();
   const imageSelection=ImageEditor.selected()?.id||null;
-  if (history[historyIndex]?.data === data) { history[historyIndex].selection = selection; history[historyIndex].imageSelection=imageSelection; return; }
-  history = history.slice(0, historyIndex + 1); history.push({data, selection,imageSelection});
+  const markers=markerSelection?JSON.parse(JSON.stringify(markerSelection)):null;
+  if (history[historyIndex]?.data === data) { history[historyIndex].selection = selection; history[historyIndex].imageSelection=imageSelection; history[historyIndex].markers=markers; return; }
+  history = history.slice(0, historyIndex + 1); history.push({data, selection,imageSelection,markers});
   let bytes = history.reduce((sum, entry) => sum + entry.data.length * 2, 0);
   while (history.length > 2 && (history.length > 40 || bytes > 8 * 1024 * 1024)) bytes -= history.shift().data.length * 2;
   historyIndex = history.length - 1; controls();
@@ -233,7 +242,7 @@ function undoRedo(direction) {
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
   historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines)&&JSON.stringify(TableEditor.state().tables)===JSON.stringify(data.tables||{})&&JSON.stringify(MathGraphEditor.state().mathObjects)===JSON.stringify(data.mathObjects||{});
-  typingState=null;TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
+  typingState=null;markerSelection=entry.markers||null;if(markerSelection)$('listFormatTarget').value='markers';TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
   if(sameText){ImageEditor.modified();drawCurrent();}else changed();
 }
 function replaceText(lines, mark, text, soft=false, rich=null) {
@@ -274,15 +283,29 @@ function applyStyle(patch) {
   // A format command returns to the document. Only editable value fields and
   // the open color dialog retain focus while the user is entering a value.
   const focused=document.activeElement,keep=!!focused?.closest('#colorDialog')||!!(focused?.matches('input')&&focused.closest('#panelText'));
+  if(markerSelection){
+    const ink=Object.fromEntries(Object.entries(patch).filter(([key])=>['scale','color','opacity','thickness'].includes(key)));
+    if(!Object.keys(ink).length)return;
+    typingState=null;edit((lines,selection)=>{
+      for(const i of selectedMarkerIndexes(lines)){const meta=paragraphOf(lines[i]);lines[i]=withParagraph(lines[i],{...meta,list:{...meta.list,markerStyle:cleanStyle({...meta.list.markerStyle,...ink})}});}
+      return {lines,selection};
+    },keep);syncTextControls();return;
+  }
   if(collapsed(mark)){
     if(isBlockLine(readLines()[mark.start.line]))return;
     setTypingStyle({...insertionStyle(mark),...patch},mark.start);
     const node=editor.children[mark.start.line],line=readLines()[mark.start.line];
-    if(!lineText(line)){const meta={...paragraphOf(line),format:typingState.style};decorateParagraph(node,withParagraph(line,meta),node.dataset.marker||'');queueDraft();}
+    if(!lineText(line)){
+      const meta={...paragraphOf(line),format:typingState.style};
+      if(meta.list&&patch.scale!==undefined&&$('listFormatTarget').value!=='text'){
+        meta.list={...meta.list,markerStyle:cleanStyle({...meta.list.markerStyle,scale:patch.scale})};
+        edit((lines,selection)=>{lines[selection.start.line]=withParagraph(line,meta);return {lines,selection,typingStyle:meta.format};},keep);
+      }else{decorateParagraph(node,withParagraph(line,meta),node.dataset.marker||'');queueDraft();}
+    }
     if(!keep)resumeEditor(mark);syncTextControls();return;
   }
   typingState=null;
-  edit((lines,selection)=>({lines:patchRuns(lines,selection,patch),selection}),keep);
+  edit((lines,selection)=>({lines:patchRuns(lines,selection,patch,$('listFormatTarget').value!=='text'),selection}),keep);
   syncTextControls();
 }
 function alphaMarker(number, upper = false) {
@@ -411,6 +434,7 @@ function controls() {
   CalibrationUI.controls();
   MathGraphEditor.updateControls();
   window.StudioUI?.ribbon();window.StudioUI?.meta();
+  syncMarkerSelection();
 }
 function showExportFolder(raw) {
   const data=JSON.parse(raw || '{}');
@@ -519,6 +543,7 @@ window.onExportStage = message => { if (exporting) $('status').textContent = mes
 window.onExportComplete = (ok, message) => { exporting = false; controls(); $('status').textContent = ok ? (currentExportMode==='notes'?'Enviado a Notes':'Guardado') : 'Exportación detenida'; toast(message); };
 
 // Keep toolbar selections as model offsets, including a newly collapsed caret.
+initMarkerSelection();
 document.addEventListener('selectionchange', captureSelection);
 document.querySelector('.toolbar').addEventListener('pointerdown', captureSelection, true);
 $('tabs').addEventListener('click', event => {const tab=event.target.closest('[data-tab]');if(tab)window.StudioUI?.setTab(tab.dataset.tab);});

@@ -98,9 +98,9 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
     await page.keyboard.press('Control+z');assert.deepEqual(await lines(page),['1. ']);assert.deepEqual(await markers(page),['']);
     await setup(page);await page.keyboard.type('* ');await page.keyboard.type('Texto');assert.deepEqual(await markers(page),['*']);assert.deepEqual(await lines(page),['Texto']);
   });
-  test('V46 marker ink stays independent of formatted item text',async page=>{
+  test('V49 whole-item size includes the marker while text ink remains independent',async page=>{
     await setup(page,'Elemento');await select(page,{line:0,offset:0},{line:0,offset:8});await list(page);await page.selectOption('#sizeSel','150');await page.fill('#hexInput','#FF3344');
-    const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_scale,1);assert.equal(doc.paragraphs[0].list.marker_color,'#000000');assert.equal(doc.paragraphs[0].segments[0].scale,1.5);
+    const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_scale,1.5);assert.equal(doc.paragraphs[0].list.marker_color,'#000000');assert.equal(doc.paragraphs[0].segments[0].scale,1.5);
     const gap=await page.locator('#editor .line').evaluate(node=>{const text=document.createTreeWalker(node,NodeFilter.SHOW_TEXT).nextNode(),r=document.createRange();r.setStart(text,0);r.setEnd(text,1);return r.getBoundingClientRect().left-node.getBoundingClientRect().left;});assert.ok(gap>=30,'Body text must leave visible space for its marker');
   });
   test('V46 rich internal copy preserves runs and creates a separate list instance',async page=>{

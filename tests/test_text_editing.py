@@ -61,6 +61,28 @@ class TextEditingTests(unittest.TestCase):
         body=[s for s in page['strokes'] if s['char'] in 'Texto']
         self.assertLess(max(p['x'] for s in marker for p in s['points']),min(p['x'] for s in body for p in s['points']))
 
+    def test_independent_marker_size_reaches_native_ink_and_keeps_text_clear(self):
+        for marker in ('1.', 'a)', 'III.', '12.34.', '•', '*', '-'):
+            for marker_scale, text_scale in ((.6, .6), (2, .6), (.6, 1.5)):
+                with self.subTest(marker=marker, marker_scale=marker_scale, text_scale=text_scale):
+                    checked=_document(json.dumps({'paragraphs':[{
+                        'segments':[{'text':'Texto', 'scale':text_scale, 'thickness':2}],
+                        'list':{'marker':marker, 'marker_scale':marker_scale, 'marker_thickness':2}
+                    }]}))
+                    page=self.compose(checked['paragraphs'])['pages'][0]
+                    marker_placements=page['placements'][:len(marker)]
+                    self.assertTrue(all(p['scale']==marker_scale for p in marker_placements))
+                    self.assertTrue(all(p['scale']==text_scale for p in page['placements'][len(marker):]))
+                    marker_strokes=[s for s in page['strokes'] if s['char'] in marker]
+                    text_strokes=[s for s in page['strokes'] if s['char'] in 'Texto']
+                    self.assertLess(max(p['x'] for s in marker_strokes for p in s['points']), min(p['x'] for s in text_strokes for p in s['points']))
+                    with tempfile.TemporaryDirectory() as folder:
+                        path=Path(folder)/'text.bin'
+                        write_pencilengine({'strokes':page['strokes']},APP/'assets/template_1stroke.hinote',path)
+                        parsed=read_pencilengine(path)
+                        self.assertEqual(len(parsed.strokes),len(page['strokes']))
+                        self.assertEqual(len({round(native_width(vars(s)),6) for s in parsed.strokes}),1)
+
     def test_manual_indentation_does_not_change_hierarchy_and_scripts_are_validated(self):
         doc={'paragraphs':[{'segments':[{'text':'a','scale':.6,'script':'sub'}],
                             'list':{'marker':'2.1.','level':1,'indent_squares':4}}]}

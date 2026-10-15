@@ -100,7 +100,9 @@ select.nativeSelect{position:absolute!important;left:0!important;top:0!important
 .editor .line:not(.tableBlock):not(.objectBlock){position:relative}
 .editor .line:not([data-list]):not(.tableBlock):not(.objectBlock){padding-left:var(--paragraph-indent,0px)}
 .editor .line[data-list]{padding-left:calc(var(--paragraph-indent,0px) + var(--marker-width,2em))}
-.editor .line[data-list]::before{content:attr(data-marker);position:absolute;left:var(--paragraph-indent,0px);width:var(--marker-width,2em);color:var(--marker-color);font-size:var(--marker-size,1em);pointer-events:none;user-select:none;-webkit-user-select:none}
+.editor .line[data-list]::before{content:attr(data-marker);display:inline-block;vertical-align:baseline;white-space:pre;width:var(--marker-width,32px);margin-left:calc(-1 * var(--marker-width,32px));color:var(--marker-color);font-size:var(--marker-size,1em);font-weight:var(--marker-weight,400);pointer-events:none;user-select:none;-webkit-user-select:none}
+.editor .line.markerSelected::before{background:var(--active);outline:1px solid var(--accent);border-radius:3px}
+.editor.markersSelected{caret-color:transparent}
 .editor:has(>.line[data-list])::before{display:none}
 .scriptButton{min-width:48px;font-size:23px;line-height:1;display:inline-block}
 .scriptButton sub,.scriptButton sup{color:var(--active-ink);font-size:.6em;position:relative;vertical-align:baseline}

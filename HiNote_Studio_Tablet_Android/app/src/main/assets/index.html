@@ -57,7 +57,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div class="toolbarScroll ribbonPanels" id="toolbarScroll">
 <div class="toolpanel hidden" id="panelInsert"><button class="btn" id="insertImage">Imagen</button><button class="btn" id="insertTable">Tabla</button><button class="btn" id="insertFormula">Fórmula</button><button class="btn" id="insertGraph">Gráfica</button><button class="btn" id="imageNewPage">Página</button><span class="ribbonHint">Toca un elemento en la hoja para editarlo</span></div>
 <div class="toolpanel" id="panelText">
-<div class="field"><label>Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected="">100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
+<div class="field"><label id="sizeLabel" for="sizeSel">Tamaño</label><select id="sizeSel"><option>60</option><option>70</option><option>80</option><option>90</option><option selected="">100</option><option>110</option><option>120</option><option>130</option><option>140</option><option>150</option><option>160</option><option>180</option><option>200</option></select><span>%</span></div>
 <div class="field"><label>Color</label><input id="colorPick" type="color" value="#000000"/><input id="hexInput" style="width:82px;border:0;background:transparent;outline:0" value="#000000"/></div>
 <div class="field"><label>Opacidad</label><input id="opacity" max="100" min="1" type="number" value="100"/><span>%</span></div>
 <div class="field"><label for="thicknessSel">Grosor</label><select id="thicknessSel"><option value="0">Calibrado</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
@@ -66,6 +66,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <button aria-expanded="false" class="btn" id="listToggle">Lista</button></div>
 <div class="toolpanel contextPanel hidden" id="panelLists"><strong class="contextTag">Lista</strong>
 <select class="btn" id="listType"><option value="bullet">• Viñeta</option><option value="dash">- Guion</option><option value="asterisk">* Asterisco</option><option value="num_dot">1. Numérica</option><option value="num_paren">1) Numérica</option><option value="alpha_lower_dot">a. Alfabética</option><option value="alpha_lower_paren">a) Alfabética</option><option value="alpha_upper_dot">A. Alfabética</option><option value="alpha_upper_paren">A) Alfabética</option><option value="roman_lower_dot">i. Romana</option><option value="roman_upper_dot">I. Romana</option><option value="multi_decimal">1.1. Multinivel</option></select>
+<div class="field"><label for="listFormatTarget">Formato</label><select id="listFormatTarget"><option value="auto">Texto y marcas</option><option value="text">Solo texto</option><option value="markers">Solo marcas</option></select></div>
 <button class="btn" id="applyList">Aplicar lista</button><button class="btn" id="removeList">Quitar</button><button aria-label="Aumentar nivel" class="btn" id="indentBtn">→</button><button aria-label="Reducir nivel" class="btn" id="outdentBtn">←</button>
 <button class="btn" id="continueList">Continuar</button><button class="btn" id="restartList">Reiniciar en 1</button><div class="field"><label for="listStart">Comenzar en</label><input id="listStart" type="number" min="1" max="999999" value="1"/></div><button class="btn" id="setListStart">Establecer</button>
 <div class="field"><label for="listIndent">Sangría</label><input id="listIndent" max="12" min="0" step="1" type="number" value="0"/><span>cuadros</span></div>
@@ -108,7 +109,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <div class="cardhead"><h2>Documento</h2><span class="badge" id="charCount">0 caracteres</span></div>
 <input aria-label="Título de la nota" class="noteTitle" id="noteTitle" maxlength="128" placeholder="Título de la nota" value="Nueva nota"/>
 <div class="editorScroll"><div aria-label="Texto de la nota" class="editor" contenteditable="true" data-placeholder="Escribe o pega tu texto aquí…" id="editor" spellcheck="true"></div></div>
-<div class="draftFooter"><span id="draftStatus" role="status">Borrador guardado</span><span>Enter continúa listas · Ctrl+Z deshace</span></div>
+<div class="draftFooter"><span id="draftStatus" role="status">Borrador guardado</span><span id="editorHint">Enter continúa listas · Ctrl+Z deshace</span></div>
 </section>
 <section class="card previewCard">
 <div class="cardhead"><h2>Previsualización</h2><span class="badge" id="pageBadge">Página 1/1</span></div>

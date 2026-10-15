@@ -3,7 +3,7 @@
 (()=>{
   const $=id=>document.getElementById(id), controls=new Map();
   let opened=null, popup=null, shield=null, activeIndex=-1, typeAhead='', typedAt=0, completedTap=null, selectContext=null;
-  const textSelects=new Set(['sizeSel','thicknessSel','caseSel','listType']);
+  const textSelects=new Set(['sizeSel','thicknessSel','caseSel','listType','listFormatTarget']);
   function fieldContext(){
     const field=writable(document.activeElement);if(!field)return null;
     if(field===editor)return {field,mark:bookmark()};
@@ -165,6 +165,7 @@
   // Back closes the foremost UI layer using its existing Cancel handler.
   window.hinoteHandleBack=()=>{
     if(closeSelect())return true;
+    if(markerSelection){clearMarkerSelection();return true;}
     if(!$('colorDialog').classList.contains('hidden')){StudioUI.closeColor();return true;}
     for(const [dialog,button] of [['cropDialog','cancelCrop'],['mathDialog','mathCancel'],['tableDialog','tableCancel'],['calibrationDialog','closeCalibration'],['notebookDialog','notebookClose'],['probeDialog','probeClose']]){
       if($(dialog)&&!$(dialog).classList.contains('hidden')){$(button)?.click();return true;}

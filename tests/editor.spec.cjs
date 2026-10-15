@@ -1251,6 +1251,7 @@ test('V45 image controls avoid image bounds and rotation shows only angle feedba
   await page.mouse.up();assert.equal(await page.isVisible('#imageRotationReadout'),false);assert.equal(await page.isVisible('#imageQuickActions'),true);
 });
 
+require('./list_marker_size.spec.cjs')({test,setup,select,lines,paste,assert});
 require('./text_editing.spec.cjs')({test,setup,select,lines,paste,assert});
 require('./theme.spec.cjs')({test,setup,select,lines,assert,openTable});
 require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTable});

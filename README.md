@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V48
+# HiNote Studio Tablet — V49
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V49 permite cambiar el tamaño del texto y las marcas de listas juntos o por separado. Tocar una marca selecciona las del mismo nivel de esa lista; «Lista → Formato» ofrece Texto y marcas, Solo texto y Solo marcas. Se conservan al deshacer, guardar, copiar y exportar. Detalles: [docs/V49.md](docs/V49.md).
 
 V48 aplica la paleta Papel y tinta a toda la interfaz y añade un único botón animado de sol/luna para cambiar entre tema claro y oscuro. Conserva el tema al volver a abrir la app, el cursor y el formato activo; el logo original permanece sobre fondo blanco. Detalles: [docs/V48.md](docs/V48.md).
 
