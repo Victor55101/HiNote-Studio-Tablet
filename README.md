@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V47
+# HiNote Studio Tablet — V48
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V48 aplica la paleta Papel y tinta a toda la interfaz y añade un único botón animado de sol/luna para cambiar entre tema claro y oscuro. Conserva el tema al volver a abrir la app, el cursor y el formato activo; el logo original permanece sobre fondo blanco. Detalles: [docs/V48.md](docs/V48.md).
 
 V47 conserva el foco y el cursor al usar la cinta: el formato elegido puede usarse al escribir inmediatamente, y los menús cerrados devuelven las flechas al campo de texto. La conversión de selecciones en listas omite separadores vacíos como en la comparativa de Word. Detalles: [docs/V47.md](docs/V47.md).
 

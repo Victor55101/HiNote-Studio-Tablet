@@ -82,6 +82,8 @@ function rgba(hex, opacity) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${opacity / 100})`;
 }
+// Display black ink against either editor surface without changing stored/exported ink.
+function editorInk(color,opacity){return color.toUpperCase()==='#000000'?`rgba(var(--editor-ink-rgb),${opacity/100})`:rgba(color,opacity);}
 function renderParagraph(line,marker='') {
   const div=document.createElement('div');div.className='line';decorateParagraph(div,line,marker);
   for(const s of mergeSegments(line)){
@@ -91,7 +93,7 @@ function renderParagraph(line,marker='') {
       const span=document.createElement('span');Object.assign(span.dataset,cleanStyle(s));
       span.style.fontSize=`${s.scale*(s.script? .65:1)}em`;
       if(s.script)span.style.verticalAlign=s.script==='sup'?'super':'sub';
-      span.style.color=rgba(s.color.toUpperCase()==='#000000'?'#E4EDF0':s.color,s.opacity);
+      span.style.color=editorInk(s.color,s.opacity);
       span.style.fontWeight=s.thickness?String(Math.min(850,400+s.thickness*35)):'400';
       span.textContent=s.text;div.append(span);
     }

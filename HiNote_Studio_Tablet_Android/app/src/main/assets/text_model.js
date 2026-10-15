@@ -38,7 +38,7 @@ function decorateParagraph(node,line,marker){
   if(meta.list){
     node.dataset.list=meta.list.id;node.dataset.marker=marker;node.setAttribute('role','listitem');node.setAttribute('aria-level',meta.list.level+1);
     node.style.setProperty('--marker-width',Math.max(2,marker.length*.65+.6)+'em');
-    const s=meta.list.markerStyle;node.style.setProperty('--marker-color',rgba(s.color==='#000000'?'#E4EDF0':s.color,s.opacity));
+    const s=meta.list.markerStyle;node.style.setProperty('--marker-color',editorInk(s.color,s.opacity));
     node.style.setProperty('--marker-size',s.scale+'em');
   }else{delete node.dataset.list;delete node.dataset.marker;node.removeAttribute('role');node.removeAttribute('aria-level');}
   node.style.setProperty('--paragraph-indent',paragraphIndent(meta)*1.5+'em');

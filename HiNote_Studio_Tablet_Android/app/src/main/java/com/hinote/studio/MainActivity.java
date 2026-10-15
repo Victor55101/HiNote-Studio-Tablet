@@ -1,7 +1,6 @@
 package com.hinote.studio;
 import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
@@ -33,6 +32,7 @@ public class MainActivity extends Activity {
     private static final Object ENGINE_START_LOCK=new Object();
     private WebView webView;
     private KeyboardController keyboardController;
+    private ThemeController themeController;
     private PyObject backend;
     private File sessionDir;
     private ThreadPoolExecutor worker;
@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
         draftFile=new AtomicFile(new File(getFilesDir(),"draft-v23.json"));
         exportFolder=new ExportFolder(this);
         try {imageStore=new ImageStore(getFilesDir());} catch(IOException e){startupError=message(e);}
-        getWindow().setStatusBarColor(Color.rgb(6,15,19)); getWindow().setNavigationBarColor(Color.rgb(6,15,19));
+        themeController=new ThemeController(this);themeController.apply(null);
         sessionDir=new File(getCacheDir(),"hinote-session-"+UUID.randomUUID());
         worker=new ThreadPoolExecutor(1,1,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(8)){
             @Override protected void terminated(){deleteTree(sessionDir);}
@@ -95,8 +95,9 @@ public class MainActivity extends Activity {
         webView=new EditorWebView(this);WebSettings ws=webView.getSettings();
         keyboardController=new KeyboardController(this,webView);
         ((EditorWebView)webView).setKeyboard(keyboardController);
-        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(7,18,22)));
-        webView.setBackgroundColor(Color.rgb(7,18,22));
+        themeController.apply(webView);
+        if(android.os.Build.VERSION.SDK_INT>=29)ws.setForceDark(WebSettings.FORCE_DARK_OFF);
+        if(android.os.Build.VERSION.SDK_INT>=33)ws.setAlgorithmicDarkeningAllowed(false);
         if(android.os.Build.VERSION.SDK_INT>=33)getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
             android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::handleEditorBack);
         ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setBuiltInZoomControls(false);
@@ -151,6 +152,8 @@ public class MainActivity extends Activity {
     }
     private void removeQueued(Future<?> job){if(job!=null){job.cancel(false);if(job instanceof Runnable)worker.remove((Runnable)job);}}
     public final class Bridge{
+        @JavascriptInterface public String getTheme(){return themeController==null?"light":themeController.get();}
+        @JavascriptInterface public void setTheme(String theme){if(ThemeController.valid(theme))runOnUiThread(()->{if(!destroyed&&themeController!=null)themeController.set(theme,webView);});}
         @JavascriptInterface public boolean isNotesProbe(){return BuildConfig.NOTES_PROBE;}
         @JavascriptInterface public boolean hasProbeShare(){return BuildConfig.NOTES_PROBE&&notesProbe!=null&&notesProbe.hasShared();}
         @JavascriptInterface public void requestProbeAction(String action,String raw,int ticket){

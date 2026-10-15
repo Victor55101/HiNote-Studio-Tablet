@@ -1052,7 +1052,7 @@ test('V42 keyboard gate does not restart input hints and remains available in mo
   await setup(page,'Hug');await select(page,{line:0,offset:3});await page.evaluate(()=>onKeyboardState('{"nativeGate":true,"mode":"auto","hardware":true,"suppress":true}'));await page.keyboard.type('o');assert.deepEqual(await lines(page),['Hugo']);assert.equal(await page.getAttribute('#editor','inputmode'),null);
   await openMath(page,'graph');assert.equal(await page.getAttribute('#graphPointX','inputmode'),'decimal');await page.fill('#graphPointX','2');await page.press('#graphPointX','End');for(let i=0;i<3;i++)await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'graphPointX');
   await page.click('#mathCancel');await openMath(page,'formula');await page.locator('.mathSlot').fill('Hug');await page.keyboard.press('End');await page.evaluate(()=>onKeyboardState('{"nativeGate":true,"mode":"auto","hardware":true,"suppress":true}'));await page.keyboard.type('o');assert.equal(await page.locator('.mathSlot').inputValue(),'Hugo');
-  await page.click('[data-category=calculus]');await page.hover('[data-category=calculus]');await page.waitForFunction(()=>getComputedStyle(document.querySelector('[data-category=calculus]')).backgroundColor==='rgb(18, 60, 64)');assert.deepEqual(await page.locator('[data-category=calculus]').evaluate(n=>[getComputedStyle(n).backgroundColor,getComputedStyle(n).color]),['rgb(18, 60, 64)','rgb(129, 224, 218)']);
+  await page.click('[data-category=calculus]');await page.hover('[data-category=calculus]');await page.waitForFunction(()=>getComputedStyle(document.querySelector('[data-category=calculus]')).backgroundColor==='rgb(227, 239, 243)');assert.deepEqual(await page.locator('[data-category=calculus]').evaluate(n=>[getComputedStyle(n).backgroundColor,getComputedStyle(n).color]),['rgb(227, 239, 243)','rgb(13, 100, 132)']);
 });
 
 test('V43 keyboard mode touch selection updates native mode and visible text once',async page=>{
@@ -1215,7 +1215,7 @@ test('V45 taps place the caret on text nodes in every keyboard mode',async page=
 test('V45 table resize outline follows both axes before release and delete stays red',async page=>{
   await setup(page);await openTable(page);await page.click('#tableDone');
   await page.evaluate(()=>{const t=serializeDocument().paragraphs[0].table;composition={snapshot:'resize',page_count:1,table_pages:[[{id:t.id,x:40/.675,y:100,width:600/.675,height:240/.675,rows:[0,1,2]}]]};previewRevision=revision;zoom=.7;applyZoom();TableEditor.selectPreview(t.id);});
-  assert.equal(await page.locator('.tableDelete').evaluate(n=>getComputedStyle(n).color),'rgb(255, 145, 152)');
+  assert.equal(await page.locator('.tableDelete').evaluate(n=>getComputedStyle(n).color),'rgb(184, 62, 72)');
   for(const [dx,dy] of [[0,84],[-84,84]]){
     const box=await page.locator('.tableTarget').boundingBox(),grip=await page.locator('.tableResize').boundingBox();
     const x=grip.x+22,y=grip.y+22;await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy);
@@ -1252,11 +1252,12 @@ test('V45 image controls avoid image bounds and rotation shows only angle feedba
 });
 
 require('./text_editing.spec.cjs')({test,setup,select,lines,paste,assert});
+require('./theme.spec.cjs')({test,setup,select,lines,assert,openTable});
 require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTable});
 
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/editor.js','/text_model.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/theme.js','/theme.css','/editor.js','/text_model.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
@@ -1267,6 +1268,7 @@ require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTa
       const context = await browser.newContext({viewport:{width:1280,height:850},hasTouch:true});
       await context.route('https://hinote.local/images/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect x="10" y="10" width="620" height="460" fill="#21bca8"/><circle cx="320" cy="240" r="140" fill="#273c75"/></svg>'}));
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
+        getTheme:()=>localStorage.getItem("native-theme")||"light",setTheme:theme=>{localStorage.setItem("native-theme",theme);bridgeCalls.push(["theme",theme]);},
         invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
         requestPage:(...a)=>bridgeCalls.push(['page',...a]),requestPageHD:(...a)=>bridgeCalls.push(['pageHD',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]),requestOpenNotes:(...a)=>bridgeCalls.push(['open-notes',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
         requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},

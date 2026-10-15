@@ -1,0 +1,56 @@
+/* V48 — Papel y tinta. Interface colors never recolor paper or exported ink. */
+:root{color-scheme:light;--bg:#f4f5f3;--panel:#fff;--surface:#ecefee;--surface-hover:#e1e6e5;--well:#f0f2f1;--ink:#24323d;--editor-ink-rgb:36,50,61;--muted:#5e6c76;--line:#d5dddf;--line-strong:#8a9ca5;--primary:#0d6484;--primary-hover:#0a526d;--on-primary:#fff;--accent:#0d6484;--accent2:#0d6484;--active:#e3eff3;--active-ink:#0d6484;--danger:#b83e48;--success:#3d715b;--warning:#805318;--warning-bg:#fcf0d9;--warning-border:#c9a86c;--shadow:0 18px 60px #14212b26;--menu-shadow-color:#14212b26;--scrim:#15212c66;--selection-wash:#0d64841a;--paper:#fff;--paper-ink:#172128;--paper-active:#e3eff3}
+:root[data-theme=dark]{color-scheme:dark;--bg:#161b20;--panel:#1c2329;--surface:#252e36;--surface-hover:#303b44;--well:#20282f;--ink:#e6ebef;--editor-ink-rgb:230,235,239;--muted:#abb7c0;--line:#3b4751;--line-strong:#70838e;--accent:#a8d2df;--active:#253c47;--active-ink:#a8d2df;--danger:#ee939b;--success:#a3ccb7;--warning:#e7c083;--warning-bg:#3b3020;--warning-border:#8e7348;--shadow:0 18px 60px #0005;--menu-shadow-color:#0008;--scrim:#080c10b3;--selection-wash:#a8d2df1a}
+.topbar{color:var(--ink)}.logo{background:#fff;border:1px solid #d5dddf;padding:5px}.logo img{filter:none}
+.toolbar,.card{border:1px solid var(--line)}.cardhead{border-bottom:1px solid var(--line)}
+.badge{background:var(--surface);color:var(--muted)}
+.btn.primary,.btn.accent,#exportNotesBtn{background:var(--primary);color:var(--on-primary)}
+.btn.primary:not(:disabled):hover,.btn.accent:not(:disabled):hover,#exportNotesBtn:not(:disabled):hover{background:var(--primary-hover)}
+#exportBtn{background:var(--panel);color:var(--ink);border:1px solid var(--line-strong)}#exportBtn:not(:disabled):hover{background:var(--surface-hover)}
+.btn.danger{color:var(--danger)}
+.segment button.active{box-shadow:inset 0 -2px var(--active-ink)}
+.editor{color:var(--ink);caret-color:var(--ink)}.editor:has(> .line:only-child > br:only-child)::before{color:var(--muted)}
+.editor ::selection,input::selection,textarea::selection{background:var(--active);color:var(--active-ink)}
+.previewWrap{background:var(--well)}.canvasShell{color-scheme:light;background:var(--paper)}
+.formulaStage,#tableGrid,#profilePreview{color-scheme:light}.formulaStage{color:var(--paper-ink)}
+.mathSlot{background:#fff;color:var(--paper-ink);border-color:#8a9ca5;caret-color:var(--paper-ink)}
+.mathSlot:focus,.mathSlot.mathCaret:focus{background:var(--paper-active);outline-color:var(--primary)}
+.mathTemplate.mathActiveTemplate{background:#0d64840d}
+#tableGrid th{background:#e3eff3;color:#0d6484;border-color:#8a9ca5}
+#tableGrid td{background:var(--paper);color:var(--paper-ink)}
+#tableGrid td.selectedCell{outline-color:var(--primary);background:#fff}
+#tableGrid.selectingCells td.selectedCell{background:var(--paper-active)}
+.tableGrip.column:after,.tableGrip.row:after{color:var(--primary)}
+.graphViewport{color-scheme:light}.graphViewport #graphSVG{background:var(--paper)}
+#cropStage{background:repeating-conic-gradient(#e5e9eb 0% 25%,#fff 0% 50%) 50% / 20px 20px}
+.colorSwatch,.colorPreview,.colorPalette button{border-color:var(--line-strong)}
+.colorSV,.colorHue{outline-color:var(--line-strong)}
+.calibrationCard input[type=checkbox]{accent-color:var(--accent)}
+.calibrationCard button:focus-visible{outline-color:var(--accent)}
+.characterChip{color:var(--ink)}.characterChip.fallback{background:var(--active);color:var(--active-ink)}
+.characterChip.fallback small{color:var(--active-ink)}
+.selectMenu>button[aria-selected=true]::after,.selectList>button[aria-selected=true]::after{border-color:var(--active-ink)}
+.objectQuickActions button,.objectResize,.tableTarget button:not(.tableSelect){background:var(--panel);border-color:var(--line-strong);color:var(--ink)}
+.objectQuickActions button:hover,.tableTarget button:not(.tableSelect):hover,.objectResize:hover{background:var(--surface-hover)}
+.objectQuickActions .objectDelete,.tableTarget button.tableDelete:not(.tableSelect),.imageQuickActions .danger{color:var(--danger)}
+.objectTarget,.tableTarget,#imageSelection{border-color:var(--primary)}
+#imageSelection button::after{background:var(--primary)}
+.imageRotationReadout{background:var(--panel);color:var(--ink);border-color:var(--line-strong)}
+.scriptButton sub,.scriptButton sup{color:currentColor}.scriptButton.active{background:var(--active);color:var(--active-ink)}
+select option{color:var(--ink);background:var(--panel)}
+/* Probe edition uses the same interface tokens. */
+#notesProbeDialog .probeSection{background:var(--well);border-color:var(--line)}
+#notesProbeDialog .probeSection p,#notesProbeDialog .probeSection ol{color:var(--muted)}
+#notesProbeDialog #probeReport{background:var(--surface);color:var(--ink)}
+/* A single fixed-size control, depicting the current theme. No layout shift. */
+.topactions .themeToggle{position:relative;flex:0 0 46px;width:46px;min-width:46px;height:48px;padding:0;background:var(--surface);color:var(--ink);overflow:hidden}
+.themeToggle .themeIcon{position:absolute;width:23px;height:23px;pointer-events:none;transform-origin:center;transition:transform .28s cubic-bezier(.2,.7,.3,1),opacity .2s ease}
+.themeToggle .themeSun{opacity:1;transform:rotate(0) scale(1)}
+.themeToggle .themeMoon{opacity:0;transform:rotate(-70deg) scale(.35)}
+[data-theme=dark] .themeToggle .themeSun{opacity:0;transform:rotate(90deg) scale(.35)}
+[data-theme=dark] .themeToggle .themeMoon{opacity:1;transform:rotate(0) scale(1)}
+/* Only interface surfaces transition; drawing canvases and text content stay intact. */
+.themeChanging,.themeChanging :is(body,.topbar,.toolbar,.card,.cardhead,.field,.btn,.noteTitle,.viewState,.badge,.previewWrap,.draftFooter,.previewFooter,.mathCard,.tableCard,.calibrationCard,.cropCard,.notebookCard,.selectButton,.selectMenu,.colorCard,.colorButton,.imageQuickActions,.profileGroup,.profileStat,.objectBlock,.tableBlock,.inspectorTabs,.characterTabs,.mathCategories,.tableCanvas,.tableCellTools,.tableSide>.tableTools,.graphPreview,.templateSummary,.selectList,.profilePreviewEmpty){transition:background-color .24s ease,color .24s ease,border-color .24s ease,box-shadow .24s ease}
+@media(max-width:1000px) and (min-width:761px){.topbar{gap:8px}.topactions{gap:6px}.topbar .titlewrap h1{font-size:16px}.topactions .btn{padding:9px;font-size:12px}.topbar .logo{width:36px;height:36px}}
+@media(max-width:760px){.topactions{grid-template-columns:44px repeat(3,minmax(0,1fr));width:100%}.topactions .themeToggle{grid-column:1;grid-row:1;width:44px;min-width:44px;height:44px;min-height:44px}.headerKeyboard{grid-column:2/-1;grid-row:1}.topactions #refreshBtn{grid-column:2}.topactions #cancelBtn:not(.hidden){grid-column:1/-1;grid-row:2}.topactions #exportBtn{grid-column:3}.topactions #exportNotesBtn{grid-column:4}}
+@media(prefers-reduced-motion:reduce){.themeToggle .themeIcon,.themeChanging,.themeChanging *{transition:none!important;animation:none!important}}
