@@ -1257,6 +1257,7 @@ require('./theme.spec.cjs')({test,setup,select,lines,assert,openTable});
 require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTable});
 require('./v50.spec.cjs')({test,setup,select,lines,assert,openMath,graphPane});
 require('./v51.spec.cjs')({test,setup,select,assert});
+require('./v52.spec.cjs')({test,setup,select,lines,assert});
 
 (async () => {
   const server = http.createServer((request,response) => {

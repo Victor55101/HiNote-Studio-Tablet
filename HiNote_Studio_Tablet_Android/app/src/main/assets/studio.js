@@ -26,7 +26,7 @@ window.StudioUI = (() => {
   function meta(){
     el('noteSubtitle').textContent=(el('noteTitle').value||'Nueva nota')+' · '+el('draftStatus').textContent;
     const importingPdf=PdfEditor.isBusy(),current=!!composition&&previewRevision===revision&&!composing&&!importingPdf;
-    el('viewState').textContent=importingPdf?PdfEditor.status():composing?'Actualizando…':current?'Vista al día':'Vista pendiente';el('viewState').classList.toggle('current',current);
+    el('viewState').textContent=importingPdf?PdfEditor.status():composing?renderProgressLabel():current?'Vista al día':'Vista pendiente';el('viewState').classList.toggle('current',current);
     el('viewState').title=el('status').textContent;
     if(current&&!exporting&&!saveRequested&&!folderBusy&&!CalibrationUI.isBusy()&&!NotebookUI.isBusy())el('refreshBtn').disabled=true;
   }

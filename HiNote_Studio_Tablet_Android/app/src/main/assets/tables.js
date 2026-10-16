@@ -36,6 +36,12 @@ const TableEditor = (() => {
   }
   function count(){return Object.values(live()).reduce((n,t)=>n+t.rows.reduce((a,r)=>a+r.cells.reduce((b,c)=>b+lineText(c.segments).length,0),0),0);}
   function get(id){if(!tables[id])throw Error('No se encontró la tabla del borrador');return clone(tables[id]);}
+  function split(id,row){
+    const original=get(id);if(!Number.isInteger(row)||row<1||row>=original.rows.length)throw Error('No se pudo ubicar la división de la tabla');
+    if(Object.keys(live()).length>=50)throw Error('La nota admite hasta 50 tablas');
+    const second={...original,id:newId(),gap:0,rows:[...(original.repeat_header!==false?[clone(original.rows[0])]:[]),...original.rows.slice(row)]};
+    tables[id]={...original,rows:original.rows.slice(0,row)};tables[second.id]=second;return [{text:'\uFFFC',tableId:second.id}];
+  }
   function block(line){
     const id=line[0].tableId,t=tables[id],div=document.createElement('div');
     div.className='line tableBlock';div.dataset.tableId=id;div.contentEditable='false';
@@ -306,5 +312,5 @@ const TableEditor = (() => {
     el('tableDialog').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'&&!e.target.closest('.cellEditor')){const focus=[...el('tableDialog').querySelectorAll('button,input,select,[contenteditable=true]')].filter(n=>!n.disabled&&n.getClientRects().length);const i=focus.indexOf(document.activeElement);if((e.shiftKey&&i===0)||(!e.shiftKey&&i===focus.length-1)){e.preventDefault();focus[e.shiftKey?focus.length-1:0].focus();}}});
     if(resume?.table){try{validate(resume.table);working=resume.table;originalId=resume.originalId;insertion=resume.insertion;activate();show('Se recuperó la tabla que estabas editando. Aplica los cambios o cancela para conservar la versión anterior.');}catch(e){resume=null;}}
   }
-  return {init,open,get,block,isLine,state,restore,count,mode,render,clearSelection,selectPreview,pasteObject,cancelPreviewDrag,isDragging:()=>!!drag,isOpen:()=>!!working};
+  return {init,open,get,split,block,isLine,state,restore,count,mode,render,clearSelection,selectPreview,pasteObject,cancelPreviewDrag,isDragging:()=>!!drag,isOpen:()=>!!working};
 })();

@@ -112,3 +112,5 @@ select.nativeSelect{position:absolute!important;left:0!important;top:0!important
 
 .pdfBlock{display:flex;gap:8px;align-items:center;padding:12px;margin:8px 0;border:1px solid var(--line);border-radius:12px}.pdfBlock .btn:first-child{flex:1;text-align:left;white-space:normal}.pdfBlock .btn:last-child{color:#b83e48}
 .pdfPage #gridCanvas{visibility:hidden}.pdfPage #previewCanvas{z-index:0}
+.pdfGap{min-height:1.7em;border-left:2px solid var(--line);padding-left:.6em}
+.pdfGap:has(>br:only-child)::before{content:attr(data-placeholder);position:absolute;pointer-events:none;opacity:.45;font-size:.65em}

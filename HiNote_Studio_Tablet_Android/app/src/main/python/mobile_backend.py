@@ -53,6 +53,8 @@ def _document(raw):
                 raise ValueError("Página de PDF inválida")
             if "after_page" in pdf and (type(pdf["after_page"]) is not int or not 0<=pdf["after_page"]<499):
                 raise ValueError("Posición de PDF inválida")
+            if "blank_before" in pdf and (type(pdf["blank_before"]) is not int or not 0<=pdf["blank_before"]<499):
+                raise ValueError("Separación de PDF inválida")
             current_segments=[]
         elif para.get("type") == "table":
             table = validate_table(para["table"])
@@ -128,7 +130,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
     project, cache = Path(project_dir), Path(cache_dir)
     profile_id = json.loads(settings_json or "{}").get("profile", "original")
     library, fallback, profile_revision = calibration.resolve(project, profile_id)
-    inputs = {"version": 51, "paragraphs": doc["paragraphs"], "settings": settings,
+    inputs = {"version": 52, "paragraphs": doc["paragraphs"], "settings": settings,
               "page_insertions": [p["pdf"] for p in doc["paragraphs"] if p.get("type")=="pdf" and "after_page" in p["pdf"]],
               "profile": profile_id, "profile_revision": profile_revision}
     previous = old_info = resume = None
@@ -162,6 +164,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
     table_pages = []
     object_pages = []
     pdf_pages = []
+    page_ends = []
     try:
         def ready():
             if token is not None and hasattr(token, "onPageReady"):
@@ -188,6 +191,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
             table_pages.extend(old_info["table_pages"][:reused_pages])
             object_pages.extend(old_info["object_pages"][:reused_pages])
             pdf_pages.extend(old_info.get("pdf_pages", [None]*reused_pages)[:reused_pages])
+            page_ends.extend(old_info["page_ends"][:reused_pages])
             for i in checkpoints: copy_cached(f"state-{i}.json.gz")
             if reused_pages: ready()
         def save_checkpoint(state):
@@ -209,6 +213,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
             table_pages.append(page.get("tables", []))
             object_pages.append(page.get("objects", []))
             pdf_pages.append(page.get("pdf"))
+            page_ends.append(page["source_end"])
             if shutil.disk_usage(cache).free < 20 * 1024 * 1024:
                 raise ValueError("No queda suficiente espacio para generar la nota.")
             binary = work / f"page-{index}.bin"
@@ -244,6 +249,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
         manifest["table_pages"] = table_pages
         manifest["object_pages"] = object_pages
         manifest["pdf_pages"] = pdf_pages
+        manifest["page_ends"] = page_ends
         manifest["profile"] = profile_id
         manifest["profile_revision"] = profile_revision
         if previous_snapshot is not None:

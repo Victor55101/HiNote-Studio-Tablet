@@ -84,11 +84,11 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
     await page.fill('#listIndent','4');await page.press('#listIndent','Tab');assert.equal((await markers(page))[4],'2.1.');assert.equal(await page.evaluate(()=>paragraphOf(readLines()[4]).list.level),1);
     await select(page,{line:4,offset:0});await page.keyboard.press('Shift+Tab');assert.deepEqual(await markers(page),['1.','1.1.','1.2.','2.','3.']);
   });
-  test('V46 Backspace removes only the marker and empty Enter exits list levels',async page=>{
+  test('V52 Backspace removes only the marker and empty Enter preserves alignment without an outer number',async page=>{
     await setup(page,'uno\ndos');await select(page,{line:0,offset:0},{line:1,offset:3});await list(page);
     await select(page,{line:1,offset:0});await page.keyboard.press('Backspace');assert.deepEqual(await lines(page),['uno','dos']);assert.deepEqual(await markers(page),['1.','']);
     await page.selectOption('#listType','num_dot');await select(page,{line:1,offset:3});await page.keyboard.press('Enter');await select(page,{line:2,offset:0});await page.keyboard.press('Tab');
-    await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>paragraphOf(readLines()[2]).list.level),0);await page.keyboard.press('Enter');assert.equal((await markers(page))[2],'');
+    await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>paragraphOf(readLines()[2]).list),undefined);assert.equal(await page.evaluate(()=>paragraphOf(readLines()[2]).listExit.indent),1);await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>paragraphOf(readLines()[2]).listExit),undefined);assert.equal((await markers(page))[2],'');
   });
   test('V46 deleting only item text keeps the marker and numbering',async page=>{
     await setup(page,'uno\ndos\ntres');await select(page,{line:0,offset:0},{line:2,offset:4});await list(page);

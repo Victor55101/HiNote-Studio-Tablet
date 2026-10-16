@@ -35,12 +35,11 @@ const ImageEditor = (() => {
     const delta=add-remove;
     images=images.filter(im=>im.page<start||im.page>=start+remove);
     for(const im of images)if(im.page>=start+remove)im.page+=delta;
-    if(minimumPages>=start+remove)minimumPages=Math.max(1,minimumPages+delta);
-    minimumPages=Math.max(minimumPages,start+add);
+    minimumPages=1;
     if(!images.some(im=>im.id===selectedId))selectedId=null;
   }
   function restore(data) {
-    images=sanitize(data.images || []); minimumPages=clamp(Math.floor(Number(data.minimumPages)||1),1,500); selectedId=null;
+    images=sanitize(data.images || []); minimumPages=1; selectedId=null;
     if (typeof currentPage !== 'undefined') render();
   }
   function count() { return Math.max(1,minimumPages,composition?.page_count||1,...images.map(im=>im.page+1)); }

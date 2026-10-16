@@ -204,6 +204,30 @@ def _flatten_segments(segments: list[dict], base_scale: float) -> list[dict]:
                    "body_scale": body_scale, "script": script, **{k: seg.get(k) is True for k in ("bold", "italic", "underline")}}
 
 
+def _source_offsets(segments):
+    """Offsets refer to the editor's original UTF-16 text, before NFC shaping."""
+    offset = 0
+    for seg in segments:
+        raw = str(seg.get("text", ""))
+        normalized = unicodedata.normalize("NFC", raw)
+        if raw == normalized:
+            for ch in raw:
+                yield offset
+                offset += 2 if ord(ch) > 0xFFFF else 1
+            continue
+        cluster, start = [], offset
+        for ch in raw:
+            joins = bool(cluster) and (unicodedata.category(ch).startswith("M") or
+                0x1100 <= ord(ch) <= 0x11FF and unicodedata.normalize("NFC", "".join(cluster)+ch) != unicodedata.normalize("NFC", "".join(cluster))+ch)
+            if cluster and not joins:
+                for _ in unicodedata.normalize("NFC", "".join(cluster)): yield start
+                cluster = []
+            if not cluster: start = offset
+            cluster.append(ch)
+            offset += 2 if ord(ch) > 0xFFFF else 1
+        for _ in unicodedata.normalize("NFC", "".join(cluster)): yield start
+
+
 def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word_spacing: float, warnings: list[str]):
     for c in chars:
         ch = c["ch"]
@@ -334,11 +358,13 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
     long_word = False
     emitted = False
     ended_with_break = False
+    empty_offset = 0
     def fits(sequence, x):
         return x + _sequence_metrics(sequence, letter_spacing)[2] <= right_limit
     def flush():
         nonlocal current, start_x, first, emitted
-        line = {"items": current, "start_x": start_x, "first": first}
+        line = {"items": current, "start_x": start_x, "first": first,
+                "source_offset": current[0].get("source_offset", empty_offset) if current else empty_offset}
         current, start_x, first, emitted = [], continuation_x, False, True
         return line
     def place_word():
@@ -372,6 +398,7 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
             pending_space = None
             long_word = False
             yield flush()
+            empty_offset = item.get("source_offset", empty_offset) + 1
             continue
         if item["kind"] == "space":
             if word:
@@ -613,6 +640,7 @@ def compose_document(
     bottom_limit = float(page_height) - float(margin_bottom)
     table_bottom = None
     start_index = 0
+    source_point = {"line": 0, "offset": 0}
     if resume_state:
         def tuples(value):
             return tuple(tuples(v) for v in value) if isinstance(value, list) else value
@@ -628,6 +656,7 @@ def compose_document(
         return current_page
     def finish_page():
         check()
+        current_page["source_end"] = dict(source_point)
         _canonicalize_pencilengine_strokes(current_page)
         if page_sink is None:
             pages.append(current_page)
@@ -671,7 +700,9 @@ def compose_document(
     for paragraph_index, para in enumerate(paragraphs):
         if paragraph_index < start_index or paragraph_index in consumed: continue
         if para.get("type") == "pdf" and "after_page" in para["pdf"]: continue
+        if para.get("pdf_gap") and not any(s.get("text") for s in para.get("segments", [])): continue
         check()
+        source_point = {"line": paragraph_index, "offset": 0}
         # One checkpoint per page, only at safe paragraph/group boundaries.
         # The partial page and both RNGs make a resumed result byte-identical.
         if checkpoint_sink and current_page["page_number"] != checkpoint_page:
@@ -681,10 +712,14 @@ def compose_document(
             checkpoint_page = current_page["page_number"]
         if para.get("type") == "pdf":
             if current_page["strokes"] or current_page.get("pdf"): new_page()
+            for _ in range(para["pdf"].get("blank_before", 0)): new_page()
             current_page["pdf"] = dict(para["pdf"])
+            source_point = {"line": paragraph_index+1, "offset": 0}
             continue
         if current_page.get("pdf"):
             if paragraph_index == len(paragraphs)-1 and not para.get("type") and not any(seg.get("text") for seg in para.get("segments",[])): continue
+            new_page()
+        if para.get("pdf_gap") and current_page["strokes"]:
             new_page()
         if para.get("type") in ("formula", "graph"):
             from math_graph_composer import plan_object, draw_object
@@ -710,6 +745,7 @@ def compose_document(
                 top = GRID
             for obj,box in zip(group,plans): draw_object(obj,box,top+obj.get("gap",0)*GRID,page())
             table_bottom = top+height; baseline_y = table_bottom+GRID
+            source_point = {"line": following, "offset": 0}
             continue
         if para.get("type") == "table":
             from table_composer import GRID, HALF, validate_table, plan_row, draw_row, draw_borders
@@ -737,6 +773,7 @@ def compose_document(
                     raise ValueError(f"Tabla, fila {i+1}: no cabe completa en una hoja. Usa Compacta, amplía las columnas o reparte su contenido en más filas.")
                 if y + row["height"] > limit + .001:
                     draw_borders(table, top, boundaries, page(), indexes)
+                    source_point = {"line": paragraph_index, "offset": 0, "row": i}
                     new_page()
                     top = y = GRID
                     boundaries, indexes = [], []
@@ -748,10 +785,13 @@ def compose_document(
             draw_borders(table, top, boundaries, page(), indexes)
             baseline_y = y + GRID
             table_bottom = y
+            source_point = {"line": paragraph_index+1, "offset": 0}
             continue
         list_info = para.get("list") or None
         chars = _flatten_segments(para.get("segments", []), base_scale)
-        items = _choose_char_items(chars, glyphs, glyph_rng, float(word_spacing), warnings)
+        items = ({**item, "source_offset": offset} for item, offset in zip(
+            _choose_char_items(chars, glyphs, glyph_rng, float(word_spacing), warnings),
+            _source_offsets(para.get("segments", []))))
 
         marker_items = []
         marker_scale = 1.0 * base_scale
@@ -795,7 +835,7 @@ def compose_document(
 
         for line_idx, line in enumerate(lines):
             check()
-            max_scale = _line_max_scale(line["items"], marker_scale if list_info and line_idx == 0 else None)
+            max_scale = _line_max_scale(line["items"], marker_scale if list_info and not list_info.get("hide_marker") and line_idx == 0 else None)
             rows = _rows_for_scale(max_scale, line_grid_rows, auto_line_spacing)
 
             if table_bottom is not None:
@@ -823,9 +863,10 @@ def compose_document(
                 if i["kind"] == "glyph"
             ), default=0.0)
             if baseline_y + max(0.0, descender) > bottom_limit:
+                source_point = {"line": paragraph_index, "offset": line["source_offset"]}
                 new_page()
 
-            if list_info and line_idx == 0 and marker_items:
+            if list_info and not list_info.get("hide_marker") and line_idx == 0 and marker_items:
                 _logical, marker_left, marker_right = _sequence_metrics(marker_items, float(letter_spacing))
                 marker_visual_width = marker_right - marker_left
                 marker_x = float(marker_center) - marker_visual_width / 2.0 - marker_left
@@ -854,6 +895,8 @@ def compose_document(
             )
 
             baseline_y += grid_step * rows if snap_to_grid else grid_step * rows
+
+        source_point = {"line": paragraph_index+1, "offset": 0}
 
     # A target beyond the text can be an existing image-only/blank page.
     finish_page()

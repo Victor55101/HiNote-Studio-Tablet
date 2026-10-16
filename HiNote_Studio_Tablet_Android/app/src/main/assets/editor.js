@@ -8,6 +8,8 @@ let savedSelection = null, ime = false, refreshTimer, draftTimer, historyTimer, 
 let revision = 0, previewRevision = -1, pageRequest = 0;
 let composition = null, composing = false, exporting = false, currentPage = 0, zoom = 1;
 let qualityTimer, requestedPreview=null, shownPreview=null;
+let autoRefreshPending=false,lastPageCount=0,renderProgress={done:0,total:0};
+function renderProgressLabel(){const {done,total}=renderProgress;return `${done}/${total?'≈'+Math.max(total,done+1):'…'}`;}
 const previewResolution=()=>Math.min(2,Math.max(1,Math.ceil(zoom*(window.devicePixelRatio||1))));
 let history = [], historyIndex = -1;
 let folderBusy = false, exportFolderState = {configured:false,label:''};
@@ -256,7 +258,7 @@ function replaceText(lines, mark, text, soft=false, rich=null) {
   const {start,end}=mark,before=sliceSegments(lines[start.line],0,start.offset),after=sliceSegments(lines[end.line],end.offset);
   const st=insertionStyle(mark,lines),meta=paragraphOf(lines[start.line]);
   const pieces=soft?[text]:text.replace(/\r\n?/g,'\n').split('\n');
-  let replacement=rich||pieces.map(piece=>withParagraph(piece?[{text:caseText(piece,st.caseMode,lineText(lines[start.line]).slice(0,start.offset)),...st}]:[],{...meta,...(!piece?{format:st}:{})}));
+  let replacement=rich||pieces.map((piece,i)=>{const properties={...meta,...(!piece?{format:st}:{})};if(i)delete properties.pdfGap;return withParagraph(piece?[{text:caseText(piece,st.caseMode,lineText(lines[start.line]).slice(0,start.offset)),...st}]:[],properties);});
   replacement[0]=withParagraph([...before,...replacement[0].filter(s=>!s.paragraph)],start.offset?meta:paragraphOf(replacement[0]));
   const last=replacement.length-1,point={line:start.line+last,offset:lineText(replacement[last]).length};
   replacement[last]=withParagraph([...replacement[last].filter(s=>!s.paragraph),...after],paragraphOf(replacement[last]));
@@ -332,11 +334,13 @@ function enter(soft=false) {
     if(isBlockLine(lines[mark.start.line])){const at=mark.start.line+1;lines.splice(at,0,[]);return {lines,selection:{start:{line:at,offset:0},end:{line:at,offset:0}}};}
     const meta=paragraphOf(lines[mark.start.line]);
     if(!soft && meta.list && !lineText(lines[mark.start.line]).trim() && collapsed(mark)){
-      const next={...meta};if(meta.list.level>0)next.list={...meta.list,level:meta.list.level-1};else{delete next.list;delete next.indent;delete next.listExit;}
+      const next={...meta,listExit:{indent:paragraphIndent(meta),marker:listMarkers(lines)[mark.start.line],style:meta.list.markerStyle,stage:'body'}};delete next.list;delete next.indent;
       lines[mark.start.line]=withParagraph([],next);return {lines,selection:mark,typingStyle:insertionStyle(mark,lines)};
     }
     if(!soft&&meta.listExit&&!lineText(lines[mark.start.line]).trim()&&collapsed(mark)){const next={...meta};delete next.listExit;delete next.indent;lines[mark.start.line]=withParagraph([],next);return {lines,selection:mark};}
-    return replaceText(lines,mark,'\n',soft);
+    const result=replaceText(lines,mark,'\n',soft);
+    if(!soft){const i=result.selection.start.line,next={...paragraphOf(result.lines[i])};delete next.pdfGap;if(next.list)next.list={...next.list,continuation:false};result.lines[i]=withParagraph(result.lines[i],next);}
+    return result;
   });
 }
 function changeCase(mode) {
@@ -378,9 +382,9 @@ function serializeDocument() {
     if(TableEditor.isLine(line))return {type:'table',table:TableEditor.get(line[0].tableId)};
     if(MathGraphEditor.isLine(line)){const object=MathGraphEditor.get(line[0].objectId);return {type:object.kind,object};}
     const meta=paragraphOf(line),l=meta.list,segments=line.filter(s=>!s.paragraph);
-    if(!l)return {segments,...(meta.indent?{indent_squares:meta.indent}:{}),...(meta.listExit?{list_exit:meta.listExit}:{})};
+    if(!l)return {segments,...(meta.indent?{indent_squares:meta.indent}:{}),...(meta.listExit?{list_exit:meta.listExit}:{}),...(meta.pdfGap?{pdf_gap:true}:{})};
     const indent=paragraphIndent(meta),style=l.markerStyle;
-    return {segments,list:{id:l.id,type:l.type,marker:markers[i],level:l.level,indent_squares:indent,base_indent_squares:0,
+    return {segments,list:{id:l.id,type:l.type,marker:l.continuation?l.continuationMarker:markers[i],...(l.continuation?{hide_marker:true}:{}),level:l.level,indent_squares:indent,base_indent_squares:0,
       marker_scale:style.scale,marker_color:style.color,marker_opacity:style.opacity,marker_thickness:style.thickness,...Object.fromEntries(['bold','italic','underline'].filter(k=>style[k]).map(k=>['marker_'+k,true]))}};
   })};
 }
@@ -389,7 +393,7 @@ function saveDraft() {
   ImageEditor.finishGesture(false);
   clearTimeout(draftTimer);
   try {
-    const raw=JSON.stringify({version:46,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked});
+    const raw=JSON.stringify({version:52,lines:readLines(),...ImageEditor.state(),...TableEditor.state(),...MathGraphEditor.state(),title:$('noteTitle').value,settings:settings(),grid:$('gridCheck').checked,auto:$('autoPreview').checked,previewPages:lastPageCount});
     const nativeSaved=window.AndroidBridge?.saveDraft ? AndroidBridge.saveDraft(raw) : false;
     try{localStorage.setItem(DRAFT_KEY,raw);}catch(e){if(!nativeSaved)throw e;}
     $('draftStatus').textContent = 'Borrador guardado';
@@ -400,7 +404,7 @@ function restoreDraft() {
   try {
     const native=window.AndroidBridge?.getDraft?AndroidBridge.getDraft():'';
     const draft = JSON.parse(native||localStorage.getItem(DRAFT_KEY)||localStorage.getItem('hinote-draft-v21'));
-    if (!draft || ![21,23,25,27,30,31,32,38,46].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
+    if (!draft || ![21,23,25,27,30,31,32,38,46,52].includes(draft.version) || !Array.isArray(draft.lines) || !draft.lines.length || draft.lines.length > 10000) return false;
     let count = draft.lines.length - 1, segments = 0;
     for (const line of draft.lines) {
       if (!Array.isArray(line)) return false;
@@ -410,6 +414,7 @@ function restoreDraft() {
     ImageEditor.restore(draft);
     TableEditor.restore(draft);
     MathGraphEditor.restore(draft);
+    lastPageCount=Math.floor(bounded(draft.previewPages,0,500,0));
     activeProfile = /^(original|[a-f0-9]{32})$/.test(draft.settings?.profile||'')?draft.settings.profile:'original';
     // V35 added a hidden global base to each list level. Encode the actual
     // indentation in the paragraph so level 0 now really reaches the margin.
@@ -422,7 +427,7 @@ function restoreDraft() {
 }
 function controls() {
   const calibrationBusy=CalibrationUI.isBusy()||NotebookUI.isBusy()||PdfEditor.isBusy();
-  $('charCount').textContent = `${characterCount().toLocaleString('es')} caracteres`;
+  const n=characterCount();$('charCount').textContent = `${n.toLocaleString('es')} caracteres`;
   $('exportBtn').disabled = calibrationBusy || folderBusy || exporting || saveRequested || ImageEditor.isBusy();
   $('exportNotesBtn').disabled = $('exportBtn').disabled;
   $('refreshBtn').disabled = exporting || saveRequested || calibrationBusy || folderBusy; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
@@ -439,6 +444,7 @@ function controls() {
   MathGraphEditor.updateControls();
   window.StudioUI?.ribbon();window.StudioUI?.meta();
   syncMarkerSelection();
+  scheduleAutoPreview(n);
 }
 function showExportFolder(raw) {
   const data=JSON.parse(raw || '{}');
@@ -460,30 +466,39 @@ window.onExportFolder=(raw,error)=>{
 };
 function changed() {
   saveRequested=false;clearTimeout(refreshTimer); clearTimeout(qualityTimer); revision++; composing = false;
+  autoRefreshPending=true;
+  PdfEditor.noteCaret();
   if (window.AndroidBridge) AndroidBridge.invalidateCompose(revision);
   $('status').textContent = 'Vista pendiente…'; controls(); queueDraft();
-  const n = characterCount();
-  if (!ime && !exporting && !CalibrationUI.isBusy() && !NotebookUI.isBusy() && !MathGraphEditor.isOpen() && $('autoPreview').checked && n <= 12000) refreshTimer = setTimeout(refreshPreview, n > 3000 ? 1500 : 700);
-  else $('status').textContent = 'Pulsa Actualizar para ver los cambios';
+  if(!$('autoPreview').checked||characterCount()>12000)$('status').textContent = 'Pulsa Actualizar para ver los cambios';
+}
+function scheduleAutoPreview(n=characterCount()){
+  clearTimeout(refreshTimer);
+  const migrating=PdfEditor.hasAnchors();
+  if(!autoRefreshPending||!migrating&&(!$('autoPreview').checked||n>12000)||ime||exporting||composing||CalibrationUI.isBusy()||NotebookUI.isBusy()||PdfEditor.isBusy()||MathGraphEditor.isOpen()||TableEditor.isOpen()||folderBusy)return;
+  refreshTimer=setTimeout(()=>{refreshTimer=null;refreshPreview();},n>3000?1500:700);
 }
 function refreshPreview() {
   clearTimeout(refreshTimer); if (exporting || CalibrationUI.isBusy() || NotebookUI.isBusy() || MathGraphEditor.isOpen() || TableEditor.isOpen() || folderBusy || ime) return; saveDraft();
   if (!window.AndroidBridge) { $('status').textContent = 'El motor está disponible en la app Android'; return; }
-  revision++; composing = true; $('status').textContent = 'Preparando páginas…'; controls();
+  autoRefreshPending=false;renderProgress={done:0,total:composition?.page_count||lastPageCount};
+  revision++; composing = true; $('status').textContent = renderProgressLabel(); controls();
   try { AndroidBridge.setPreviewPage?.(currentPage);AndroidBridge.requestCompose(JSON.stringify(serializeDocument()), JSON.stringify(settings()), revision); }
-  catch (e) { composing = false; $('status').textContent = 'Error'; toast(e.message); controls(); }
+  catch (e) { composing = false;PdfEditor.failed(); $('status').textContent = 'Error'; toast(e.message); controls(); }
 }
 window.onComposeResult = (id, json) => {
   if (id !== revision) return; composing = false;
   try {
     const result = JSON.parse(json); if (result.error) throw new Error(result.error);
     composition = result; previewRevision = id; currentPage = Math.min(currentPage, ImageEditor.count() - 1);
+    lastPageCount=result.page_count;
+    const exportAfterMigration=saveRequested;if(PdfEditor.composed(result)){saveRequested=exportAfterMigration;return;}
     MathGraphEditor.applyMeasurements(result);
     const warnings = result.warnings || []; $('warnings').replaceChildren();
     warnings.forEach(message => { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); });
     $('warningPanel').classList.toggle('hidden', warnings.length === 0); $('warningCount').textContent = `${warnings.length} avisos de escritura`;
     $('status').textContent = 'Cargando página…'; drawCurrent();
-  } catch (e) { previewRevision=-1;saveRequested=false;$('status').textContent = 'No se pudo generar'; toast(e.message); }
+  } catch (e) { previewRevision=-1;saveRequested=false;PdfEditor.failed();$('status').textContent = 'No se pudo generar'; toast(e.message); }
   controls();
   if(saveRequested){saveRequested=false;exportNote(pendingExportMode);}
 };
@@ -499,12 +514,12 @@ window.onComposePageReady = (id, json, index, data) => {
     shownPreview={snapshot:result.snapshot,index,resolution:1};
     const canvas=$('previewCanvas');canvas.width=img.width;canvas.height=img.height;canvas.getContext('2d').drawImage(img,0,0);
     release();applyZoom();$('pageBadge').textContent=`Página ${currentPage+1}/${ImageEditor.count()}`;
-    $('status').textContent='Actualizando las demás páginas…';controls();
+    $('status').textContent=renderProgressLabel();controls();
   };
   img.onerror=release;img.src=data;
 };
 window.onWorkProgress = (kind, id, page) => {
-  if (kind === 'compose' && id === revision && composing) $('status').textContent = previewRevision===id?'Actualizando las demás páginas…':`Preparando página ${page}…`;
+  if (kind === 'compose' && id === revision && composing){renderProgress.done=page;$('status').textContent=renderProgressLabel();}
   if (kind === 'export' && exporting) $('status').textContent = `Guardando página ${page}…`;
   if (kind === 'calibration') window.onCalibrationProgress(id,`Analizando página ${page}…`);
 };
@@ -616,7 +631,7 @@ $('chooseFolder').onclick=()=>changeExportFolder();$('clearFolder').onclick=()=>
 $('cancelBtn').onclick = () => {
   saveRequested=false;
   if (exporting) { AndroidBridge.cancelExport(); $('status').textContent = 'Cancelando…'; }
-  else { clearTimeout(refreshTimer); revision++; AndroidBridge.invalidateCompose(revision); composing = false; $('status').textContent = 'Generación cancelada'; controls(); }
+  else { clearTimeout(refreshTimer);autoRefreshPending=false; revision++; AndroidBridge.invalidateCompose(revision); composing = false;PdfEditor.failed(); $('status').textContent = 'Generación cancelada'; controls(); }
 };
 $('prevPage').onclick = () => { if (currentPage > 0) { currentPage--; drawCurrent(); controls(); } };
 $('nextPage').onclick = () => { if (currentPage < ImageEditor.count() - 1) { currentPage++; drawCurrent(); controls(); } };

@@ -103,9 +103,11 @@ function withParagraph(line, properties = {}) {
   if(properties.list && LIST_TYPES.has(properties.list.type)) {
     const l=properties.list;
     meta.list={id:String(l.id||newListId()).slice(0,80),type:l.type,level:Math.round(bounded(l.level,0,8,0)),start:Math.round(bounded(l.start,1,999999,1)),markerStyle:cleanStyle(l.markerStyle)};
+    if(l.continuation){meta.list.continuation=true;meta.list.continuationMarker=String(l.continuationMarker||'').slice(0,80);}
     if(l.indent!==undefined)meta.list.indent=Math.round(bounded(l.indent,0,12,0));
   }
   if(properties.indent)meta.indent=bounded(properties.indent,0,12,0);
+  if(properties.pdfGap)meta.pdfGap=true;
   if(properties.listExit&&!meta.list){const e=properties.listExit;meta.listExit={indent:bounded(e.indent,0,12,0),marker:String(e.marker||'').slice(0,80),style:cleanStyle(e.style),stage:e.stage==='marker'?'marker':'body'};}
   if(properties.format && !sameStyle(cleanStyle(properties.format),DEFAULT_STYLE))meta.format=cleanStyle(properties.format);
   const runs=mergeSegments(line.filter(s=>!s.paragraph));
@@ -117,6 +119,7 @@ function listMarkers(lines){
   const sequences=new Map();
   return lines.map(line=>{
     const l=paragraphOf(line).list;if(!l)return '';
+    if(l.continuation)return '';
     let c=sequences.get(l.id);if(!c){c=Array(9).fill(0);sequences.set(l.id,c);}
     for(let i=0;i<l.level;i++)if(!c[i])c[i]=l.start;
     c[l.level]=c[l.level]?c[l.level]+1:(l.level===0?l.start:1);c.fill(0,l.level+1);
@@ -128,6 +131,7 @@ function listMarkers(lines){
 function paragraphIndent(meta){return meta.list ? (meta.list.indent??meta.list.level) : (meta.indent||0);}
 function decorateParagraph(node,line,marker){
   const meta=paragraphOf(line),encoded=Object.keys(meta).length?JSON.stringify(meta):'';
+  node.classList.toggle('pdfGap',!!meta.pdfGap);if(meta.pdfGap)node.dataset.placeholder='Escribe en una hoja nueva';else delete node.dataset.placeholder;
   const signature=encoded+'|'+marker;if(node._paragraphSignature===signature)return;node._paragraphSignature=signature;
   if(encoded)node.dataset.paragraph=encoded;else delete node.dataset.paragraph;
   if(meta.list){
@@ -135,7 +139,7 @@ function decorateParagraph(node,line,marker){
     const s=meta.list.markerStyle,css=getComputedStyle(editor),base=parseFloat(css.fontSize)||16;
     const weight=Math.min(900,(s.bold?700:400)+(s.thickness||0)*25);
     markerMeasure.font=`${weight} ${base*s.scale}px ${css.fontFamily}`;
-    node.style.setProperty('--marker-width',Math.max(base*2,markerMeasure.measureText(marker).width+base*.6*s.scale)+'px');
+    node.style.setProperty('--marker-width',Math.max(base*2,markerMeasure.measureText(meta.list.continuation?meta.list.continuationMarker:marker).width+base*.6*s.scale)+'px');
     node.style.setProperty('--marker-weight',weight);
     node.style.setProperty('--marker-color',editorInk(s.color,s.opacity));
     node.style.setProperty('--marker-size',s.scale+'em');
@@ -358,12 +362,15 @@ function deleteStructure(backwards){
     edit((ls,m)=>{const meta={...paragraphOf(ls[i])};meta.listExit={indent:paragraphIndent(meta),marker:listMarkers(ls)[i],style:meta.list.markerStyle,stage:'body'};delete meta.list;ls[i]=withParagraph(ls[i],meta);return {lines:ls,selection:m};});return true;
   }
   if(backwards&&mark.start.offset===0&&(paragraphOf(line).listExit||paragraphOf(line).indent)){
-    edit((ls,m)=>{const meta={...paragraphOf(ls[i])};if(meta.listExit?.stage==='body')meta.listExit={...meta.listExit,stage:'marker'};else if(meta.listExit){if(meta.listExit.indent>1)meta.listExit={...meta.listExit,indent:meta.listExit.indent-1};else delete meta.listExit;}else meta.indent=Math.max(0,meta.indent-1);ls[i]=withParagraph(ls[i],meta);return {lines:ls,selection:m};});return true;
+    edit((ls,m)=>{const meta={...paragraphOf(ls[i])};if(meta.listExit?.stage==='body'&&meta.listExit.indent>0)meta.listExit={...meta.listExit,stage:'marker'};else if(meta.listExit){if(meta.listExit.stage==='marker'&&meta.listExit.indent>1)meta.listExit={...meta.listExit,indent:meta.listExit.indent-1};else{delete meta.listExit;delete meta.indent;}}else meta.indent=Math.max(0,meta.indent-1);ls[i]=withParagraph(ls[i],meta);return {lines:ls,selection:m};});return true;
   }
   const other=backwards?i-1:i+1;
   if((backwards?mark.start.offset===0:mark.start.offset===lineText(line).length)&&other>=0&&other<lines.length&&!isBlockLine(lines[other])){
     const a=backwards?other:i,b=a+1;edit((ls)=>replaceText(ls,{start:{line:a,offset:lineText(ls[a]).length},end:{line:b,offset:0}},''));return true;
-  }return false;
+  }
+  // Keep a page attachment intact when Backspace/Delete reaches its boundary.
+  if((backwards?mark.start.offset===0:mark.start.offset===lineText(line).length)&&PdfEditor.isLine(lines[other]))return true;
+  return false;
 }
 function scrollCaretIntoView(root=editor){
   const selection=getSelection();if(!selection?.rangeCount||!root.contains(selection.focusNode))return;
