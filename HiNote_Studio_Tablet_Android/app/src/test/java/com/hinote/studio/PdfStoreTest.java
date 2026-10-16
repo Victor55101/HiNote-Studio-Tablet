@@ -30,13 +30,14 @@ public class PdfStoreTest {
     @Before public void setup()throws Exception{
         context=RuntimeEnvironment.getApplication();directory=Files.createTempDirectory("pdf-test-").toFile();
         store=new PdfStore(directory,directory);source=new File(directory,"original.pdf");
-        try(PdfDocument document=new PdfDocument()){
+        PdfDocument document=new PdfDocument();
+        try{
             for(int i=0;i<2;i++){
                 PdfDocument.Page page=document.startPage(new PdfDocument.PageInfo.Builder(i==0?200:300,i==0?300:200,i+1).create());
                 page.getCanvas().drawColor(i==0?Color.RED:Color.BLUE);document.finishPage(page);
             }
             try(FileOutputStream out=new FileOutputStream(source)){document.writeTo(out);}
-        }
+        }finally{document.close();}
     }
     private JSONObject imported()throws Exception{return store.importPdf(context.getContentResolver(),Uri.fromFile(source));}
     @Test public void importPreservesOriginalBytesAndDeduplicates()throws Exception{

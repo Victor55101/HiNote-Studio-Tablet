@@ -159,13 +159,18 @@ public class MainActivity extends Activity {
             File directory=new File(sessionDir,snapshot),png=new File(directory,"page-"+index+"-ink.png");
             try{
                 if(!png.isFile()){
-                    String json=new String(java.nio.file.Files.readAllBytes(new File(directory,"page-"+index+".json").toPath()),java.nio.charset.StandardCharsets.UTF_8);
+                    String json=new String(readPageFile(new File(directory,"page-"+index+".json"),this),java.nio.charset.StandardCharsets.UTF_8);
                     JSONObject pdf=new JSONObject(json).optJSONObject("pdf");
                     PageRenderer.renderPreview(json,png,1,pdf==null?null:pdfStore.preview(pdf,1,this::check),this::check);
                 }
-                check();String data="data:image/png;base64,"+Base64.encodeToString(java.nio.file.Files.readAllBytes(png.toPath()),Base64.NO_WRAP);
+                check();String data="data:image/png;base64,"+Base64.encodeToString(readPageFile(png,this),Base64.NO_WRAP);
                 check();shownPage=index;send("onComposePageReady",id+","+quote(metadata)+","+index+","+quote(data));
             }catch(OutOfMemoryError lowMemory){png.delete();/* Final lazy preview retries with its normal memory fallback. */}
+        }
+    }
+    private byte[] readPageFile(File file,TaskToken token)throws IOException{
+        try(InputStream in=new FileInputStream(file);ByteArrayOutputStream out=new ByteArrayOutputStream()){
+            byte[] buffer=new byte[16384];int n;while((n=in.read(buffer))!=-1){token.check();out.write(buffer,0,n);}return out.toByteArray();
         }
     }
     private void removeQueued(Future<?> job){if(job!=null){job.cancel(false);if(job instanceof Runnable)worker.remove((Runnable)job);}}
