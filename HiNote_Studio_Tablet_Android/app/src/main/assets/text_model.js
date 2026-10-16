@@ -2,7 +2,7 @@
 // Paragraph properties use a zero-length record. Unlike properties added to an
 // Array, this survives JSON history/drafts and leaves every text offset intact.
 const LIST_TYPES = new Set(['bullet','dash','asterisk','num_dot','num_paren','alpha_lower_dot','alpha_lower_paren','alpha_upper_dot','alpha_upper_paren','roman_lower_dot','roman_upper_dot','multi_decimal']);
-let typingState = null, nativeEdit = null, markerSelection = null;
+let typingState = null, nativeEdit = null, markerSelection = null, editorGesture = null;
 function selectedMarkerIndexes(lines=readLines()){
   return markerSelection?lines.flatMap((line,i)=>{const l=paragraphOf(line).list;return l?.id===markerSelection.id&&l.level===markerSelection.level?[i]:[];}):[];
 }
@@ -11,10 +11,10 @@ function syncMarkerSelection(){
   if(markerSelection&&!indexes.size)markerSelection=null;
   [...editor.children].forEach((node,i)=>node.classList.toggle('markerSelected',indexes.has(i)));
   editor.classList.toggle('markersSelected',!!markerSelection);
-  if(!markerSelection&&$('listFormatTarget').value==='markers')$('listFormatTarget').value='auto';
-  $('sizeLabel').textContent=markerSelection?'Tamaño de marcas':$('listFormatTarget').value==='text'?'Tamaño del texto':'Tamaño';
+  $('sizeLabel').textContent=markerSelection?'Tamaño de marcas':'Tamaño';
   $('editorHint').textContent=markerSelection?'Marcas del nivel seleccionadas · Esc vuelve al texto':'Enter continúa listas · Ctrl+Z deshace';
   for(const id of ['caseSel','subscriptBtn','superscriptBtn'])$(id).disabled=!!markerSelection||exporting||folderBusy||CalibrationUI.isBusy()||NotebookUI.isBusy();
+  $('caseSel').disabled ||= !bookmark()||collapsed(bookmark());
   window.StudioUI?.syncSelects?.();
 }
 function clearMarkerSelection(){
@@ -25,7 +25,7 @@ function selectListMarkers(index){
   if(!editor.isContentEditable||ime)return false;
   const l=paragraphOf(readLines()[index]).list;if(!l)return false;
   const point={line:index,offset:0};typingState=null;
-  markerSelection={id:l.id,level:l.level,anchor:point};$('listFormatTarget').value='markers';
+  markerSelection={id:l.id,level:l.level,anchor:point};
   restoreSelection({start:point,end:{...point}});syncMarkerSelection();syncTextControls();return true;
 }
 function fullListItem(line,selection,i){
@@ -44,37 +44,58 @@ function markerAtPointer(event){
   return event.clientX>=left&&event.clientX<right&&event.clientY>=box.top&&event.clientY<=Math.min(box.bottom,box.top+height)?[...editor.children].indexOf(node):-1;
 }
 function initMarkerSelection(){
-  let gesture=null;
+  function restoreGesture(g){
+    if(!g?.preserve||!g.mark)return;
+    markerSelection=g.markers;typingState=g.typing;restoreSelection(g.mark,false);syncMarkerSelection();syncTextControls();
+  }
   editor.addEventListener('pointerdown',event=>{
-    const index=markerAtPointer(event);
-    if(index<0){clearMarkerSelection();return;}
     if(event.button!==0||!editor.isContentEditable||ime)return;
-    event.preventDefault();gesture={id:event.pointerId,index,x:event.clientX,y:event.clientY};
+    const index=markerAtPointer(event),touch=event.pointerType!=='mouse';
+    editorGesture={id:event.pointerId,index,x:event.clientX,y:event.clientY,moved:false,
+      preserve:touch,mark:bookmark(),markers:markerSelection?structuredClone(markerSelection):null,typing:typingState};
+    if(!touch){if(index>=0)event.preventDefault();else clearMarkerSelection();}
   });
-  editor.addEventListener('pointermove',event=>{if(gesture?.id===event.pointerId&&Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)>12)gesture=null;});
-  editor.addEventListener('pointercancel',()=>gesture=null);
+  editor.addEventListener('pointermove',event=>{const g=editorGesture;if(g?.id===event.pointerId&&Math.hypot(event.clientX-g.x,event.clientY-g.y)>12)g.moved=true;});
+  editor.addEventListener('pointercancel',()=>{const g=editorGesture;editorGesture=null;restoreGesture(g);});
   editor.addEventListener('pointerup',event=>{
-    const start=gesture;gesture=null;if(start?.id!==event.pointerId||markerAtPointer(event)!==start.index)return;
-    event.preventDefault();if(event.pointerType!=='mouse')window.StudioUI?.absorbTap?.(event);
-    selectListMarkers(start.index);
+    const g=editorGesture;editorGesture=null;if(g?.id!==event.pointerId)return;
+    if(g.moved){restoreGesture(g);return;}
+    if(g.index>=0&&markerAtPointer(event)===g.index){
+      event.preventDefault();if(event.pointerType!=='mouse')window.StudioUI?.absorbTap?.(event);selectListMarkers(g.index);
+    }else{clearMarkerSelection();captureSelection();}
   });
   editor.addEventListener('mousedown',event=>{if(markerAtPointer(event)>=0)event.preventDefault();});
   editor.addEventListener('keydown',event=>{
-    if(!markerSelection||event.isComposing)return;
-    if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();clearMarkerSelection();return;}
-    if(['Backspace','Delete'].includes(event.key)){
-      event.preventDefault();event.stopImmediatePropagation();
-      edit((lines,selection)=>{const indexes=selectedMarkerIndexes(lines);markerSelection=null;for(const i of indexes){const meta={...paragraphOf(lines[i])};delete meta.list;lines[i]=withParagraph(lines[i],meta);}return {lines,selection};});return;
+    if(event.isComposing||ime)return;
+    const plain=!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&!event.altKey;
+    const mark=bookmark(),lines=readLines();
+    if(!markerSelection&&plain&&mark&&collapsed(mark)){
+      const i=mark.start.line;
+      if(mark.start.offset===0&&paragraphOf(lines[i]).list&&['ArrowLeft','ArrowUp'].includes(event.key)){
+        event.preventDefault();event.stopImmediatePropagation();selectListMarkers(i);return;
+      }
+      if(event.key==='ArrowRight'&&mark.start.offset===lineText(lines[i]).length&&paragraphOf(lines[i+1]).list){
+        event.preventDefault();event.stopImmediatePropagation();selectListMarkers(i+1);return;
+      }
     }
-    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Enter','Tab'].includes(event.key)||event.key.length===1&&(!(event.ctrlKey||event.metaKey)||event.key.toLowerCase()==='a'))clearMarkerSelection();
+    if(!markerSelection)return;
+    if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();clearMarkerSelection();return;}
+    if(event.key==='Tab'){
+      event.preventDefault();event.stopImmediatePropagation();changeLists(event.shiftKey?'outdent':'indent');return;
+    }
+    if(['Backspace','Delete'].includes(event.key)){
+      event.preventDefault();event.stopImmediatePropagation();changeLists('remove');return;
+    }
+    if(plain&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){
+      event.preventDefault();event.stopImmediatePropagation();let point={...markerSelection.anchor};
+      if(['ArrowLeft','ArrowUp'].includes(event.key)){
+        for(let i=point.line-1;i>=0;i--)if(!isBlockLine(lines[i])){point={line:i,offset:lineText(lines[i]).length};break;}
+      }
+      clearMarkerSelection();restoreSelection({start:point,end:{...point}});scrollCaretIntoView();return;
+    }
+    if(['Home','End','Enter'].includes(event.key)||event.key.length===1&&(!(event.ctrlKey||event.metaKey)||event.key.toLowerCase()==='a'))clearMarkerSelection();
   },true);
   editor.addEventListener('beforeinput',event=>{if(event.inputType?.startsWith('insert')||event.inputType?.startsWith('delete'))clearMarkerSelection();},true);
-  $('listFormatTarget').addEventListener('change',()=>{
-    if($('listFormatTarget').value==='markers'){
-      if(!selectListMarkers(bookmark()?.start.line)){$('listFormatTarget').value='auto';toast('Coloca el cursor en una lista para seleccionar sus marcas');}
-    }else clearMarkerSelection();
-    syncMarkerSelection();syncTextControls();resumeEditor();
-  });
 }
 function paragraphOf(line) { return line?.find(s=>s.paragraph)?.paragraph || {}; }
 function withParagraph(line, properties = {}) {
@@ -84,7 +105,8 @@ function withParagraph(line, properties = {}) {
     meta.list={id:String(l.id||newListId()).slice(0,80),type:l.type,level:Math.round(bounded(l.level,0,8,0)),start:Math.round(bounded(l.start,1,999999,1)),markerStyle:cleanStyle(l.markerStyle)};
     if(l.indent!==undefined)meta.list.indent=Math.round(bounded(l.indent,0,12,0));
   }
-  if(properties.indent)meta.indent=Math.round(bounded(properties.indent,0,12,0));
+  if(properties.indent)meta.indent=bounded(properties.indent,0,12,0);
+  if(properties.listExit&&!meta.list){const e=properties.listExit;meta.listExit={indent:bounded(e.indent,0,12,0),marker:String(e.marker||'').slice(0,80),style:cleanStyle(e.style),stage:e.stage==='marker'?'marker':'body'};}
   if(properties.format && !sameStyle(cleanStyle(properties.format),DEFAULT_STYLE))meta.format=cleanStyle(properties.format);
   const runs=mergeSegments(line.filter(s=>!s.paragraph));
   return Object.keys(meta).length ? [{text:'',paragraph:meta},...runs] : runs;
@@ -111,14 +133,16 @@ function decorateParagraph(node,line,marker){
   if(meta.list){
     node.dataset.list=meta.list.id;node.dataset.marker=marker;node.setAttribute('role','listitem');node.setAttribute('aria-level',meta.list.level+1);
     const s=meta.list.markerStyle,css=getComputedStyle(editor),base=parseFloat(css.fontSize)||16;
-    const weight=s.thickness?Math.min(850,400+s.thickness*35):400;
+    const weight=Math.min(900,(s.bold?700:400)+(s.thickness||0)*25);
     markerMeasure.font=`${weight} ${base*s.scale}px ${css.fontFamily}`;
     node.style.setProperty('--marker-width',Math.max(base*2,markerMeasure.measureText(marker).width+base*.6*s.scale)+'px');
     node.style.setProperty('--marker-weight',weight);
     node.style.setProperty('--marker-color',editorInk(s.color,s.opacity));
     node.style.setProperty('--marker-size',s.scale+'em');
+    node.style.setProperty('--marker-slant',s.italic?'italic':'normal');node.style.setProperty('--marker-decoration',s.underline?'underline':'none');
   }else{delete node.dataset.list;delete node.dataset.marker;node.removeAttribute('role');node.removeAttribute('aria-level');}
   node.style.setProperty('--paragraph-indent',paragraphIndent(meta)*1.5+'em');
+  if(meta.listExit){const e=meta.listExit,base=parseFloat(getComputedStyle(editor).fontSize)||16;markerMeasure.font=`${Math.min(900,(e.style.bold?700:400)+e.style.thickness*25)} ${base*e.style.scale}px ${getComputedStyle(editor).fontFamily}`;const width=Math.max(base*2,markerMeasure.measureText(e.marker).width+base*.6*e.style.scale);node.style.setProperty('--paragraph-indent',(e.indent*1.5*base+(e.stage==='body'?width:0))+'px');}
 }
 function refreshListMarkers(){const lines=readLines(),markers=listMarkers(lines);[...editor.children].forEach((node,i)=>{if(!isBlockLine(lines[i]))decorateParagraph(node,lines[i],markers[i]);});syncMarkerSelection();}
 function parseListPrefix(text){
@@ -178,14 +202,15 @@ function changeLists(action){
       const previous=paragraphOf(lines[first-1]).list;
       const definition=current?.type===type?current:previous?.type===type?previous:{id:newListId(),type,start:1,markerStyle:styleAt(lines[first],0)};
       for(const i of indexes){const meta={...paragraphOf(lines[i])},l=meta.list;
-        if(action==='apply')meta.list={...definition,markerStyle:l?.markerStyle||(bulkApply?styleAt(lines[i],0):definition.markerStyle),level:l?.level||0,...(l?.indent!==undefined?{indent:l.indent}:{})};
-        else if(action==='remove'){delete meta.list;delete meta.indent;}
+        if(action==='apply'){delete meta.listExit;meta.list={...definition,markerStyle:l?.markerStyle||(bulkApply?styleAt(lines[i],0):definition.markerStyle),level:l?.level||0,...(l?.indent!==undefined?{indent:l.indent}:{})};}
+        else if(action==='remove'){delete meta.list;delete meta.indent;delete meta.listExit;}
         else if(action==='setIndent'){const indent=Math.round(bounded($('listIndent').value,0,12,0));if(l)meta.list={...l,indent};else meta.indent=indent;}
         else if(l){meta.list={...l,level:Math.round(bounded(l.level+(action==='indent'?1:-1),0,8,0))};delete meta.list.indent;}
         else meta.indent=Math.round(bounded((meta.indent||0)+(action==='indent'?1:-1),0,12,0));
         lines[i]=withParagraph(lines[i],meta);
       }
     }
+    if(markerSelection){const next=paragraphOf(lines[first]).list;markerSelection=next?{...markerSelection,id:next.id,level:next.level}:null;}
     return {lines,selection};
   });
 }
@@ -224,12 +249,13 @@ function keepTypingStyleAtCaret(style){const m=bookmark();if(m&&collapsed(m))set
 function patchRuns(lines,selection,patch,includeMarkers=false){
   for(const i of selectedLineIndexes(selection)){
     if(isBlockLine(lines[i]))continue;let meta=paragraphOf(lines[i]);
-    if(includeMarkers&&patch.scale!==undefined&&fullListItem(lines[i],selection,i))meta={...meta,list:{...meta.list,markerStyle:cleanStyle({...meta.list.markerStyle,scale:patch.scale})}};
+    if(includeMarkers&&fullListItem(lines[i],selection,i))meta={...meta,list:{...meta.list,markerStyle:cleanStyle({...meta.list.markerStyle,...Object.fromEntries(Object.entries(patch).filter(([k])=>k!=='script'))})}};
     if(!lineText(lines[i]))meta={...meta,format:cleanStyle({...meta.format,...patch})};
     const a=i===selection.start.line?selection.start.offset:0,b=i===selection.end.line?selection.end.offset:Infinity;
     lines[i]=withParagraph([...sliceSegments(lines[i],0,a),...sliceSegments(lines[i],a,b).map(s=>({...s,...patch})),...sliceSegments(lines[i],b)],meta);
   }return lines;
 }
+function toggleTextAttribute(key){const values=selectionStyles();applyStyle({[key]:!(values.length&&values.every(s=>s[key]))});}
 function toggleScript(script){const values=selectionStyles();applyStyle({script:values.length&&values.every(s=>(s.script||'normal')===script)?'normal':script});}
 function startNativeEdit(){
   const mark=bookmark();if(!mark)return;
@@ -329,7 +355,10 @@ function deleteStructure(backwards){
   if(!collapsed(mark)){edit((ls,m)=>replaceText(ls,m,''));return true;}
   if(isBlockLine(line))return false;
   if(backwards&&mark.start.offset===0&&paragraphOf(line).list){
-    edit((ls,m)=>{const meta={...paragraphOf(ls[i])};delete meta.list;ls[i]=withParagraph(ls[i],meta);return {lines:ls,selection:m};});return true;
+    edit((ls,m)=>{const meta={...paragraphOf(ls[i])};meta.listExit={indent:paragraphIndent(meta),marker:listMarkers(ls)[i],style:meta.list.markerStyle,stage:'body'};delete meta.list;ls[i]=withParagraph(ls[i],meta);return {lines:ls,selection:m};});return true;
+  }
+  if(backwards&&mark.start.offset===0&&(paragraphOf(line).listExit||paragraphOf(line).indent)){
+    edit((ls,m)=>{const meta={...paragraphOf(ls[i])};if(meta.listExit?.stage==='body')meta.listExit={...meta.listExit,stage:'marker'};else if(meta.listExit){if(meta.listExit.indent>1)meta.listExit={...meta.listExit,indent:meta.listExit.indent-1};else delete meta.listExit;}else meta.indent=Math.max(0,meta.indent-1);ls[i]=withParagraph(ls[i],meta);return {lines:ls,selection:m};});return true;
   }
   const other=backwards?i-1:i+1;
   if((backwards?mark.start.offset===0:mark.start.offset===lineText(line).length)&&other>=0&&other<lines.length&&!isBlockLine(lines[other])){

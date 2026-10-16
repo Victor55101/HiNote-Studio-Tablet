@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MainActivity extends Activity {
-    private static final int REQUEST_SAVE=501, REQUEST_IMAGE=502, REQUEST_FOLDER=503;
+    private static final int REQUEST_SAVE=501, REQUEST_IMAGE=502, REQUEST_FOLDER=503, REQUEST_PDF=504;
     private static final Object ENGINE_START_LOCK=new Object();
     private WebView webView;
     private KeyboardController keyboardController;
@@ -38,11 +38,13 @@ public class MainActivity extends Activity {
     private ThreadPoolExecutor worker;
     private volatile boolean destroyed;
     private volatile String startupError,latestSnapshot;
+    private volatile int preferredPage;
     private final AtomicInteger revision=new AtomicInteger(),pageRevision=new AtomicInteger();
     private final AtomicBoolean exporting=new AtomicBoolean();
     private volatile Future<?> composeJob,pageJob;
     private volatile ExportJob pendingExport;
     private ImageStore imageStore;
+    private PdfStore pdfStore;
     private ExportFolder exportFolder;
     private final AtomicBoolean choosingFolder=new AtomicBoolean();
     private AtomicFile draftFile;
@@ -61,7 +63,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         draftFile=new AtomicFile(new File(getFilesDir(),"draft-v23.json"));
         exportFolder=new ExportFolder(this);
-        try {imageStore=new ImageStore(getFilesDir());} catch(IOException e){startupError=message(e);}
+        try {imageStore=new ImageStore(getFilesDir());pdfStore=new PdfStore(getFilesDir(),getCacheDir());} catch(IOException e){startupError=message(e);}
         themeController=new ThemeController(this);themeController.apply(null);
         sessionDir=new File(getCacheDir(),"hinote-session-"+UUID.randomUUID());
         worker=new ThreadPoolExecutor(1,1,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(8)){
@@ -145,10 +147,26 @@ public class MainActivity extends Activity {
     /** Public methods are called by Python through Chaquopy. */
     public final class TaskToken{
         private final int id;private final String kind;private final AtomicBoolean cancelled;
+        private int shownPage=-1;
         TaskToken(String kind,int id,AtomicBoolean cancelled){this.kind=kind;this.id=id;this.cancelled=cancelled;}
         public boolean isCancelled(){return destroyed||Thread.currentThread().isInterrupted()||cancelled.get()||(kind.equals("compose")&&revision.get()!=id)||(kind.equals("page")&&pageRevision.get()!=id);}
         public void check(){if(isCancelled())throw new CancellationException("Operación cancelada");}
         public void onProgress(int page){if(!isCancelled()){if(kind.equals("notebook"))send("onNotebookProgress",id+","+quote("Copiando página "+page+"…"));else send("onWorkProgress",quote(kind)+","+id+","+page);}}
+        public void onPageReady(String snapshot,String metadata)throws Exception{
+            if(!kind.equals("compose"))return;
+            check();int index=preferredPage;JSONObject info=new JSONObject(metadata);
+            if(index==shownPage||index<0||index>=info.getInt("page_count"))return;
+            File directory=new File(sessionDir,snapshot),png=new File(directory,"page-"+index+"-ink.png");
+            try{
+                if(!png.isFile()){
+                    String json=new String(java.nio.file.Files.readAllBytes(new File(directory,"page-"+index+".json").toPath()),java.nio.charset.StandardCharsets.UTF_8);
+                    JSONObject pdf=new JSONObject(json).optJSONObject("pdf");
+                    PageRenderer.renderPreview(json,png,1,pdf==null?null:pdfStore.preview(pdf,1,this::check),this::check);
+                }
+                check();String data="data:image/png;base64,"+Base64.encodeToString(java.nio.file.Files.readAllBytes(png.toPath()),Base64.NO_WRAP);
+                check();shownPage=index;send("onComposePageReady",id+","+quote(metadata)+","+index+","+quote(data));
+            }catch(OutOfMemoryError lowMemory){png.delete();/* Final lazy preview retries with its normal memory fallback. */}
+        }
     }
     private void removeQueued(Future<?> job){if(job!=null){job.cancel(false);if(job instanceof Runnable)worker.remove((Runnable)job);}}
     public final class Bridge{
@@ -239,7 +257,14 @@ public class MainActivity extends Activity {
                 }catch(Exception e){importing.set(false);send("onImageImported",ticket+",null,"+quote(message(e)));}
             });
         }
+        @JavascriptInterface public void requestPdf(int ticket){
+            if(destroyed||notebookBusy.get()||calibrating.get()||exporting.get()||choosingFolder.get()||!importing.compareAndSet(false,true))return;
+            importTicket=ticket;
+            runOnUiThread(()->{try{Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/pdf");startActivityForResult(intent,REQUEST_PDF);}
+                catch(Exception e){importing.set(false);send("onPdfImported",ticket+",null,"+quote(message(e)));}});
+        }
         @JavascriptInterface public void invalidateCompose(int id){revision.set(id);removeQueued(composeJob);pageRevision.incrementAndGet();removeQueued(pageJob);}
+        @JavascriptInterface public void setPreviewPage(int index){preferredPage=Math.max(0,Math.min(499,index));}
         @JavascriptInterface public void requestCompose(String doc,String settings,int id){
             if(destroyed||notebookBusy.get()||calibrating.get()||exporting.get())return;revision.set(id);removeQueued(composeJob);
             TaskToken token=new TaskToken("compose",id,new AtomicBoolean());
@@ -247,7 +272,7 @@ public class MainActivity extends Activity {
                 String created=null;
                 try{
                     token.check();ready();
-                    String result=backend.callAttr("compose",getFilesDir().getPath(),sessionDir.getPath(),doc,settings,token).toString();
+                    String result=backend.callAttr("compose",getFilesDir().getPath(),sessionDir.getPath(),doc,settings,token,latestSnapshot==null?"":latestSnapshot).toString();
                     created=new JSONObject(result).getString("snapshot");token.check();
                     String old=latestSnapshot;latestSnapshot=created;
                     if(old!=null)backend.callAttr("remove_snapshot",sessionDir.getPath(),old);
@@ -331,7 +356,8 @@ public class MainActivity extends Activity {
         File file=new File(directory,"page-"+index+(resolution>1?"-ink-hd.png":"-ink.png"));
         if(!file.isFile()){
             String json=backend.callAttr("page_preview",sessionDir.getPath(),snapshot,index).toString();
-            PageRenderer.renderPreview(json,file,resolution,token::check);
+            JSONObject pdf=new JSONObject(json).optJSONObject("pdf");
+            PageRenderer.renderPreview(json,file,resolution,pdf==null?null:pdfStore.preview(pdf,resolution,token::check),token::check);
         }
         // Keep only the current high-resolution page on disk, not an HD notebook.
         File[] cached=directory.listFiles();
@@ -368,6 +394,14 @@ public class MainActivity extends Activity {
             final Uri tree=data.getData();final int flags=data.getFlags();
             worker.execute(()->{String error=null;try{exportFolder.remember(tree,flags);}catch(Exception e){error=message(e);}finally{choosingFolder.set(false);}folderResult(error);});
             return;
+        }
+        if(code==REQUEST_PDF){
+            final int ticket=importTicket;
+            if(result!=RESULT_OK||data==null||data.getData()==null){importing.set(false);send("onPdfImported",ticket+",null,null");return;}
+            final Uri source=data.getData();
+            worker.execute(()->{try{ready();JSONObject pdf=pdfStore.importPdf(getContentResolver(),source);send("onPdfImported",ticket+","+quote(pdf.toString())+",null");}
+                catch(OutOfMemoryError e){send("onPdfImported",ticket+",null,"+quote("No hay memoria suficiente para abrir este PDF."));}
+                catch(Exception e){send("onPdfImported",ticket+",null,"+quote(message(e)));}finally{importing.set(false);}});return;
         }
         if(code==REQUEST_IMAGE){
             final int ticket=importTicket;
@@ -408,7 +442,8 @@ public class MainActivity extends Activity {
             JSONArray pageImages=new JSONArray();
             for(int j=0;j<images.length();j++)if(images.getJSONObject(j).getInt("page")==i)pageImages.put(images.getJSONObject(j));
             String json=i<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),snapshot,i).toString():"{\"strokes\":[]}";
-            PageRenderer.renderForExport(json,new File(work,"page-"+i+"-native.jpg"),pageImages,new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
+            JSONObject pdf=new JSONObject(json).optJSONObject("pdf");
+            PageRenderer.renderForExport(json,new File(work,"page-"+i+"-native.jpg"),pageImages,new File(getFilesDir(),"paper_base3_source.jpg"),pdf==null?null:pdfStore.preview(pdf,1,token::check),token::check);
             token.onProgress(i+1);
         }
         token.check();backend.callAttr("export_snapshot",getFilesDir().getPath(),sessionDir.getPath(),snapshot,title,true,output.getPath(),token,images.toString(),count,work.getPath());

@@ -37,7 +37,7 @@ module.exports=({test,setup,select,lines,assert,openTable})=>{
   });
   test('V48 stored black text and list ink adapt visually without changing exported colors',async page=>{
     await setup(page,'Primero\nSegundo');await select(page,{line:0,offset:0},{line:1,offset:7});
-    await page.evaluate(()=>{applyStyle({scale:.9,opacity:80});modifyLists('apply');});
+    await page.evaluate(()=>{applyStyle({scale:.9,opacity:80});$('listType').value='num_dot';modifyLists('apply');});
     const original=await page.evaluate(()=>JSON.stringify(serializeDocument()));
     assert.equal(await color(page,'#editor .line span','color'),'rgba(36, 50, 61, 0.8)');
     await page.locator('#themeToggle').tap();await settled(page);

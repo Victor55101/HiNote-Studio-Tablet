@@ -28,7 +28,7 @@ module.exports=({test,setup,select,lines,paste,assert,openTable})=>{
     await choose(page,'sizeSel','90');await choose(page,'thicknessSel','4');
     await page.locator('[data-color-for=colorPick]').tap();await page.locator('#colorPalette button[aria-label="Color #EF4444"]').tap();await page.locator('#colorDone').tap();
     assert.equal(await focused(page),'editor');assert.deepEqual(await page.evaluate(()=>bookmark().start),before);
-    await page.fill('#opacity','60');await page.keyboard.press('Enter');assert.equal(await focused(page),'editor');
+    await choose(page,'opacity','60');assert.equal(await focused(page),'editor');
     await page.locator('#subscriptBtn').tap();await page.keyboard.type('2');
     const run=await page.evaluate(()=>readLines()[0].find(s=>s.text==='2'));assert.deepEqual(run,{text:'2',scale:.9,color:'#EF4444',opacity:60,thickness:4,script:'sub'});
   });
@@ -43,7 +43,7 @@ module.exports=({test,setup,select,lines,paste,assert,openTable})=>{
     await setup(page,text);await page.keyboard.press('Control+a');await page.locator('#listToggle').tap();await choose(page,'listType','num_dot');
     assert.deepEqual(await markers(page),['1.','2.','','3.','4.','','5.','6.','','7.','8.']);assert.deepEqual(await lines(page),text.split('\n'));
     const ids=await page.evaluate(()=>readLines().filter(l=>paragraphOf(l).list).map(l=>paragraphOf(l).list.id));assert.equal(new Set(ids).size,1);
-    assert.equal(await focused(page),'editor');await page.locator('#applyList').tap();assert.deepEqual(await markers(page),['1.','2.','','3.','4.','','5.','6.','','7.','8.']);
+    assert.equal(await focused(page),'editor');await page.selectOption('#listType','num_dot');assert.deepEqual(await markers(page),['1.','2.','','3.','4.','','5.','6.','','7.','8.']);
     const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs.filter(p=>p.list).length,8);assert.equal(doc.paragraphs[2].list,undefined);
     await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');assert.deepEqual(await markers(page),['1.','2.','','3.','4.','','5.','6.','','7.','8.']);
   });

@@ -28,13 +28,10 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
     await select(page,{line:0,offset:0},{line:1,offset:0});await choose(page,'sizeSel','150');
     p=await doc(page);assert.equal(p[0].list.marker_scale,1.5);assert.equal(p[1].list.marker_scale,1);assert.equal(p[1].segments[0].scale,1);
   });
-  test('V49 Solo texto preserves all markers while resizing complete item contents',async page=>{
+  test('V50 obsolete list controls are absent and Ninguna preserves text',async page=>{
     await setup(page,'1. Uno\n2. Dos');await select(page,{line:0,offset:0},{line:1,offset:3});
-    await choose(page,'listFormatTarget','text');await choose(page,'sizeSel','60');
-    let p=await doc(page);assert.ok(p.every(p=>p.list.marker_scale===1&&p.segments[0].scale===.6));
-    assert.equal(await page.textContent('#sizeLabel'),'Tamaño del texto');
-    await choose(page,'listFormatTarget','auto');assert.equal(await page.inputValue('#sizeSel'),'mixed');
-    await choose(page,'sizeSel','90');p=await doc(page);assert.ok(p.every(p=>p.list.marker_scale===.9&&p.segments[0].scale===.9));
+    assert.equal(await page.locator('#listFormatTarget,#applyList,#removeList').count(),0);
+    await makeList(page,'none');assert.deepEqual(await lines(page),['Uno','Dos']);assert.ok((await doc(page)).every(p=>!p.list));
   });
   test('V49 tapping a marker selects its list level across separators without selecting other lists',async page=>{
     await setup(page,'Uno\n\nDos\nOtro\nFinal');await select(page,{line:0,offset:0},{line:2,offset:3});await makeList(page,'multi_decimal');
@@ -70,14 +67,14 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
   test('V49 empty item follows insertion size and retains editable text offsets',async page=>{
     await setup(page,'1. Uno');await select(page,{line:0,offset:3});await page.keyboard.press('Enter');
     await choose(page,'sizeSel','60');await page.keyboard.type('Dos');
-    const p=await doc(page);assert.equal(p[0].list.marker_scale,1);assert.equal(p[1].list.marker_scale,.6);assert.equal(p[1].segments[0].scale,.6);
+    const p=await doc(page);assert.equal(p[0].list.marker_scale,1);assert.equal(p[1].list.marker_scale,1);assert.equal(p[1].segments[0].scale,.6);
     assert.deepEqual(await lines(page),['Uno','Dos']);assert.equal(await page.evaluate(()=>bookmark().start.offset),3);
   });
   test('V49 large wide markers reserve width and height without entering editable text',async page=>{
     await setup(page,'MMM. Texto largo con varias palabras que se repite para comprobar la sangría francesa\nMMM. Otro texto');
     await select(page,{line:1,offset:0});await page.click('#continueList');
     await tapMarker(page);await choose(page,'sizeSel','200');await page.keyboard.press('Escape');
-    await select(page,{line:0,offset:0},{line:1,offset:10});await choose(page,'listFormatTarget','text');await choose(page,'sizeSel','60');
+    await select(page,{line:0,offset:0},{line:1,offset:10});await choose(page,'sizeSel','60');await tapMarker(page);await choose(page,'sizeSel','200');await page.keyboard.press('Escape');
     const boxes=await page.locator('#editor .line').evaluateAll(nodes=>nodes.map(n=>{
       const s=getComputedStyle(n),m=getComputedStyle(n,'::before'),r=document.createRange(),t=document.createTreeWalker(n,NodeFilter.SHOW_TEXT).nextNode();r.setStart(t,0);r.setEnd(t,1);
       const b=n.getBoundingClientRect();return {top:b.top,bottom:b.bottom,height:b.height,textLeft:r.getBoundingClientRect().left,left:b.left,padding:parseFloat(s.paddingLeft),markerWidth:parseFloat(m.width),markerFont:parseFloat(m.fontSize),baseFont:parseFloat(s.fontSize),body:n.textContent};
@@ -90,7 +87,7 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
     await setup(page,'1. Uno\n2. Dos');await tapMarker(page);
     const p=await page.locator('#editor .line').first().evaluate(n=>{const t=document.createTreeWalker(n,NodeFilter.SHOW_TEXT).nextNode(),r=document.createRange();r.setStart(t,1);r.setEnd(t,2);const b=r.getBoundingClientRect();return {x:b.left+1,y:b.top+b.height/2};});await page.touchscreen.tap(p.x,p.y);
     assert.equal(await page.locator('.markerSelected').count(),0);await page.keyboard.type('X');assert.deepEqual(await lines(page),['UXno','Dos']);
-    await choose(page,'listFormatTarget','markers');assert.equal(await page.locator('.markerSelected').count(),2);
+    await tapMarker(page);assert.equal(await page.locator('.markerSelected').count(),2);
     await page.keyboard.press('Delete');assert.deepEqual(await lines(page),['UXno','Dos']);assert.ok((await doc(page)).every(p=>!p.list));
     await page.keyboard.press('Control+z');assert.ok((await doc(page)).every(p=>p.list));
   });

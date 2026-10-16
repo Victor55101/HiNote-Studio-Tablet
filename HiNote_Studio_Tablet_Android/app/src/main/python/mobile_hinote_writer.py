@@ -53,7 +53,7 @@ def _load_template(template_hinote: Path):
     return entries, roots[0], _gunzip_json(entries[roots[0]]), pages[0], _gunzip_json(entries[pages[0]])
 
 
-def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title="Nueva nota", thumbnails=None, images=None, check_cancelled=None):
+def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title="Nueva nota", thumbnails=None, images=None, pdf_pages=None, check_cancelled=None):
     check = check_cancelled or (lambda: None)
     template_hinote = Path(template_hinote)
     output_hinote = Path(output_hinote)
@@ -93,6 +93,20 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
         if name.startswith("files/") and name not in old_page_files:
             files[name] = data
 
+    pdf_pages=pdf_pages or [None]*len(generated_bins)
+    if len(pdf_pages)!=len(generated_bins): raise ValueError("Las páginas de PDF deben corresponder a las páginas de la nota")
+    pdf_attachments={};pdf_hashes={}
+    for ref in pdf_pages:
+        if not ref: continue
+        check();source=Path(ref["path"])
+        if source not in pdf_hashes: pdf_hashes[source]=_sha(source)
+        digest=pdf_hashes[source]
+        if digest not in pdf_attachments:
+            name=digest+"_pdf.pdf";attachment_id=uuid.uuid4().hex
+            files["files/"+name]=source;pdf_attachments[digest]=(attachment_id,name)
+            note.setdefault("attachment",[]).append({"attachType":3,"cloudSyncState":1,"createTime":now_ms,"data1":'{"synDataTpye":"memonote"}',
+                "filePath":"/data/data/com.huawei.hinote/files/importfiles/"+name,"id":attachment_id,"isDelete":0,"modifiedTime":now_ms,"notesId":note_id,"playbackProgress":0})
+            root_obj.setdefault("fileList",[]).append({"hash":digest,"name":name})
     page_records = []
     for idx, (bin_path, thumb_path) in enumerate(zip(generated_bins, thumbnails), start=1):
         check()
@@ -138,6 +152,10 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
             page["attachment"] = []
         else:
             page_obj["fileList"].append({"hash": _sha(bin_path), "name": Path(bin_name).name})
+        page.pop("bkgAttachmentId",None);page.pop("bkgAttachmentIndex",None)
+        if pdf_pages[idx-1]:
+            ref=pdf_pages[idx-1];attachment_id,_=pdf_attachments[pdf_hashes[Path(ref["path"])]]
+            page["bkgAttachmentId"]=attachment_id;page["bkgAttachmentIndex"]=int(ref["index"])
         page["pageElement"] = []
         for layer, image in enumerate(images[idx - 1]):
             check()

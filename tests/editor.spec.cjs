@@ -46,16 +46,16 @@ test('Lists continue, terminate empty items and advance alphabetic markers', asy
 test('Repeated size, color, opacity and list operations preserve formatting', async page => {
   await setup(page,'Texto importante'); await select(page,{line:0,offset:0},{line:0,offset:16});
   await page.selectOption('#sizeSel','150'); await page.selectOption('#sizeSel','200');
-  await page.fill('#hexInput','#336699'); await page.fill('#opacity','45');
+  await page.fill('#hexInput','#336699'); await page.selectOption('#opacity','45');
   await page.selectOption('#sizeSel','100');
   assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
-  await page.click('[data-tab="text"]');if(!(await page.isVisible('#applyList')))await page.click('#listToggle'); await page.click('#applyList'); await page.click('#indentBtn'); await page.click('#outdentBtn'); await page.click('#removeList');
+  await page.click('[data-tab="text"]');if(!(await page.isVisible('#listType')))await page.click('#listToggle'); await page.selectOption('#listType','num_dot'); await page.click('#indentBtn'); await page.click('#outdentBtn'); await page.selectOption('#listType','none');
   assert.deepEqual(await page.evaluate(() => readLines()[0]),[{text:'Texto importante',scale:1,color:'#336699',opacity:45,thickness:0}]);
 });
 test('A selection ending at the next line start excludes that line', async page => {
   await setup(page,'uno\ndos'); await select(page,{line:0,offset:0},{line:1,offset:0}); await page.selectOption('#sizeSel','150');
   assert.equal(await page.evaluate(() => readLines()[0][0].scale),1.5); assert.equal(await page.evaluate(() => readLines()[1][0].scale),1);
-  await page.click('[data-tab="text"]');if(!(await page.isVisible('#applyList')))await page.click('#listToggle'); await page.click('#applyList'); assert.deepEqual(await lines(page),['uno','dos']);
+  await page.click('[data-tab="text"]');if(!(await page.isVisible('#listType')))await page.click('#listToggle'); await page.selectOption('#listType','num_dot'); assert.deepEqual(await lines(page),['uno','dos']);
 });
 test('Collapsing the caret clears the old formatting selection', async page => {
   await setup(page,'uno dos'); await select(page,{line:0,offset:0},{line:0,offset:3}); await page.selectOption('#sizeSel','150');
@@ -195,7 +195,7 @@ test('Image moves do not recompose text, and only current page images are mounte
 });
 test('Reload preserves images, crops and empty pages without putting binary data in draft',async page=>{
   await setup(page,'Con imagen');await importImage(page);await page.click('#rotateImageRight');
-  await page.click('#imageNewPage');await importImage(page,'b',[480,640]);
+  await page.evaluate(()=>{const state=ImageEditor.state();state.minimumPages=ImageEditor.count()+1;ImageEditor.restore(state);currentPage=state.minimumPages-1;drawCurrent();});await importImage(page,'b',[480,640]);
   const before=await imageState(page);await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
   assert.deepEqual(await imageState(page),before);assert.deepEqual(await lines(page),['Con imagen']);
   assert.ok(await page.evaluate(()=>localStorage.getItem(DRAFT_KEY).length)<2500);
@@ -233,7 +233,7 @@ test('Image metadata is frozen during export and extra image pages are included'
 test('Native thickness survives selected formatting, lists, undo and draft reload',async page=>{
   await setup(page,'* Hola');await page.evaluate(()=>{const ls=readLines(),meta=paragraphOf(ls[0]);meta.list.markerStyle.thickness=3;renderLines(ls);checkpoint();});
   await select(page,{line:0,offset:0},{line:0,offset:4});await page.selectOption('#thicknessSel','1');
-  const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_thickness,3);assert.equal(doc.paragraphs[0].segments[0].thickness,1);
+  const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_thickness,1);assert.equal(doc.paragraphs[0].segments[0].thickness,1);
   await page.click('#undoBtn');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].segments[0].thickness),0);
   await page.click('#redoBtn');await page.evaluate(()=>saveDraft());await page.reload();await page.waitForSelector('#editor .line');
   assert.deepEqual(await page.evaluate(()=>serializeDocument()),doc);
@@ -563,7 +563,7 @@ test('Formula power and subscript share the preceding base and deleting an index
   await page.click('#mathDone');const script=await page.evaluate(()=>serializeDocument().paragraphs[0].object.expression.items.find(n=>n.type==='scripts'));
   assert.equal(script.base.items[0].text,'Q');assert.equal(script.sub.items[0].text,'1');assert.equal(script.sup.items[0].text,'2');
   await page.click('.objectBlock button');const power=page.getByLabel('Exponente',{exact:true});await power.selectText();await page.keyboard.press('Backspace');
-  await page.getByRole('textbox',{name:'Subíndice',exact:true}).selectText();await page.keyboard.press('Backspace');
+  await page.getByRole('textbox',{name:'Subíndice',exact:true}).selectText();await page.keyboard.press('Backspace');await page.keyboard.press('Backspace');await page.getByLabel('Exponente',{exact:true}).click();await page.keyboard.press('Backspace');
   assert.equal(await page.locator('.mathScripts').count(),0);assert.equal(await page.locator('.mathSlot').inputValue(),'Q');
 });
 test('Formula incomplete fractions stay editable and cannot export a residual blank denominator',async page=>{
@@ -850,16 +850,16 @@ test('V36 saves both transfer outcomes across reload and includes them in its re
 test('V38 text controls follow each selection and reapply 90 percent without an intermediate value',async page=>{
   await setup(page,'primero segundo');await select(page,{line:0,offset:0},{line:0,offset:7});await page.selectOption('#sizeSel','90');
   await select(page,{line:0,offset:8},{line:0,offset:15});assert.equal(await page.inputValue('#sizeSel'),'100');await page.selectOption('#sizeSel','90');
-  await page.fill('#opacity','75');await page.fill('#hexInput','#2468AC');await page.selectOption('#thicknessSel','3');
+  await page.selectOption('#opacity','75');await page.fill('#hexInput','#2468AC');await page.selectOption('#thicknessSel','3');
   const segments=await page.evaluate(()=>readLines()[0]);assert.equal(segments.at(-1).scale,.9);assert.equal(segments.at(-1).opacity,75);assert.equal(segments.at(-1).color,'#2468AC');assert.equal(segments.at(-1).thickness,3);
   await select(page,{line:0,offset:0},{line:0,offset:7});assert.equal(await page.inputValue('#opacity'),'100');assert.equal(await page.inputValue('#hexInput'),'#000000');assert.equal(await page.inputValue('#thicknessSel'),'0');
-  await select(page,{line:0,offset:0},{line:0,offset:15});assert.equal(await page.inputValue('#sizeSel'),'mixed');assert.equal(await page.inputValue('#opacity'),'');
-  await select(page,{line:0,offset:8},{line:0,offset:15});await page.fill('#opacity','80');await page.press('#opacity','ArrowUp');assert.equal(await page.inputValue('#opacity'),'81');assert.equal(await page.evaluate(()=>readLines()[0].at(-1).opacity),81);
-  await page.fill('#opacity','');await page.keyboard.type('85');assert.equal(await page.inputValue('#opacity'),'85');assert.equal(await page.evaluate(()=>readLines()[0].at(-1).opacity),85);
+  await select(page,{line:0,offset:0},{line:0,offset:15});assert.equal(await page.inputValue('#sizeSel'),'mixed');assert.equal(await page.inputValue('#opacity'),'mixed');
+  await select(page,{line:0,offset:8},{line:0,offset:15});await page.selectOption('#opacity','80');assert.equal(await page.inputValue('#opacity'),'80');assert.equal(await page.evaluate(()=>readLines()[0].at(-1).opacity),80);
+  await page.selectOption('#opacity','85');assert.equal(await page.inputValue('#opacity'),'85');assert.equal(await page.evaluate(()=>readLines()[0].at(-1).opacity),85);
   assert.equal(await page.locator('#applyFormat').count(),0);
 });
 test('V38 list indentation reaches zero, follows paragraphs, and migrates old drafts once',async page=>{
-  await setup(page,'• uno\n• dos');await select(page,{line:0,offset:5});await page.click('[data-tab="text"]');if(!(await page.isVisible('#applyList')))await page.click('#listToggle');
+  await setup(page,'• uno\n• dos');await select(page,{line:0,offset:5});await page.click('[data-tab="text"]');if(!(await page.isVisible('#listType')))await page.click('#listToggle');
   await page.click('#indentBtn');assert.equal(await page.inputValue('#listIndent'),'1');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),1);
   await page.click('#outdentBtn');assert.equal(await page.inputValue('#listIndent'),'0');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.base_indent_squares),0);
   await select(page,{line:1,offset:5});await page.fill('#listIndent','3');await page.press('#listIndent','Tab');assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[1].list.indent_squares),3);assert.equal(await page.evaluate(()=>serializeDocument().paragraphs[0].list.level),0);
@@ -1255,10 +1255,11 @@ require('./list_marker_size.spec.cjs')({test,setup,select,lines,paste,assert});
 require('./text_editing.spec.cjs')({test,setup,select,lines,paste,assert});
 require('./theme.spec.cjs')({test,setup,select,lines,assert,openTable});
 require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTable});
+require('./v50.spec.cjs')({test,setup,select,lines,assert,openMath,graphPane});
 
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/theme.js','/theme.css','/editor.js','/text_model.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/theme.js','/theme.css','/editor.js','/text_model.js','/pdfs.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
@@ -1270,9 +1271,9 @@ require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTa
       await context.route('https://hinote.local/images/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect x="10" y="10" width="620" height="460" fill="#21bca8"/><circle cx="320" cy="240" r="140" fill="#273c75"/></svg>'}));
       await context.addInitScript(() => { window.bridgeCalls=[]; window.AndroidBridge={
         getTheme:()=>localStorage.getItem("native-theme")||"light",setTheme:theme=>{localStorage.setItem("native-theme",theme);bridgeCalls.push(["theme",theme]);},
-        invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
+        setPreviewPage:(...a)=>bridgeCalls.push(['preferred-page',...a]),invalidateCompose:(...a)=>bridgeCalls.push(['invalidate',...a]), requestCompose:(...a)=>bridgeCalls.push(['compose',...a]),
         requestPage:(...a)=>bridgeCalls.push(['page',...a]),requestPageHD:(...a)=>bridgeCalls.push(['pageHD',...a]), requestSave:(...a)=>bridgeCalls.push(['save',...a]),requestOpenNotes:(...a)=>bridgeCalls.push(['open-notes',...a]), cancelExport:()=>bridgeCalls.push(['cancel']),
-        requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
+        requestPdf:(...a)=>bridgeCalls.push(['import-pdf',...a]),requestImage:(...a)=>bridgeCalls.push(['import',...a]),getDraft:()=>localStorage.getItem('native-draft')||'',saveDraft:raw=>{localStorage.setItem('native-draft',raw);return true;},
         getExportFolder:()=>localStorage.getItem('test-export-folder')||'{"configured":false,"label":""}',requestExportFolder:()=>bridgeCalls.push(['folder']),clearExportFolder:()=>bridgeCalls.push(['clear-folder']),
         requestNotebookImport:(...a)=>bridgeCalls.push(['notebook-import',...a]),requestNotebookAction:(...a)=>bridgeCalls.push(['notebook-action',...a]),cancelNotebook:()=>bridgeCalls.push(['notebook-cancel']),
         isNotesProbe:()=>localStorage.getItem('test-probe-enabled')==='true',hasProbeShare:()=>false,requestProbeAction:(...a)=>bridgeCalls.push(['probe-action',...a])}; });

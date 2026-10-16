@@ -14,7 +14,7 @@ let folderBusy = false, exportFolderState = {configured:false,label:''};
 let saveRequested = false;
 let activeProfile = 'original';
 let elementClipboard = null, pendingExportMode = 'save', currentExportMode = 'save';
-const isBlockLine=line=>TableEditor.isLine(line)||MathGraphEditor.isLine(line);
+const isBlockLine=line=>TableEditor.isLine(line)||MathGraphEditor.isLine(line)||PdfEditor.isLine(line);
 
 function bounded(value, min, max, fallback) {
   const n = Number(value); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
@@ -24,13 +24,14 @@ function cleanStyle(st = DEFAULT_STYLE) {
     color: /^#[\da-f]{6}$/i.test(st.color || '') ? st.color.toUpperCase() : '#000000',
     opacity: bounded(st.opacity, 1, 100, 100), thickness: Math.round(bounded(st.thickness,0,10,0)),
     ...(['sub','sup'].includes(st.script)?{script:st.script}:{}),
-    ...(['upper','lower','title','sentence','toggle'].includes(st.caseMode)?{caseMode:st.caseMode}:{})};
+    ...Object.fromEntries(['bold','italic','underline'].filter(k=>st[k]===true||st[k]==='true').map(k=>[k,true]))};
 }
-function sameStyle(a, b) { return a.scale === b.scale && a.color === b.color && a.opacity === b.opacity && (a.thickness||0) === (b.thickness||0) && (a.script||'normal') === (b.script||'normal') && (a.caseMode||'normal') === (b.caseMode||'normal'); }
+function sameStyle(a, b) { return a.scale === b.scale && a.color === b.color && a.opacity === b.opacity && (a.thickness||0) === (b.thickness||0) && (a.script||'normal') === (b.script||'normal') && ['bold','italic','underline'].every(k=>!!a[k]===!!b[k]); }
 function mergeSegments(segments) {
   const out = [];
   for (const seg of segments) {
     if(seg.paragraph){out.push({text:'',paragraph:seg.paragraph});continue;}
+    if (seg.pdf) {out.push({text:'\uFFFC',pdf:PdfEditor.normalize(seg.pdf)});continue;}
     if (seg.tableId) { out.push({text:'\uFFFC',tableId:seg.tableId}); continue; }
     if (seg.objectId) { out.push({text:'\uFFFC',objectId:seg.objectId}); continue; }
     if (!seg.text) continue;
@@ -64,6 +65,7 @@ function readLines() {
     for (const child of node.childNodes) walk(child, st, out);
   }
   for (const node of editor.childNodes) {
+    if(node.nodeType===1&&node.dataset.pdf){if(loose.length){lines.push(mergeSegments(loose));loose=[];}lines.push([{text:'\uFFFC',pdf:PdfEditor.normalize(JSON.parse(node.dataset.pdf))}]);continue;}
     if (node.nodeType === 1 && (node.dataset.tableId || node.dataset.objectId)) {
       if(loose.length){lines.push(mergeSegments(loose));loose=[];}
       lines.push([{text:'\uFFFC',...(node.dataset.tableId?{tableId:node.dataset.tableId}:{objectId:node.dataset.objectId})}]);continue;
@@ -94,7 +96,8 @@ function renderParagraph(line,marker='') {
       span.style.fontSize=`${s.scale*(s.script? .65:1)}em`;
       if(s.script)span.style.verticalAlign=s.script==='sup'?'super':'sub';
       span.style.color=editorInk(s.color,s.opacity);
-      span.style.fontWeight=s.thickness?String(Math.min(850,400+s.thickness*35)):'400';
+      span.style.fontWeight=String(Math.min(900,(s.bold?700:400)+(s.thickness||0)*25));
+      span.style.fontStyle=s.italic?'italic':'normal';span.style.textDecoration=s.underline?'underline':'none';
       span.textContent=s.text;div.append(span);
     }
   }
@@ -104,7 +107,8 @@ function renderParagraph(line,marker='') {
 function renderLines(lines) {
   const fragment=document.createDocumentFragment(),markers=listMarkers(lines);
   lines.forEach((line,i)=>{
-    if(TableEditor.isLine(line))fragment.append(TableEditor.block(line));
+    if(PdfEditor.isLine(line))fragment.append(PdfEditor.block(line));
+    else if(TableEditor.isLine(line))fragment.append(TableEditor.block(line));
     else if(MathGraphEditor.isLine(line))fragment.append(MathGraphEditor.block(line));
     else fragment.append(renderParagraph(line,markers[i]));
   });editor.replaceChildren(fragment);syncMarkerSelection();
@@ -119,7 +123,7 @@ function modelPoint(node, offset) {
   let root = node;
   while (root.parentNode && root.parentNode !== editor) root = root.parentNode;
   const line = Math.max(0, Array.prototype.indexOf.call(editor.childNodes, root));
-  if(root.dataset?.tableId||root.dataset?.objectId)return {line,offset:0};
+  if(root.dataset?.tableId||root.dataset?.objectId||root.dataset?.pdf)return {line,offset:0};
   const range = document.createRange(); range.setStart(root, 0); range.setEnd(node, offset);
   return {line, offset: range.toString().length};
 }
@@ -134,10 +138,11 @@ function bookmark() {
   return savedSelection ? JSON.parse(JSON.stringify(savedSelection)) : null;
 }
 function captureSelection() {
+  if(editorGesture?.preserve)return;
   const sel = getSelection();
   if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
     savedSelection = bookmark();
-    if(markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
+    if(!editorGesture?.preserve&&markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
     if(!ime && typingState && (!collapsed(savedSelection)||!pointEqual(typingState.point,savedSelection.start)))typingState=null;
     if (!document.activeElement?.closest('#panelText,#colorDialog')) syncTextControls();
     syncListControls();
@@ -152,9 +157,9 @@ function selectionStyles() {
 function syncTextControls() {
   const styles=selectionStyles();if(!styles.length)return;
   const common=key=>styles.every(s=>s[key]===styles[0][key])?styles[0][key]:null;
-  for(const [id,key,factor] of [['sizeSel','scale',100],['thicknessSel','thickness',1]]){
+  for(const [id,key,factor] of [['sizeSel','scale',100],['thicknessSel','thickness',1],['opacity','opacity',1]]){
     let value=common(key);
-    if(key==='scale'&&!markerSelection&&$('listFormatTarget').value!=='text'){
+    if(key==='scale'&&!markerSelection){
       const mark=bookmark(),lines=readLines();
       if(mark&&selectedLineIndexes(mark).some(i=>fullListItem(lines[i],mark,i)&&paragraphOf(lines[i]).list.markerStyle.scale!==value))value=null;
     }
@@ -164,11 +169,11 @@ function syncTextControls() {
     control.value=text;control.dataset.mixed=String(value===null);
   }
   const opacity=common('opacity'),color=common('color');
-  $('opacity').value=opacity??'';$('opacity').placeholder=opacity===null?'Mixta':'';
   $('hexInput').value=color??'';$('hexInput').placeholder=color===null?'Mixto':'';
   $('colorPick').value=color||'#000000';$('colorPick').dataset.mixed=String(color===null);
   for(const [id,value] of [['subscriptBtn','sub'],['superscriptBtn','sup']]){const active=styles.every(s=>s.script===value),mixed=!active&&styles.some(s=>s.script===value);$(id).setAttribute('aria-pressed',mixed?'mixed':String(active));$(id).classList.toggle('active',active);}
-  $('caseSel').value=common('caseMode')||'';
+  $('caseSel').value='';$('caseSel').disabled=!!markerSelection||!bookmark()||collapsed(bookmark());
+  for(const key of ['bold','italic','underline']){const active=styles.every(s=>s[key]),mixed=!active&&styles.some(s=>s[key]);$(key+'Btn').setAttribute('aria-pressed',mixed?'mixed':String(active));$(key+'Btn').classList.toggle('active',active);}
 }
 function syncListControls(){
   if(document.activeElement===$('listIndent'))return;
@@ -176,13 +181,13 @@ function syncListControls(){
   const values=selectedLineIndexes(mark).filter(i=>!isBlockLine(lines[i])).map(i=>paragraphIndent(paragraphOf(lines[i])));
   if(values.length){$('listIndent').value=values.every(v=>v===values[0])?values[0]:'';$('listIndent').placeholder='Mixta';}
   const list=paragraphOf(lines[mark.start.line]).list;
-  if(list){$('listType').value=list.type;$('listStart').value=list.start;}
+  $('listType').value=list?.type||'none';if(list)$('listStart').value=list.start;
   for(const id of ['continueList','restartList','setListStart'])$(id).disabled=!list;
 
 }
 function domPoint(point) {
   const line = editor.childNodes[Math.min(point.line, editor.childNodes.length - 1)] || editor;
-  if(line.dataset?.tableId||line.dataset?.objectId)return [editor,Math.max(0,[...editor.childNodes].indexOf(line))];
+  if(line.dataset?.tableId||line.dataset?.objectId||line.dataset?.pdf)return [editor,Math.max(0,[...editor.childNodes].indexOf(line))];
   const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
   let remaining = point.offset, node, last;
   while ((node = walker.nextNode())) {
@@ -196,7 +201,7 @@ function restoreSelection(mark, focus=true) {
   if(focus)editor.focus({preventScroll: true}); const sel = getSelection(); sel.removeAllRanges();
   if(mark.backward)sel.setBaseAndExtent(...domPoint(mark.end),...domPoint(mark.start));else sel.addRange(range);
   savedSelection = bookmark();
-  if(markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
+  if(!editorGesture?.preserve&&markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
   if(focus){syncTextControls();syncListControls();}
 }
 function resumeEditor(mark=bookmark()) {
@@ -242,7 +247,7 @@ function undoRedo(direction) {
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
   historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines)&&JSON.stringify(TableEditor.state().tables)===JSON.stringify(data.tables||{})&&JSON.stringify(MathGraphEditor.state().mathObjects)===JSON.stringify(data.mathObjects||{});
-  typingState=null;markerSelection=entry.markers||null;if(markerSelection)$('listFormatTarget').value='markers';TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
+  typingState=null;markerSelection=entry.markers||null;TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
   if(sameText){ImageEditor.modified();drawCurrent();}else changed();
 }
 function replaceText(lines, mark, text, soft=false, rich=null) {
@@ -284,7 +289,7 @@ function applyStyle(patch) {
   // the open color dialog retain focus while the user is entering a value.
   const focused=document.activeElement,keep=!!focused?.closest('#colorDialog')||!!(focused?.matches('input')&&focused.closest('#panelText'));
   if(markerSelection){
-    const ink=Object.fromEntries(Object.entries(patch).filter(([key])=>['scale','color','opacity','thickness'].includes(key)));
+    const ink=Object.fromEntries(Object.entries(patch).filter(([key])=>['scale','color','opacity','thickness','bold','italic','underline'].includes(key)));
     if(!Object.keys(ink).length)return;
     typingState=null;edit((lines,selection)=>{
       for(const i of selectedMarkerIndexes(lines)){const meta=paragraphOf(lines[i]);lines[i]=withParagraph(lines[i],{...meta,list:{...meta.list,markerStyle:cleanStyle({...meta.list.markerStyle,...ink})}});}
@@ -297,15 +302,12 @@ function applyStyle(patch) {
     const node=editor.children[mark.start.line],line=readLines()[mark.start.line];
     if(!lineText(line)){
       const meta={...paragraphOf(line),format:typingState.style};
-      if(meta.list&&patch.scale!==undefined&&$('listFormatTarget').value!=='text'){
-        meta.list={...meta.list,markerStyle:cleanStyle({...meta.list.markerStyle,scale:patch.scale})};
-        edit((lines,selection)=>{lines[selection.start.line]=withParagraph(line,meta);return {lines,selection,typingStyle:meta.format};},keep);
-      }else{decorateParagraph(node,withParagraph(line,meta),node.dataset.marker||'');queueDraft();}
+      decorateParagraph(node,withParagraph(line,meta),node.dataset.marker||'');queueDraft();
     }
     if(!keep)resumeEditor(mark);syncTextControls();return;
   }
   typingState=null;
-  edit((lines,selection)=>({lines:patchRuns(lines,selection,patch,$('listFormatTarget').value!=='text'),selection}),keep);
+  edit((lines,selection)=>({lines:patchRuns(lines,selection,patch,true),selection}),keep);
   syncTextControls();
 }
 function alphaMarker(number, upper = false) {
@@ -330,14 +332,15 @@ function enter(soft=false) {
     if(isBlockLine(lines[mark.start.line])){const at=mark.start.line+1;lines.splice(at,0,[]);return {lines,selection:{start:{line:at,offset:0},end:{line:at,offset:0}}};}
     const meta=paragraphOf(lines[mark.start.line]);
     if(!soft && meta.list && !lineText(lines[mark.start.line]).trim() && collapsed(mark)){
-      const next={...meta};if(meta.list.level>0)next.list={...meta.list,level:meta.list.level-1};else delete next.list;
+      const next={...meta};if(meta.list.level>0)next.list={...meta.list,level:meta.list.level-1};else{delete next.list;delete next.indent;delete next.listExit;}
       lines[mark.start.line]=withParagraph([],next);return {lines,selection:mark,typingStyle:insertionStyle(mark,lines)};
     }
+    if(!soft&&meta.listExit&&!lineText(lines[mark.start.line]).trim()&&collapsed(mark)){const next={...meta};delete next.listExit;delete next.indent;lines[mark.start.line]=withParagraph([],next);return {lines,selection:mark};}
     return replaceText(lines,mark,'\n',soft);
   });
 }
 function changeCase(mode) {
-  const mark=bookmark();if(!mark)return;if(collapsed(mark)){applyStyle({caseMode:mode||'normal'});return;}
+  const mark=bookmark();if(!mark)return;if(collapsed(mark)||markerSelection||!mode)return;
   edit((lines, selection) => {
     let wordStart = true, sentenceStart = true;
     for (const i of selectedLineIndexes(selection)) {
@@ -356,7 +359,7 @@ function changeCase(mode) {
         wordStart = !/[\p{L}\p{N}]/u.test(c); return out;
       }).join('')}));
       const length = selected.reduce((n, s) => n + s.text.length, 0);
-      lines[i] = withParagraph([...sliceSegments(lines[i], 0, a), ...selected.map(s=>({...s,caseMode:mode})), ...sliceSegments(lines[i], b)],paragraphOf(lines[i]));
+      lines[i] = withParagraph([...sliceSegments(lines[i], 0, a), ...selected, ...sliceSegments(lines[i], b)],paragraphOf(lines[i]));
       if (i === selection.end.line) selection.end.offset += length - (b - a);
       wordStart = true;
     }
@@ -371,13 +374,14 @@ function serializeDocument() {
   const config = settings();
   const lines=readLines(),markers=listMarkers(lines);
   return {paragraphs:lines.map((line,i)=>{
+    if(PdfEditor.isLine(line))return {type:'pdf',pdf:PdfEditor.normalize(line[0].pdf)};
     if(TableEditor.isLine(line))return {type:'table',table:TableEditor.get(line[0].tableId)};
     if(MathGraphEditor.isLine(line)){const object=MathGraphEditor.get(line[0].objectId);return {type:object.kind,object};}
     const meta=paragraphOf(line),l=meta.list,segments=line.filter(s=>!s.paragraph);
-    if(!l)return {segments,...(meta.indent?{indent_squares:meta.indent}:{})};
+    if(!l)return {segments,...(meta.indent?{indent_squares:meta.indent}:{}),...(meta.listExit?{list_exit:meta.listExit}:{})};
     const indent=paragraphIndent(meta),style=l.markerStyle;
     return {segments,list:{id:l.id,type:l.type,marker:markers[i],level:l.level,indent_squares:indent,base_indent_squares:0,
-      marker_scale:style.scale,marker_color:style.color,marker_opacity:style.opacity,marker_thickness:style.thickness}};
+      marker_scale:style.scale,marker_color:style.color,marker_opacity:style.opacity,marker_thickness:style.thickness,...Object.fromEntries(['bold','italic','underline'].filter(k=>style[k]).map(k=>['marker_'+k,true]))}};
   })};
 }
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.add('show'); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500); }
@@ -417,13 +421,13 @@ function restoreDraft() {
   } catch (_) { return false; }
 }
 function controls() {
-  const calibrationBusy=CalibrationUI.isBusy()||NotebookUI.isBusy();
+  const calibrationBusy=CalibrationUI.isBusy()||NotebookUI.isBusy()||PdfEditor.isBusy();
   $('charCount').textContent = `${characterCount().toLocaleString('es')} caracteres`;
   $('exportBtn').disabled = calibrationBusy || folderBusy || exporting || saveRequested || ImageEditor.isBusy();
   $('exportNotesBtn').disabled = $('exportBtn').disabled;
   $('refreshBtn').disabled = exporting || saveRequested || calibrationBusy || folderBusy; $('cancelBtn').classList.toggle('hidden', !composing && !exporting);
-  $('prevPage').disabled = exporting || composing || currentPage <= 0;
-  $('nextPage').disabled = exporting || composing || currentPage >= ImageEditor.count() - 1;
+  $('prevPage').disabled = exporting || currentPage <= 0;
+  $('nextPage').disabled = exporting || currentPage >= ImageEditor.count() - 1;
   editor.contentEditable = String(!exporting && !calibrationBusy); $('noteTitle').disabled = exporting || calibrationBusy;
   document.querySelectorAll('.toolbar input,.toolbar select,.toolbar button').forEach(el => el.disabled = exporting || folderBusy);
   $('undoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex <= 0; $('redoBtn').disabled = exporting || ImageEditor.isBusy() || historyIndex >= history.length - 1;
@@ -466,7 +470,7 @@ function refreshPreview() {
   clearTimeout(refreshTimer); if (exporting || CalibrationUI.isBusy() || NotebookUI.isBusy() || MathGraphEditor.isOpen() || TableEditor.isOpen() || folderBusy || ime) return; saveDraft();
   if (!window.AndroidBridge) { $('status').textContent = 'El motor está disponible en la app Android'; return; }
   revision++; composing = true; $('status').textContent = 'Preparando páginas…'; controls();
-  try { AndroidBridge.requestCompose(JSON.stringify(serializeDocument()), JSON.stringify(settings()), revision); }
+  try { AndroidBridge.setPreviewPage?.(currentPage);AndroidBridge.requestCompose(JSON.stringify(serializeDocument()), JSON.stringify(settings()), revision); }
   catch (e) { composing = false; $('status').textContent = 'Error'; toast(e.message); controls(); }
 }
 window.onComposeResult = (id, json) => {
@@ -479,17 +483,37 @@ window.onComposeResult = (id, json) => {
     warnings.forEach(message => { const li = document.createElement('li'); li.textContent = message; $('warnings').append(li); });
     $('warningPanel').classList.toggle('hidden', warnings.length === 0); $('warningCount').textContent = `${warnings.length} avisos de escritura`;
     $('status').textContent = 'Cargando página…'; drawCurrent();
-  } catch (e) { saveRequested=false;$('status').textContent = 'No se pudo generar'; toast(e.message); }
+  } catch (e) { previewRevision=-1;saveRequested=false;$('status').textContent = 'No se pudo generar'; toast(e.message); }
   controls();
   if(saveRequested){saveRequested=false;exportNote(pendingExportMode);}
 };
+window.onComposePageReady = (id, json, index, data) => {
+  if(id!==revision||!composing||index!==currentPage)return;
+  const result=JSON.parse(json),img=new Image(),request=++pageRequest;
+  const fresh=()=>id===revision&&composing&&index===currentPage&&request===pageRequest;
+  const release=()=>{img.onload=null;img.onerror=null;img.src='';};
+  img.onload=()=>{
+    if(!fresh()){release();return;}
+    result.page_count=Math.max(result.page_count,composition?.page_count||1);
+    composition=result;previewRevision=id;requestedPreview=null;
+    shownPreview={snapshot:result.snapshot,index,resolution:1};
+    const canvas=$('previewCanvas');canvas.width=img.width;canvas.height=img.height;canvas.getContext('2d').drawImage(img,0,0);
+    release();applyZoom();$('pageBadge').textContent=`Página ${currentPage+1}/${ImageEditor.count()}`;
+    $('status').textContent='Actualizando las demás páginas…';controls();
+  };
+  img.onerror=release;img.src=data;
+};
 window.onWorkProgress = (kind, id, page) => {
-  if (kind === 'compose' && id === revision && composing) $('status').textContent = `Preparando página ${page}…`;
+  if (kind === 'compose' && id === revision && composing) $('status').textContent = previewRevision===id?'Actualizando las demás páginas…':`Preparando página ${page}…`;
   if (kind === 'export' && exporting) $('status').textContent = `Guardando página ${page}…`;
   if (kind === 'calibration') window.onCalibrationProgress(id,`Analizando página ${page}…`);
 };
 function drawCurrent() {
+  window.AndroidBridge?.setPreviewPage?.(currentPage);
+  const keep=shownPreview?.snapshot===composition?.snapshot&&shownPreview?.index===currentPage;
+  const previousShown=shownPreview;
   clearTimeout(qualityTimer);requestedPreview=null;shownPreview=null;
+  if(keep)shownPreview=previousShown;
   ImageEditor.finishGesture(false);ImageEditor.render();
   TableEditor.render();
   MathGraphEditor.render();
@@ -498,8 +522,9 @@ function drawCurrent() {
   if(!composition || currentPage >= composition.page_count){
     pageRequest++;const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);applyZoom();return;
   }
-  if (previewRevision !== revision) {const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);return;}
-  const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);
+  if (previewRevision !== revision || composing) {if(!keep){const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);}return;}
+  if(!keep){const c=$('previewCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);}
+  if(keep)$('status').textContent='Listo';
   requestPreview();
 }
 function requestPreview(){
@@ -524,6 +549,8 @@ window.onPageResult = (id, snapshot, index, data, error) => {
 };
 function applyZoom() {
   const canvas = $('previewCanvas'), shell = $('canvasShell'); canvas.style.display = 'block';
+  // PDF blocks occupy dedicated pages; their raster is below user images.
+  shell.classList.toggle('pdfPage',!!composition?.pdf_pages?.[currentPage]);
   canvas.style.width = `${675 * zoom}px`; canvas.style.height = `${1080 * zoom}px`;
   shell.style.width = `${675 * zoom}px`; shell.style.height = `${1080 * zoom}px`; shell.style.flexShrink = '0'; $('zoomLabel').textContent = `${Math.round(zoom * 100)}%`;
   ImageEditor.render();
@@ -549,17 +576,20 @@ document.querySelector('.toolbar').addEventListener('pointerdown', captureSelect
 $('tabs').addEventListener('click', event => {const tab=event.target.closest('[data-tab]');if(tab)window.StudioUI?.setTab(tab.dataset.tab);});
 $('colorPick').addEventListener('input', () => {const color=$('colorPick').value.toUpperCase();$('hexInput').value=color;applyStyle({color});});
 $('hexInput').addEventListener('input', () => { const color=$('hexInput').value.trim().replace(/^#?/, '#').toUpperCase();if(/^#[\da-f]{6}$/i.test(color)){$('colorPick').value=color;applyStyle({color});} });
-$('opacity').addEventListener('input',()=>{if($('opacity').value!==''&&$('opacity').validity.valid)applyStyle({opacity:Number($('opacity').value)});});
+$('opacity').addEventListener('change',()=>{if($('opacity').value!=='mixed')applyStyle({opacity:Number($('opacity').value)});});
 $('sizeSel').addEventListener('change', () => {if($('sizeSel').value!=='mixed')applyStyle({scale: bounded($('sizeSel').value, 35, 200, 100) / 100});});
 $('thicknessSel').addEventListener('change', () => {if($('thicknessSel').value!=='mixed')applyStyle({thickness: Math.round(bounded($('thicknessSel').value,0,10,0))});});
 $('caseSel').addEventListener('change', () => { const mode = $('caseSel').value; changeCase(mode); });
-for (const [id, action] of [['applyList','apply'],['removeList','remove'],['indentBtn','indent'],['outdentBtn','outdent'],['continueList','continue'],['restartList','restart'],['setListStart','start']]) $(id).onclick = () => modifyLists(action);
+for (const [id, action] of [['indentBtn','indent'],['outdentBtn','outdent'],['continueList','continue'],['restartList','restart'],['setListStart','start']]) $(id).onclick = () => modifyLists(action);
+for(const key of ['bold','italic','underline'])$(key+'Btn').onclick=()=>toggleTextAttribute(key);
+$('insertPdf').onclick=()=>PdfEditor.request();
 $('subscriptBtn').onclick=()=>toggleScript('sub');$('superscriptBtn').onclick=()=>toggleScript('sup');
 $('undoBtn').onclick = () => undoRedo(-1); $('redoBtn').onclick = () => undoRedo(1);
 editor.addEventListener('keydown', event => {
   if (ime || event.isComposing) return;
   if ((event.ctrlKey || event.metaKey) && !event.altKey && ['z','y'].includes(event.key.toLowerCase())) {
     event.preventDefault(); undoRedo(event.key.toLowerCase() === 'y' || event.shiftKey ? 1 : -1);
+  } else if ((event.ctrlKey||event.metaKey)&&!event.altKey&&['b','i','u'].includes(event.key.toLowerCase())){event.preventDefault();toggleTextAttribute({b:'bold',i:'italic',u:'underline'}[event.key.toLowerCase()]);
   } else if (event.key === 'Enter') { event.preventDefault(); enter(event.shiftKey); }
   else if (event.key === 'Tab') { event.preventDefault();const mark=bookmark();if(mark&&paragraphOf(readLines()[mark.start.line]).list&&(mark.start.offset===0||!collapsed(mark)))modifyLists(event.shiftKey?'outdent':'indent');else insertText('\t'); }
   else if ((event.key==='Backspace'||event.key==='Delete') && deleteStructure(event.key==='Backspace'))event.preventDefault();

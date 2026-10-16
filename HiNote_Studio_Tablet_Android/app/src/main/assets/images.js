@@ -105,7 +105,7 @@ const ImageEditor = (() => {
     const im=selected();
     document.querySelectorAll('[data-image-action]').forEach(n=>n.disabled=exporting||busy||folderBusy||!im);
     el('insertImage').disabled=exporting||busy||folderBusy||images.length>=200;
-    el('imageNewPage').disabled=exporting||busy||folderBusy||count()>=500;
+
     if(im && document.activeElement!==el('imageAngle'))el('imageAngle').value=Math.round(normalizeAngle(im.angle)*10)/10;
     if(im && document.activeElement!==el('imagePage'))el('imagePage').value=im.page+1;
     el('imageHint').classList.toggle('hidden',!active);
@@ -271,7 +271,6 @@ const ImageEditor = (() => {
   el('imageBack').onclick=()=>reorder(false);el('imageFront').onclick=()=>reorder(true);
   el('deleteImage').onclick=()=>edit(()=>{images=images.filter(im=>im.id!==selectedId);selectedId=null;});
   el('duplicateImage').onclick=()=>{if(images.length>=200||images.filter(im=>im.page===currentPage).length>=20){toast('Límite: 20 imágenes por página y 200 por nota');return;}edit(()=>{const im=selected();if(im){const copy=clone(im);copy.id=newId();copy.x+=25;copy.y+=25;fit(copy);images.push(copy);selectedId=copy.id;}});};
-  el('imageNewPage').onclick=()=>{if(count()>=500)return;edit(()=>{minimumPages=count()+1;currentPage=minimumPages-1;selectedId=null;});drawCurrent();};
   // A second finger switches an object-body drag to a page pinch. Track in
   // capture phase because the object owns the first pointer's drag events.
   el('previewWrap').addEventListener('pointerdown',e=>{

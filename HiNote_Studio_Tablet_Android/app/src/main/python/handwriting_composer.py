@@ -201,7 +201,7 @@ def _flatten_segments(segments: list[dict], base_scale: float) -> list[dict]:
         for ch in unicodedata.normalize("NFC", str(seg.get("text", ""))):
             yield {"ch": ch, "scale": seg_scale, "color": color, "opacity": opacity,
                    "thickness": width_level(seg.get("thickness", 0)),
-                   "body_scale": body_scale, "script": script}
+                   "body_scale": body_scale, "script": script, **{k: seg.get(k) is True for k in ("bold", "italic", "underline")}}
 
 
 def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word_spacing: float, warnings: list[str]):
@@ -213,9 +213,9 @@ def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word
         if ch == "\n":
             yield {"kind": "break", "ch": ch, "scale": scale}
         elif ch == "\t":
-            yield {"kind": "space", "ch": ch, "scale": scale, "width": word_spacing * scale * 4.0, "color": color, "opacity": opacity}
+            yield {"kind": "space", "ch": ch, "scale": scale, "width": word_spacing * scale * 4.0, "color": color, "opacity": opacity, "underline": c.get("underline",False)}
         elif ch.isspace():
-            yield {"kind": "space", "ch": ch, "scale": scale, "width": word_spacing * scale, "color": color, "opacity": opacity}
+            yield {"kind": "space", "ch": ch, "scale": scale, "width": word_spacing * scale, "color": color, "opacity": opacity, "underline": c.get("underline",False)}
         else:
             variants = glyphs.get(ch)
             if not variants:
@@ -231,15 +231,16 @@ def _choose_char_items(chars: list[dict], glyphs: dict, rng: random.Random, word
                 "variant": variant_index,
                 "glyph": glyph,
                 "advance": _base_advance(glyph, scale),
-                "visual_left": _glyph_visual_left(glyph, scale),
-                "visual_right": _glyph_visual_right(glyph, scale),
+                "visual_left": _glyph_visual_left(glyph, scale) - (max(0, (glyph.get("bbox") or [0,0,0,0])[3])*.2*scale if c.get("italic") else 0),
+                "visual_right": _glyph_visual_right(glyph, scale) - (min(0, (glyph.get("bbox") or [0,0,0,0])[1])*.2*scale if c.get("italic") else 0),
                 "color": color,
                 "opacity": opacity,
                 "thickness": c.get("thickness", 0),
                 "body_scale": c.get("body_scale", scale),
                 "script": c.get("script"),
                 # Coordinates shrink; calibrated/native pen widths do not.
-                "width_scale": 1,
+                "width_scale": 1.5 if c.get("bold") else 1,
+                "italic": c.get("italic", False), "underline": c.get("underline", False),
                 "baseline_shift": (-25 if c.get("script") == "sup" else 11 if c.get("script") == "sub" else 0) * c.get("body_scale", scale),
             }
 
@@ -380,6 +381,7 @@ def _layout_paragraph_lines(items, first_x, continuation_x, right_limit, letter_
                 pending_space = dict(item)
             else:
                 pending_space["width"] += item["width"]
+                pending_space["underline"] = pending_space.get("underline",False) and item.get("underline",False)
             continue
         if long_word:
             if current and not fits(current + [item], start_x):
@@ -435,12 +437,15 @@ def _place_glyph_sequence(
     rng: random.Random,
 ):
     origin_x = float(x)
+    underlines = []
     prev_glyph = None
     pending_space = 0.0
 
     for item in sequence:
         if item["kind"] == "space":
             pending_space += float(item["width"])
+            if not item.get("underline") and underlines and underlines[-1][3] is not None:
+                underlines.append([0,0,0,None,None])
             continue
 
         if prev_glyph is None:
@@ -474,7 +479,7 @@ def _place_glyph_sequence(
             points = []
             for p in source_stroke["points"]:
                 points.append({
-                    "x": float(glyph_x + p["x"] * scale),
+                    "x": float(glyph_x + (p["x"] - (.2*p["y"] if item.get("italic") else 0)) * scale),
                     "y": float(glyph_baseline + p["y"] * scale),
                     "t": int(p.get("dt", p.get("t", 0))),
                     "pressure": float(p["pressure"]),
@@ -498,8 +503,24 @@ def _place_glyph_sequence(
                 "points": points,
             })
 
+        if item.get("underline") and glyph["strokes"]:
+            underline_y = baseline_y + float(item.get("baseline_shift", 0)) + 9 * scale
+            ink = (item.get("color", "#000000"), item.get("opacity", 100), item.get("thickness", 0), item.get("width_scale", 1))
+            left, right = glyph_x+item["visual_left"], glyph_x+item["visual_right"]
+            if underlines and underlines[-1][3] == ink and abs(underlines[-1][2]-underline_y)<.01:
+                underlines[-1][1] = right
+            else: underlines.append([left, right, underline_y, ink, glyph["strokes"][0]])
+        elif underlines and underlines[-1][3] is not None:
+            underlines.append([0,0,0,None,None])
         prev_glyph = item
 
+    for left, right, uy, ink, source in underlines:
+        if ink is None: continue
+        stroke = copy.deepcopy(source)
+        sample = source["points"][0]
+        stroke.update(char="_", color=ink[0], opacity=ink[1], thickness=ink[2], width_scale=ink[3],
+                      points=[{**sample, "x": left, "y": uy}, {**sample, "x": max(left+1,right), "y": uy, "t": 12}])
+        page["strokes"].append(stroke)
     if prev_glyph is None:
         return origin_x + pending_space
     return max(origin_x + float(prev_glyph.get("visual_right", 0.0)) + pending_space, x)
@@ -565,6 +586,8 @@ def compose_document(
     check_cancelled=None,
     max_pages=500,
     library_data=None,
+    resume_state=None,
+    checkpoint_sink=None,
 ):
     """Compose a rich document into Huawei PencilEngine-ready stroke geometry.
 
@@ -589,6 +612,17 @@ def compose_document(
     baseline_y = float(margin_top)
     bottom_limit = float(page_height) - float(margin_bottom)
     table_bottom = None
+    start_index = 0
+    if resume_state:
+        def tuples(value):
+            return tuple(tuples(v) for v in value) if isinstance(value, list) else value
+        start_index = resume_state["index"]
+        current_page = copy.deepcopy(resume_state["page"])
+        baseline_y = resume_state["baseline_y"]
+        table_bottom = resume_state["table_bottom"]
+        rng.setstate(tuples(resume_state["rng"]))
+        glyph_rng.setstate(tuples(resume_state["glyph_rng"]))
+        warnings.extend(resume_state["warnings"])
 
     def page():
         return current_page
@@ -613,9 +647,24 @@ def compose_document(
         paragraphs = [{"segments": [{"text": "", "scale": 1.0}], "list": None}]
 
     consumed = set()
+    checkpoint_page = -1
     for paragraph_index, para in enumerate(paragraphs):
-        if paragraph_index in consumed: continue
+        if paragraph_index < start_index or paragraph_index in consumed: continue
         check()
+        # One checkpoint per page, only at safe paragraph/group boundaries.
+        # The partial page and both RNGs make a resumed result byte-identical.
+        if checkpoint_sink and current_page["page_number"] != checkpoint_page:
+            checkpoint_sink({"index": paragraph_index, "page": current_page,
+                "baseline_y": baseline_y, "table_bottom": table_bottom,
+                "rng": rng.getstate(), "glyph_rng": glyph_rng.getstate(), "warnings": warnings})
+            checkpoint_page = current_page["page_number"]
+        if para.get("type") == "pdf":
+            if current_page["strokes"] or current_page.get("pdf"): new_page()
+            current_page["pdf"] = dict(para["pdf"])
+            continue
+        if current_page.get("pdf"):
+            if paragraph_index == len(paragraphs)-1 and not para.get("type") and not any(seg.get("text") for seg in para.get("segments",[])): continue
+            new_page()
         if para.get("type") in ("formula", "graph"):
             from math_graph_composer import plan_object, draw_object
             from table_composer import GRID, HALF
@@ -692,7 +741,7 @@ def compose_document(
             marker_color = _normalize_hex_color(list_info.get("marker_color", "#000000"))
             marker_opacity = max(1.0, min(100.0, float(list_info.get("marker_opacity", 100.0))))
             marker_chars = [{"ch": ch, "scale": marker_scale, "color": marker_color, "opacity": marker_opacity,
-                             "thickness": width_level(list_info.get("marker_thickness", 0))} for ch in str(list_info.get("marker", "•"))]
+                             "thickness": width_level(list_info.get("marker_thickness", 0)), **{k: list_info.get("marker_"+k) is True for k in ("bold", "italic", "underline")}} for ch in str(list_info.get("marker", "•"))]
             marker_items = list(_choose_char_items(marker_chars, glyphs, glyph_rng, float(word_spacing), warnings))
 
             # V13: each logical list group can carry its own base indentation.
@@ -710,6 +759,14 @@ def compose_document(
         else:
             marker_center = None
             first_x = float(margin_left) + max(0, min(12, float(para.get("indent_squares", 0)))) * grid_step
+            exit_info = para.get("list_exit")
+            if exit_info:
+                first_x = float(exit_info["indent"]) * grid_step
+                if exit_info["stage"] == "body":
+                    exit_chars = _flatten_segments([{**exit_info["style"], "text":exit_info["marker"]}], base_scale)
+                    exit_items = list(_choose_char_items(exit_chars, glyphs, random.Random(seed), float(word_spacing), warnings))
+                    _, left, right = _sequence_metrics(exit_items, float(letter_spacing))
+                    first_x += max(grid_step, right-left+12)+14
             continuation_x = first_x
 
         right_limit = float(page_width) - float(margin_right) + float(wrap_tolerance) - 4.0

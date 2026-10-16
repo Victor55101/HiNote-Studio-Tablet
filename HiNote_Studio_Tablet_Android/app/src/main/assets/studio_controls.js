@@ -3,7 +3,7 @@
 (()=>{
   const $=id=>document.getElementById(id), controls=new Map();
   let opened=null, popup=null, shield=null, activeIndex=-1, typeAhead='', typedAt=0, completedTap=null, selectContext=null;
-  const textSelects=new Set(['sizeSel','thicknessSel','caseSel','listType','listFormatTarget']);
+  const textSelects=new Set(['sizeSel','thicknessSel','caseSel','listType','opacity']);
   function fieldContext(){
     const field=writable(document.activeElement);if(!field)return null;
     if(field===editor)return {field,mark:bookmark()};
@@ -109,6 +109,10 @@
     const button=document.createElement('button');button.type='button';button.className='selectButton';button.dataset.selectFor=select.id;button.setAttribute('role','combobox');button.setAttribute('aria-haspopup','listbox');button.setAttribute('aria-expanded','false');
     const text=document.createElement('span');text.className='selectValue';button.append(text,StudioUI.icon('chevron'));wrapper.append(button);controls.set(select,{wrapper,button,text});
     button.onclick=e=>{e.preventDefault();e.stopPropagation();openSelect(select);};button.onkeydown=e=>key(select,e);
+    let buttonTap=null;
+    button.onpointerdown=e=>{if(e.pointerType!=='mouse')buttonTap={id:e.pointerId,x:e.clientX,y:e.clientY};};
+    button.onpointercancel=()=>buttonTap=null;
+    button.onpointerup=e=>{const tap=buttonTap;buttonTap=null;if(tap?.id===e.pointerId&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<10){e.preventDefault();e.stopPropagation();absorbTap(e);openSelect(select);}};
     select.addEventListener('focus',()=>button.focus({preventScroll:true}));
     select.addEventListener('change',sync);
     if(select.size>1){
@@ -165,11 +169,10 @@
   // Back closes the foremost UI layer using its existing Cancel handler.
   window.hinoteHandleBack=()=>{
     if(closeSelect())return true;
-    if(markerSelection){clearMarkerSelection();return true;}
     if(!$('colorDialog').classList.contains('hidden')){StudioUI.closeColor();return true;}
     for(const [dialog,button] of [['cropDialog','cancelCrop'],['mathDialog','mathCancel'],['tableDialog','tableCancel'],['calibrationDialog','closeCalibration'],['notebookDialog','notebookClose'],['probeDialog','probeClose']]){
       if($(dialog)&&!$(dialog).classList.contains('hidden')){$(button)?.click();return true;}
-    }return false;
+    }if(markerSelection){clearMarkerSelection();return true;}return false;
   };
 
   const writable=target=>{
@@ -184,7 +187,7 @@
   // physical-keyboard destination merely because they were tapped/clicked.
   document.addEventListener('pointerdown',e=>{
     const field=writable(document.activeElement),button=e.target.closest?.('button');
-    if(field&&(button?.matches('.selectButton,.colorButton')||field===editor&&button?.closest('.toolbar,.topbar')))e.preventDefault();
+    if(field&&(button?.matches('.selectButton,.colorButton')||field===editor&&button?.closest('.toolbar,.topbar,.previewFooter')))e.preventDefault();
   },true);
   for(const input of document.querySelectorAll('.toolbar input:not([type=color]):not([type=checkbox])'))input.addEventListener('keydown',e=>{
     if((e.key==='Enter'||e.key==='Escape')&&!e.isComposing){e.preventDefault();e.stopPropagation();input.dispatchEvent(new Event('change',{bubbles:true}));resumeEditor();}

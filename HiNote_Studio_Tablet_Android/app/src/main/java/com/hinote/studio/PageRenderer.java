@@ -15,6 +15,12 @@ final class PageRenderer {
     static void renderForExport(String json, File destination, JSONArray images, File paper, Runnable check) throws Exception {
         render(json, destination, false, 0, images, false, paper, check);
     }
+    static void renderForExport(String json, File destination, JSONArray images, File paper, File pdf, Runnable check) throws Exception {
+        render(json,destination,false,0,images,false,paper,1,pdf,check);
+    }
+    static void renderPreview(String json, File destination, int resolution, File pdf, Runnable check) throws Exception {
+        render(json,destination,false,0,new JSONArray(),true,null,resolution>1?2:1,pdf,check);
+    }
     static void render(String json, File destination, boolean grid, double gridStep, Runnable check) throws Exception {
         render(json, destination, grid, gridStep, new JSONArray(), false, check);
     }
@@ -28,13 +34,20 @@ final class PageRenderer {
         render(json, destination, grid, gridStep, images, inkOnly, paper, 1, check);
     }
     private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, int resolution, Runnable check) throws Exception {
+        render(json,destination,grid,gridStep,images,inkOnly,paper,resolution,null,check);
+    }
+    private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, int resolution, File pdf, Runnable check) throws Exception {
         check.run();
         // At most 1350 x 2160 (11.2 MiB), one page at a time. Export size is unchanged.
         Bitmap bitmap=Bitmap.createBitmap(675*resolution,1080*resolution,Bitmap.Config.ARGB_8888);
         File partial=new File(destination.getPath()+".part");
         try {
             Canvas canvas=new Canvas(bitmap); canvas.drawColor(inkOnly ? Color.TRANSPARENT : Color.WHITE);
-            if(paper!=null){
+            if(pdf!=null){
+                Bitmap background=ImageStore.decode(pdf,2160);
+                try{canvas.drawBitmap(background,null,new Rect(0,0,bitmap.getWidth(),bitmap.getHeight()),new Paint(Paint.FILTER_BITMAP_FLAG));}finally{background.recycle();}
+            }
+            if(paper!=null&&pdf==null){
                 Bitmap nativePaper=ImageStore.decode(paper,1080);
                 try{
                     if(nativePaper.getWidth()!=675 || nativePaper.getHeight()!=1080)throw new IOException("Papel nativo inválido");

@@ -1,6 +1,8 @@
 """Disk-backed, cancellable mobile pipeline; WebView never receives full geometry."""
 from __future__ import annotations
 import json
+import gzip
+import os
 import math
 import re
 import shutil
@@ -45,7 +47,12 @@ def _document(raw):
     chars = segments = cells = 0
     table_ids, object_ids = set(), set()
     for para in paragraphs:
-        if para.get("type") == "table":
+        if para.get("type") == "pdf":
+            pdf=para.get("pdf",{})
+            if not re.fullmatch(r"[a-f0-9]{64}",str(pdf.get("asset",""))) or not isinstance(pdf.get("index"),int) or not 0<=pdf["index"]<500:
+                raise ValueError("Página de PDF inválida")
+            current_segments=[]
+        elif para.get("type") == "table":
             table = validate_table(para["table"])
             if table["id"] in table_ids: raise ValueError("Tabla duplicada en el documento")
             table_ids.add(table["id"])
@@ -72,6 +79,15 @@ def _document(raw):
             seg["thickness"] = width_level(seg.get("thickness", 0))
             if seg.get("script") not in (None, "normal", "sub", "sup"):
                 raise ValueError("Posición de texto no válida.")
+        for key in ("bold", "italic", "underline"):
+            for seg in current_segments:
+                if key in seg and not isinstance(seg[key], bool): raise ValueError("Formato de texto inválido")
+        if para.get("list_exit"):
+            e = para["list_exit"]
+            e["indent"] = _number(e.get("indent",0),0,12)
+            if e.get("stage") not in ("body","marker") or len(str(e.get("marker","")))>80: raise ValueError("Sangría de lista inválida")
+            style=e.setdefault("style",{})
+            style["scale"]=_number(style.get("scale",1),.35,2)
         if "indent_squares" in para:
             para["indent_squares"] = _number(para["indent_squares"], 0, 12)
         info = para.get("list")
@@ -104,12 +120,37 @@ def _snapshot(cache_dir, snapshot_id):
         raise ValueError("La vista previa ya no está disponible. Actualízala.")
     return path
 
-def compose(project_dir, cache_dir, document_json, settings_json, token=None):
+def compose(project_dir, cache_dir, document_json, settings_json, token=None, previous_snapshot=None):
     _check(token)
     doc, settings = _document(document_json), _settings(settings_json)
     project, cache = Path(project_dir), Path(cache_dir)
     profile_id = json.loads(settings_json or "{}").get("profile", "original")
     library, fallback, profile_revision = calibration.resolve(project, profile_id)
+    inputs = {"version": 50, "paragraphs": doc["paragraphs"], "settings": settings,
+              "profile": profile_id, "profile_revision": profile_revision}
+    previous = old_info = resume = None
+    checkpoints = []
+    if previous_snapshot:
+        try:
+            previous = _snapshot(cache, previous_snapshot)
+            old_inputs = json.loads((previous / "inputs.json").read_text(encoding="utf-8"))
+            old_info = json.loads((previous / "manifest.json").read_text(encoding="utf-8"))
+            if all(old_inputs.get(k) == inputs[k] for k in ("version", "settings", "profile", "profile_revision")):
+                common = 0
+                for a, b in zip(old_inputs["paragraphs"], inputs["paragraphs"]):
+                    if a != b: break
+                    common += 1
+                # A changed/inserted beside-object can change its preceding group.
+                while common and inputs["paragraphs"][common-1].get("type") in ("formula", "graph"):
+                    common -= 1
+                entries = json.loads((previous / "checkpoints.json").read_text(encoding="utf-8"))
+                eligible = [i for i in entries if i <= common and i < len(inputs["paragraphs"])]
+                if eligible:
+                    with gzip.open(previous / f"state-{max(eligible)}.json.gz", "rt", encoding="utf-8") as source:
+                        resume = json.load(source)
+                    checkpoints = [i for i in eligible if i <= resume["index"]]
+        except (OSError, ValueError, KeyError, TypeError):
+            resume = None; checkpoints = []
     snapshot_id = uuid.uuid4().hex
     work = cache / snapshot_id
     work.mkdir(parents=True)
@@ -117,7 +158,46 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
     stroke_counts = []
     table_pages = []
     object_pages = []
+    pdf_pages = []
     try:
+        def ready():
+            if token is not None and hasattr(token, "onPageReady"):
+                token.onPageReady(snapshot_id, _json({"snapshot": snapshot_id,
+                    "page_count": len(stroke_counts), "table_pages": table_pages,
+                    "object_pages": object_pages, "pdf_pages": pdf_pages}))
+                _check(token)
+        def copy_cached(name):
+            nonlocal cache_bytes
+            _check(token)
+            source, target = previous / name, work / name
+            try: os.link(source, target)
+            except OSError: shutil.copyfile(source, target)
+            cache_bytes += target.stat().st_size
+        reused_pages = 0
+        if resume:
+            reused_pages = resume["page"]["page_number"] - 1
+            for index in range(reused_pages):
+                for suffix in ("bin", "json"):
+                    copy_cached(f"page-{index}.{suffix}")
+                cached_png = f"page-{index}-ink.png"
+                if (previous / cached_png).is_file(): copy_cached(cached_png)
+            stroke_counts.extend(old_info["stroke_counts"][:reused_pages])
+            table_pages.extend(old_info["table_pages"][:reused_pages])
+            object_pages.extend(old_info["object_pages"][:reused_pages])
+            pdf_pages.extend(old_info.get("pdf_pages", [None]*reused_pages)[:reused_pages])
+            for i in checkpoints: copy_cached(f"state-{i}.json.gz")
+            if reused_pages: ready()
+        def save_checkpoint(state):
+            nonlocal cache_bytes
+            _check(token)
+            index = state["index"]
+            if index in checkpoints: return
+            path = work / f"state-{index}.json.gz"
+            with gzip.open(path, "wt", encoding="utf-8", compresslevel=1) as target:
+                json.dump(state, target, ensure_ascii=False, separators=(",", ":"))
+            cache_bytes += path.stat().st_size
+            checkpoints.append(index)
+            if cache_bytes > MAX_CACHE_BYTES: raise ValueError("La nota supera el espacio de trabajo de 512 MB")
         def sink(page):
             nonlocal cache_bytes
             _check(token)
@@ -125,6 +205,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             stroke_counts.append(len(page["strokes"]))
             table_pages.append(page.get("tables", []))
             object_pages.append(page.get("objects", []))
+            pdf_pages.append(page.get("pdf"))
             if shutil.disk_usage(cache).free < 20 * 1024 * 1024:
                 raise ValueError("No queda suficiente espacio para generar la nota.")
             binary = work / f"page-{index}.bin"
@@ -133,14 +214,17 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
             preview = {"strokes": [[s.get("color", "#000000"), s.get("opacity", 100),
                 [[round(p["x"],3),round(p["y"],3),round(p["pressure"],4)] for p in s["points"]], native_width(s)]
                 for s in page["strokes"]]}
+            if page.get("pdf"): preview["pdf"]=page["pdf"]
             preview_path = work / f"page-{index}.json"
             preview_path.write_text(_json(preview), encoding="utf-8")
             cache_bytes += binary.stat().st_size + preview_path.stat().st_size
             if cache_bytes > MAX_CACHE_BYTES:
                 raise ValueError("La nota supera el espacio de trabajo de 512 MB; divídela en varias notas.")
             if token is not None: token.onProgress(index + 1)
+            ready()
         result = compose_document(project / "glyphs_v24.json", doc, **settings,
-            page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library)
+            page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library,
+            resume_state=resume, checkpoint_sink=save_checkpoint if previous_snapshot is not None else None)
         used = set()
         for para in doc["paragraphs"]:
             if para.get("type") in ("formula", "graph"):
@@ -156,8 +240,13 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None):
                     "stroke_counts": stroke_counts}
         manifest["table_pages"] = table_pages
         manifest["object_pages"] = object_pages
+        manifest["pdf_pages"] = pdf_pages
         manifest["profile"] = profile_id
         manifest["profile_revision"] = profile_revision
+        if previous_snapshot is not None:
+            manifest["reused_pages"] = reused_pages
+            (work / "inputs.json").write_text(_json(inputs), encoding="utf-8")
+            (work / "checkpoints.json").write_text(_json(checkpoints), encoding="utf-8")
         (work / "manifest.json").write_text(_json(manifest), encoding="utf-8")
         return _json(manifest)
     except BaseException:
@@ -184,6 +273,16 @@ def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_pat
     if export_dir and rendered.resolve().parent != Path(cache_dir).resolve():
         raise ValueError("Directorio de exportación inválido")
     images = _export_images(images_json, count, rendered)
+    pdf_pages=[]
+    for ref in info.get("pdf_pages",[]):
+        if ref:
+            asset=str(ref.get("asset",""))
+            if not re.fullmatch(r"[a-f0-9]{64}",asset): raise ValueError("PDF inválido")
+            path=Path(project_dir)/"pdfs-v50"/(asset+".pdf")
+            if not path.is_file(): raise ValueError("Falta un PDF del documento")
+            pdf_pages.append({**ref,"path":path})
+        else: pdf_pages.append(None)
+    pdf_pages += [None]*(count-len(pdf_pages))
     stroke_counts = info.get("stroke_counts", [1] * info["page_count"])
     bins = [work/f"page-{i}.bin" if i < info["page_count"] and stroke_counts[i] else None for i in range(count)]
     # `grid` is a preview-only preference, retained in the bridge signature.
@@ -193,7 +292,7 @@ def export_snapshot(project_dir, cache_dir, snapshot_id, title, grid, output_pat
     try:
         _check(token)
         build_hinote_multi(Path(project_dir)/"template_1stroke.hinote", bins, output,
-            title=title or "Nueva nota", thumbnails=thumbs, images=images, check_cancelled=lambda: _check(token))
+            title=title or "Nueva nota", thumbnails=thumbs, images=images, pdf_pages=pdf_pages, check_cancelled=lambda: _check(token))
         if not validate_hinote(output, check_cancelled=lambda: _check(token), quiet=True):
             raise RuntimeError("La nota generada no pasó la validación local")
         _check(token)

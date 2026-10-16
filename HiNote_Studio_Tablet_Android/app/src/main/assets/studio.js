@@ -125,10 +125,9 @@ window.StudioUI = (() => {
   }
   function init(){
     for(const [id,key] of [['undoBtn','undo'],['redoBtn','redo'],['pasteMath','paste'],['prevPage','left'],['nextPage','right']])decorate(id,key,true);
-    for(const [id,key] of [['insertImage','image'],['insertTable','table'],['insertFormula','formula'],['insertGraph','graph'],['imageNewPage','plus']])decorate(id,key);
+    for(const [id,key] of [['insertImage','image'],['insertTable','table'],['insertFormula','formula'],['insertGraph','graph'],['insertPdf','plus']])decorate(id,key);
     decorate('listToggle','list');const caseLabel=node('label','field caseField','Estilo');el('caseSel').before(caseLabel);caseLabel.append(el('caseSel'));
-    el('listToggle').onclick=()=>{listExpanded=!listExpanded;ribbon();};el('listType').addEventListener('change',()=>modifyLists('apply'));
-    el('removeList').addEventListener('click',()=>{listExpanded=false;ribbon();});
+    el('listToggle').onclick=()=>{listExpanded=!listExpanded;ribbon();};el('listType').addEventListener('change',()=>modifyLists(el('listType').value==='none'?'remove':'apply'));
     buildGraph();buildTable();buildProfiles();buildColors();mathMode();
     for(const [id,label] of [['tableAddRow','Fila'],['tableAddCol','Columna']]){el(id).textContent=label;decorate(id,'plus');}
     el('prevPage').setAttribute('aria-label','Página anterior');el('nextPage').setAttribute('aria-label','Página siguiente');

@@ -17,7 +17,7 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
   });
   test('V46 changing format without a selection styles the first typed character only',async page=>{
     await setup(page,'Hola');await select(page,{line:0,offset:4});
-    await page.selectOption('#sizeSel','90');await page.fill('#hexInput','#2468AC');await page.fill('#opacity','60');await page.selectOption('#thicknessSel','4');
+    await page.selectOption('#sizeSel','90');await page.fill('#hexInput','#2468AC');await page.selectOption('#opacity','60');await page.selectOption('#thicknessSel','4');
     await select(page,{line:0,offset:4});await page.keyboard.type(' mundo');
     const r=await runs(page);assert.equal(r[0].text,'Hola');assert.equal(r[0].scale,1);
     assert.deepEqual(r[1],{text:' mundo',scale:.9,color:'#2468AC',opacity:60,thickness:4});
@@ -51,9 +51,10 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
     await page.evaluate(()=>editor.dispatchEvent(new CompositionEvent('compositionend',{data:'á',bubbles:true})));
     assert.deepEqual((await runs(page)).map(s=>[s.text,s.scale]),[['Hugo ',1],['á',.9]]);
   });
-  test('V46 case style applies to selection or new typing in its cursor context',async page=>{
-    await setup(page,'Hola ');await select(page,{line:0,offset:5});await page.selectOption('#caseSel','upper');await select(page,{line:0,offset:5});await page.keyboard.type('mundo');
-    assert.deepEqual(await lines(page),['Hola MUNDO']);await select(page,{line:0,offset:2});await page.keyboard.type('x');assert.deepEqual(await lines(page),['Hoxla MUNDO']);
+  test('V50 case conversion requires selected text and never changes future typing',async page=>{
+    await setup(page,'Hola ');await select(page,{line:0,offset:5});assert.ok(await page.isDisabled('#caseSel'));
+    await page.keyboard.type('mundo');await select(page,{line:0,offset:5},{line:0,offset:10});await page.selectOption('#caseSel','upper');
+    assert.deepEqual(await lines(page),['Hola MUNDO']);await select(page,{line:0,offset:10});await page.keyboard.type(' nuevo');assert.deepEqual(await lines(page),['Hola MUNDO nuevo']);
   });
   test('V46 list markers are structural and renumber after splitting or deleting paragraphs',async page=>{
     await setup(page,'Manzana\nPera\nUva');await select(page,{line:0,offset:0},{line:2,offset:3});await list(page);
@@ -70,7 +71,7 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
   });
   test('V46 list membership survives interruption and can continue or restart independently',async page=>{
     await setup(page,'uno\ndos\nexplicación\ntres\ncuatro');await select(page,{line:0,offset:0},{line:1,offset:3});await list(page);
-    await select(page,{line:3,offset:0},{line:4,offset:6});await page.click('#applyList');assert.deepEqual(await markers(page),['1.','2.','','1.','2.']);
+    await select(page,{line:3,offset:0},{line:4,offset:6});await page.selectOption('#listType','num_dot');assert.deepEqual(await markers(page),['1.','2.','','1.','2.']);
     await select(page,{line:3,offset:2});await page.click('#continueList');assert.deepEqual(await markers(page),['1.','2.','','3.','4.']);
     await page.click('#restartList');assert.deepEqual(await markers(page),['1.','2.','','1.','2.']);
     await page.fill('#listStart','7');await page.click('#setListStart');assert.deepEqual(await markers(page),['1.','2.','','7.','8.']);
@@ -86,7 +87,7 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
   test('V46 Backspace removes only the marker and empty Enter exits list levels',async page=>{
     await setup(page,'uno\ndos');await select(page,{line:0,offset:0},{line:1,offset:3});await list(page);
     await select(page,{line:1,offset:0});await page.keyboard.press('Backspace');assert.deepEqual(await lines(page),['uno','dos']);assert.deepEqual(await markers(page),['1.','']);
-    await page.click('#applyList');await select(page,{line:1,offset:3});await page.keyboard.press('Enter');await select(page,{line:2,offset:0});await page.keyboard.press('Tab');
+    await page.selectOption('#listType','num_dot');await select(page,{line:1,offset:3});await page.keyboard.press('Enter');await select(page,{line:2,offset:0});await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>paragraphOf(readLines()[2]).list.level),0);await page.keyboard.press('Enter');assert.equal((await markers(page))[2],'');
   });
   test('V46 deleting only item text keeps the marker and numbering',async page=>{
@@ -100,7 +101,7 @@ module.exports=({test,setup,select,lines,paste,assert})=>{
   });
   test('V49 whole-item size includes the marker while text ink remains independent',async page=>{
     await setup(page,'Elemento');await select(page,{line:0,offset:0},{line:0,offset:8});await list(page);await page.selectOption('#sizeSel','150');await page.fill('#hexInput','#FF3344');
-    const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_scale,1.5);assert.equal(doc.paragraphs[0].list.marker_color,'#000000');assert.equal(doc.paragraphs[0].segments[0].scale,1.5);
+    const doc=await page.evaluate(()=>serializeDocument());assert.equal(doc.paragraphs[0].list.marker_scale,1.5);assert.equal(doc.paragraphs[0].list.marker_color,'#FF3344');assert.equal(doc.paragraphs[0].segments[0].scale,1.5);
     const gap=await page.locator('#editor .line').evaluate(node=>{const text=document.createTreeWalker(node,NodeFilter.SHOW_TEXT).nextNode(),r=document.createRange();r.setStart(text,0);r.setEnd(text,1);return r.getBoundingClientRect().left-node.getBoundingClientRect().left;});assert.ok(gap>=30,'Body text must leave visible space for its marker');
   });
   test('V46 rich internal copy preserves runs and creates a separate list instance',async page=>{

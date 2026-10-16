@@ -376,6 +376,14 @@ def smooth_points(points):
     return out+[points[-1]]
 
 
+def format_tick(value):
+    """Use decimal digits in both axes, without binary rounding noise or e labels."""
+    from decimal import Decimal
+    text = format(Decimal(format(value, ".12g")), "f")
+    if "." in text: text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("-0", "") else text
+
+
 def graph_geometry(obj, unit=GRID):
     """Tick anchors and the editor share the sheet's half-square lattice.
 
@@ -576,7 +584,7 @@ def draw_graph(obj, painter):
                 if not obj.get('arrows',True) or (arrow_right-x if axis=='x' else y-arrow_top)>12:
                     line([(x,ay-3),(x,ay+3)] if axis=="x" else [(ax-3,y),(ax+3,y)])
                 if abs(value)>1e-9:
-                    text=f"{value:.5g}".replace("e+","e")
+                    text=format_tick(value)
                     label(text,x,ay+22, s=size*.72,align="center") if axis=="x" else label(text,ax-9,y+6,s=size*.72,align="right")
     # Keep stems and arrow wings in one ink tool with matching width/caps.
     painter.path(out,[(left,ay),(arrow_right,ay)],ink,thickness)
