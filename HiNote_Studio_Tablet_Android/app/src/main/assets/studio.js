@@ -25,8 +25,8 @@ window.StudioUI = (() => {
   function setTab(name){if(!['text','insert','page','save','calibration'].includes(name))return;activeTab=name;for(const b of el('tabs').children){const on=b.dataset.tab===name;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));}ribbon();}
   function meta(){
     el('noteSubtitle').textContent=(el('noteTitle').value||'Nueva nota')+' · '+el('draftStatus').textContent;
-    const current=!!composition&&previewRevision===revision&&!composing;
-    el('viewState').textContent=composing?'Actualizando…':current?'Vista al día':'Vista pendiente';el('viewState').classList.toggle('current',current);
+    const importingPdf=PdfEditor.isBusy(),current=!!composition&&previewRevision===revision&&!composing&&!importingPdf;
+    el('viewState').textContent=importingPdf?PdfEditor.status():composing?'Actualizando…':current?'Vista al día':'Vista pendiente';el('viewState').classList.toggle('current',current);
     el('viewState').title=el('status').textContent;
     if(current&&!exporting&&!saveRequested&&!folderBusy&&!CalibrationUI.isBusy()&&!NotebookUI.isBusy())el('refreshBtn').disabled=true;
   }

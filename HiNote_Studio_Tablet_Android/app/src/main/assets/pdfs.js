@@ -1,6 +1,6 @@
 'use strict';
 const PdfEditor=(()=>{
-  let busy=false,ticket=0,insertion=null,targetPage=0,resumePreview=false;
+  let busy=false,ticket=0,insertion=null,targetPage=0,resumePreview=false,progress='';
   const isLine=line=>!!line?.[0]?.pdf;
   const newId=()=>window.crypto?.randomUUID?.()||`pdf-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   function normalize(raw){
@@ -30,10 +30,10 @@ const PdfEditor=(()=>{
     captureSelection();insertion=bookmark();targetPage=currentPage;resumePreview=composing;saveDraft();
     clearTimeout(refreshTimer);clearTimeout(qualityTimer);
     if(composing){revision++;composing=false;AndroidBridge.invalidateCompose(revision);}
-    busy=true;controls();$('status').textContent='Selecciona un PDF para insertar…';
+    progress='Seleccionando PDF…';busy=true;controls();$('status').textContent='Selecciona un PDF para insertar…';
     try{AndroidBridge.requestPdf(++ticket);}catch(e){window.onPdfImported(ticket,null,e.message);}
   }
-  window.onPdfImportProgress=(id,message)=>{if(id===ticket&&busy)$('status').textContent=message;};
+  window.onPdfImportProgress=(id,message)=>{if(id===ticket&&busy){progress=message;$('status').textContent=message;window.StudioUI?.meta();}};
   window.onPdfImported=(id,raw,error)=>{
     if(id!==ticket||!busy)return;busy=false;controls();
     if(error||!raw){$('status').textContent=error?'No se pudo abrir el PDF':'Inserción cancelada';resumeEditor(insertion);if(error)toast(error);if(resumePreview)refreshPreview();return;}
@@ -52,5 +52,5 @@ const PdfEditor=(()=>{
       });currentPage=targetPage+1;drawCurrent();refreshPreview();toast(`PDF insertado después de la página ${targetPage+1}: ${pdf.pages} ${pdf.pages===1?'página':'páginas'}`);
     }catch(e){$('status').textContent='No se pudo insertar el PDF';toast(e.message);resumeEditor(insertion);}
   };
-  return {isLine,normalize,block,request,isBusy:()=>busy};
+  return {isLine,normalize,block,request,isBusy:()=>busy,status:()=>progress};
 })();

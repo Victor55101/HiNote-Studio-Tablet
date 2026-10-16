@@ -5,6 +5,9 @@ module.exports=({test,setup,select,assert})=>{
     await setup(page,'No perder texto');await select(page,{line:0,offset:4});await page.click('[data-tab=insert]');
     for(const kind of ['cancel','error','invalid']){
       await page.locator('#insertPdf').tap();
+      assert.match(await page.textContent('#viewState'),/Seleccionando PDF/);
+      await page.evaluate(()=>onPdfImportProgress(bridgeCalls.filter(c=>c[0]==='import-pdf').at(-1)[1],'Abriendo PDF…'));
+      assert.match(await page.textContent('#viewState'),/Abriendo PDF/);
       await page.evaluate(kind=>{const t=bridgeCalls.filter(c=>c[0]==='import-pdf').at(-1)[1];onPdfImported(t,kind==='invalid'?'{}':null,kind==='error'?'PDF protegido':null);},kind);
       assert.equal(await page.getAttribute('#editor','contenteditable'),'true');assert.equal(await page.isDisabled('#insertPdf'),false);assert.equal((await refs(page)).length,0);
       assert.deepEqual(await page.evaluate(()=>bookmark().start),{line:0,offset:4});
