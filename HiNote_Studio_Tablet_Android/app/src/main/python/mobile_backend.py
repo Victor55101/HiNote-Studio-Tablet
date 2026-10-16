@@ -51,6 +51,8 @@ def _document(raw):
             pdf=para.get("pdf",{})
             if not re.fullmatch(r"[a-f0-9]{64}",str(pdf.get("asset",""))) or not isinstance(pdf.get("index"),int) or not 0<=pdf["index"]<500:
                 raise ValueError("Página de PDF inválida")
+            if "after_page" in pdf and (type(pdf["after_page"]) is not int or not 0<=pdf["after_page"]<499):
+                raise ValueError("Posición de PDF inválida")
             current_segments=[]
         elif para.get("type") == "table":
             table = validate_table(para["table"])
@@ -126,7 +128,8 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
     project, cache = Path(project_dir), Path(cache_dir)
     profile_id = json.loads(settings_json or "{}").get("profile", "original")
     library, fallback, profile_revision = calibration.resolve(project, profile_id)
-    inputs = {"version": 50, "paragraphs": doc["paragraphs"], "settings": settings,
+    inputs = {"version": 51, "paragraphs": doc["paragraphs"], "settings": settings,
+              "page_insertions": [p["pdf"] for p in doc["paragraphs"] if p.get("type")=="pdf" and "after_page" in p["pdf"]],
               "profile": profile_id, "profile_revision": profile_revision}
     previous = old_info = resume = None
     checkpoints = []
@@ -135,7 +138,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
             previous = _snapshot(cache, previous_snapshot)
             old_inputs = json.loads((previous / "inputs.json").read_text(encoding="utf-8"))
             old_info = json.loads((previous / "manifest.json").read_text(encoding="utf-8"))
-            if all(old_inputs.get(k) == inputs[k] for k in ("version", "settings", "profile", "profile_revision")):
+            if all(old_inputs.get(k) == inputs[k] for k in ("version", "settings", "profile", "profile_revision", "page_insertions")):
                 common = 0
                 for a, b in zip(old_inputs["paragraphs"], inputs["paragraphs"]):
                     if a != b: break

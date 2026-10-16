@@ -638,6 +638,8 @@ def compose_document(
         if current_page["page_number"] >= max_pages:
             raise ValueError(f"El documento supera {max_pages} páginas; divídelo en notas más pequeñas.")
         finish_page()
+        if current_page["page_number"] >= max_pages:
+            raise ValueError(f"El documento supera {max_pages} páginas; divídelo en notas más pequeñas.")
         current_page = _new_page(current_page["page_number"] + 1)
         baseline_y = float(margin_top)
         table_bottom = None
@@ -646,10 +648,29 @@ def compose_document(
     if not paragraphs:
         paragraphs = [{"segments": [{"text": "", "scale": 1.0}], "list": None}]
 
+    # Page insertions do not split a paragraph/list item or a table in the editor.
+    # Interleave whole PDF pages at physical page boundaries, including a wrap
+    # inside one paragraph or between table rows. Coordinates and RNG stay intact.
+    anchored_pdfs = sorted((dict(p["pdf"]) for p in paragraphs
+        if p.get("type") == "pdf" and "after_page" in p["pdf"]), key=lambda p: p["after_page"])
+    pending_pdfs = [p for p in anchored_pdfs if p["after_page"] >= current_page["page_number"]-1]
+    emit_content_page = finish_page
+    def finish_page():
+        nonlocal current_page
+        emit_content_page()
+        while pending_pdfs and pending_pdfs[0]["after_page"] <= current_page["page_number"]-1:
+            check()
+            if current_page["page_number"] >= max_pages:
+                raise ValueError(f"El documento supera {max_pages} páginas; divídelo en notas más pequeñas.")
+            current_page = _new_page(current_page["page_number"]+1)
+            current_page["pdf"] = pending_pdfs.pop(0)
+            emit_content_page()
+
     consumed = set()
     checkpoint_page = -1
     for paragraph_index, para in enumerate(paragraphs):
         if paragraph_index < start_index or paragraph_index in consumed: continue
+        if para.get("type") == "pdf" and "after_page" in para["pdf"]: continue
         check()
         # One checkpoint per page, only at safe paragraph/group boundaries.
         # The partial page and both RNGs make a resumed result byte-identical.
@@ -834,7 +855,13 @@ def compose_document(
 
             baseline_y += grid_step * rows if snap_to_grid else grid_step * rows
 
+    # A target beyond the text can be an existing image-only/blank page.
     finish_page()
+    while pending_pdfs:
+        if current_page["page_number"] >= max_pages:
+            raise ValueError(f"El documento supera {max_pages} páginas; divídelo en notas más pequeñas.")
+        current_page = _new_page(current_page["page_number"]+1)
+        finish_page()
 
     composition = {
         "format": "hinote-composed-strokes-v5-rich",

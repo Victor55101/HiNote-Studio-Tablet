@@ -70,13 +70,21 @@ module.exports=({test,setup,select,lines,assert,openMath,graphPane})=>{
     await select(page,{line:0,offset:2});assert.equal(await page.getAttribute('#boldBtn','aria-pressed'),'false');await page.keyboard.type('Y');
     assert.deepEqual(await lines(page),['abYXcd']);assert.equal(await page.evaluate(()=>readLines()[0].find(s=>s.text.includes('Y')).bold),undefined);
   });
-  test('V50 PDF import inserts pages at the caret and survives undo and reload',async page=>{
-    await setup(page,'AntesDespués');await select(page,{line:0,offset:5});await page.click('[data-tab=insert]');assert.equal(await page.locator('#imageNewPage').count(),0);
+  test('V51 PDF inserts after the visible page and keeps selected text, undo and draft',async page=>{
+    await setup(page,'AntesDespués');await select(page,{line:0,offset:5},{line:0,offset:8});
+    await page.evaluate(()=>{composition={snapshot:'mock',page_count:4};currentPage=2;previewRevision=revision;controls();});
+    await page.click('[data-tab=insert]');assert.equal(await page.locator('#imageNewPage').count(),0);
+    const mark=await page.evaluate(()=>bookmark());
     await page.locator('#insertPdf').tap();assert.equal(await page.getAttribute('#editor','contenteditable'),'false');
     await page.evaluate(()=>onPdfImported(bridgeCalls.filter(c=>c[0]==='import-pdf').at(-1)[1],JSON.stringify({asset:'a'.repeat(64),pages:2,name:'Dos páginas.pdf'}),null));
-    let p=await doc(page);assert.equal(p[0].segments[0].text,'Antes');assert.deepEqual(p.filter(p=>p.type==='pdf').map(p=>p.pdf.index),[0,1]);assert.equal(p[3].segments[0].text,'Después');
-    await page.keyboard.type('X');assert.equal((await lines(page))[3],'XDespués');await page.evaluate(()=>saveDraft());await page.reload();assert.equal(await page.locator('.pdfBlock').count(),2);
-    await page.locator('.pdfBlock').first().getByRole('button',{name:'Eliminar página'}).click();assert.equal(await page.locator('.pdfBlock').count(),1);await page.click('#undoBtn');assert.equal(await page.locator('.pdfBlock').count(),2);
+    let p=await doc(page);assert.equal(p[0].segments[0].text,'AntesDespués');assert.deepEqual(p.filter(p=>p.type==='pdf').map(p=>[p.pdf.index,p.pdf.after_page]),[[0,2],[1,3]]);
+    assert.deepEqual(await page.evaluate(()=>bookmark()),mark);assert.equal(await page.evaluate(()=>currentPage),3);
+    assert.ok(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='compose')),'PDF insertion renders even with automatic preview off');
+    await page.evaluate(()=>saveDraft());await page.reload();assert.equal(await page.locator('.pdfBlock').count(),2);
+    assert.deepEqual((await doc(page)).filter(p=>p.type==='pdf').map(p=>p.pdf.after_page),[2,3]);
+    await page.locator('.pdfBlock').first().getByRole('button',{name:'Eliminar página'}).click();assert.equal(await page.locator('.pdfBlock').count(),1);
+    assert.equal((await doc(page)).find(p=>p.type==='pdf').pdf.after_page,2);
+    await page.click('#undoBtn');assert.equal(await page.locator('.pdfBlock').count(),2);assert.deepEqual((await doc(page)).filter(p=>p.type==='pdf').map(p=>p.pdf.after_page),[2,3]);
   });
   test('V50 visible page arrives early and obsolete render callbacks are ignored',async page=>{
     await setup(page,'Texto');await page.evaluate(()=>{composition={snapshot:'old',page_count:4};currentPage=2;controls();});await page.click('#refreshBtn');

@@ -225,7 +225,7 @@ function checkpoint() {
   historyIndex = history.length - 1; controls();
 }
 function edit(operation, keepControlFocus=false) {
-  if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || MathGraphEditor.isOpen() || NotebookUI.isBusy() || ime) return;
+  if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || MathGraphEditor.isOpen() || NotebookUI.isBusy() || PdfEditor.isBusy() || ime) return;
   const held=keepControlFocus?document.activeElement:null;
   const fieldRange=held&&typeof held.selectionStart==='number'?[held.selectionStart,held.selectionEnd]:null;
   normalizeRoots(); checkpoint();
@@ -242,7 +242,7 @@ function edit(operation, keepControlFocus=false) {
   checkpoint(); changed();
 }
 function undoRedo(direction) {
-  if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || MathGraphEditor.isOpen() || NotebookUI.isBusy() || ime || ImageEditor.isBusy()) return;
+  if (exporting || CalibrationUI.isBusy() || TableEditor.isOpen() || MathGraphEditor.isOpen() || NotebookUI.isBusy() || PdfEditor.isBusy() || ime || ImageEditor.isBusy()) return;
   ImageEditor.finishGesture(false);
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;

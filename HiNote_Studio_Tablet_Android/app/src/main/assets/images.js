@@ -31,6 +31,14 @@ const ImageEditor = (() => {
     });
   }
   function state() { return {images:clone(images),minimumPages}; }
+  function splicePages(start,remove,add){
+    const delta=add-remove;
+    images=images.filter(im=>im.page<start||im.page>=start+remove);
+    for(const im of images)if(im.page>=start+remove)im.page+=delta;
+    if(minimumPages>=start+remove)minimumPages=Math.max(1,minimumPages+delta);
+    minimumPages=Math.max(minimumPages,start+add);
+    if(!images.some(im=>im.id===selectedId))selectedId=null;
+  }
   function restore(data) {
     images=sanitize(data.images || []); minimumPages=clamp(Math.floor(Number(data.minimumPages)||1),1,500); selectedId=null;
     if (typeof currentPage !== 'undefined') render();
@@ -300,6 +308,6 @@ const ImageEditor = (() => {
     }
     if(e.key==='Escape'&&active){finishGesture(true);select(null);}
   });
-  return {state,restore,count,render,updateControls,mode,finishGesture,sanitize,selected,select,normalizeAngle,
+  return {state,restore,count,render,updateControls,mode,finishGesture,sanitize,selected,select,normalizeAngle,splicePages,
     hitAt:e=>active?(cornerAt(e)?selected():hit(point(e))):null,isBusy:()=>busy||folderBusy,exportJSON:()=>JSON.stringify(images),selection,modified};
 })();

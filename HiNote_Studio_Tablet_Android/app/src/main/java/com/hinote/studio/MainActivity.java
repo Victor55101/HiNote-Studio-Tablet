@@ -28,7 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MainActivity extends Activity {
-    private static final int REQUEST_SAVE=501, REQUEST_IMAGE=502, REQUEST_FOLDER=503, REQUEST_PDF=504;
+    // 504/505 belong to calibration; 506/507 belong to notebook operations.
+    private static final int REQUEST_SAVE=501, REQUEST_IMAGE=502, REQUEST_FOLDER=503, REQUEST_PDF=508;
     private static final Object ENGINE_START_LOCK=new Object();
     private WebView webView;
     private KeyboardController keyboardController;
@@ -263,9 +264,11 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public void requestPdf(int ticket){
-            if(destroyed||notebookBusy.get()||calibrating.get()||exporting.get()||choosingFolder.get()||!importing.compareAndSet(false,true))return;
+            if(destroyed||notebookBusy.get()||calibrating.get()||exporting.get()||choosingFolder.get()||!importing.compareAndSet(false,true)){
+                send("onPdfImported",ticket+",null,"+quote("Espera a que termine la operación actual"));return;
+            }
             importTicket=ticket;
-            runOnUiThread(()->{try{Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/pdf");startActivityForResult(intent,REQUEST_PDF);}
+            runOnUiThread(()->{try{Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("application/pdf");intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(intent,REQUEST_PDF);}
                 catch(Exception e){importing.set(false);send("onPdfImported",ticket+",null,"+quote(message(e)));}});
         }
         @JavascriptInterface public void invalidateCompose(int id){revision.set(id);removeQueued(composeJob);pageRevision.incrementAndGet();removeQueued(pageJob);}
@@ -404,9 +407,16 @@ public class MainActivity extends Activity {
             final int ticket=importTicket;
             if(result!=RESULT_OK||data==null||data.getData()==null){importing.set(false);send("onPdfImported",ticket+",null,null");return;}
             final Uri source=data.getData();
-            worker.execute(()->{try{ready();JSONObject pdf=pdfStore.importPdf(getContentResolver(),source);send("onPdfImported",ticket+","+quote(pdf.toString())+",null");}
-                catch(OutOfMemoryError e){send("onPdfImported",ticket+",null,"+quote("No hay memoria suficiente para abrir este PDF."));}
-                catch(Exception e){send("onPdfImported",ticket+",null,"+quote(message(e)));}finally{importing.set(false);}});return;
+            send("onPdfImportProgress",ticket+","+quote("Abriendo PDF…"));
+            try{worker.execute(()->{
+                String imported=null,error=null;
+                try{if(pdfStore==null)throw new IOException("No se pudo preparar la importación de PDF");imported=pdfStore.importPdf(getContentResolver(),source).toString();}
+                catch(OutOfMemoryError e){error="No hay memoria suficiente para abrir este PDF.";}
+                catch(Exception e){error=message(e);}
+                finally{importing.set(false);}
+                send("onPdfImported",ticket+","+(imported==null?"null":quote(imported))+","+(error==null?"null":quote(error)));
+            });}catch(RejectedExecutionException e){importing.set(false);send("onPdfImported",ticket+",null,"+quote("El motor está ocupado. Vuelve a insertar el PDF."));}
+            return;
         }
         if(code==REQUEST_IMAGE){
             final int ticket=importTicket;
