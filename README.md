@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V52
+# HiNote Studio Tablet — V53
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V53 orienta las flechas de las gráficas hacia los extremos positivos y negativos presentes, limpia los espacios sobrantes al eliminar páginas PDF y sustituye los avisos repetidos por separaciones discretas. El cursor refleja de inmediato el tamaño y la posición de subíndices y superíndices; los botones de formato distinguen su estado real del toque. Detalles y pruebas: [docs/V53.md](docs/V53.md).
 
 V52 coloca los PDF en su posición real entre los párrafos y permite escribir en una hoja nueva antes, entre y después de sus páginas. Recupera los PDF de borradores V51, reduce las páginas al borrar, muestra un contador compacto de progreso y corrige el retroceso de listas y la vista automática al reabrir. Detalles y pruebas: [docs/V52.md](docs/V52.md).
 

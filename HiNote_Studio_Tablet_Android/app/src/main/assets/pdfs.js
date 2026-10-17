@@ -4,6 +4,20 @@ const PdfEditor=(()=>{
   const isLine=line=>!!line?.[0]?.pdf;
   const newId=()=>window.crypto?.randomUUID?.()||`pdf-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const slot=()=>withParagraph([],{pdfGap:true});
+  function cleanSlots(lines,mark=null){
+    const hasPdf=lines.some(isLine),empty=line=>!!paragraphOf(line).pdfGap&&!lineText(line),out=[],mapping=[];
+    for(let i=0;i<lines.length;i++){
+      const line=lines[i],meta=paragraphOf(line);mapping[i]=out.length;
+      if(empty(line)){
+        let a=i-1,b=i+1;while(a>=0&&empty(lines[a]))a--;while(b<lines.length&&empty(lines[b]))b++;
+        if(!isLine(lines[a])&&!isLine(lines[b])||empty(out.at(-1)))continue;
+      }
+      if(meta.pdfGap&&(!hasPdf||lineText(line)&&!isLine(out.at(-1))&&!isLine(lines[i+1]))){const properties={...meta};delete properties.pdfGap;out.push(withParagraph(line,properties));}else out.push(line);
+    }
+    if(!out.length)out.push([]);
+    const move=p=>{const line=Math.min(mapping[p.line]??out.length-1,out.length-1);return {line,offset:Math.min(p.offset,lineText(out[line]).length)};};
+    return {lines:out,selection:mark?{...mark,start:move(mark.start),end:move(mark.end)}:null};
+  }
   function normalize(raw){
     if(!raw||!/^[a-f0-9]{64}$/.test(raw.asset||'')||!Number.isInteger(raw.index)||!Number.isInteger(raw.pages)||raw.pages<1||raw.pages>500||raw.index<0||raw.index>=raw.pages)throw Error('Página de PDF inválida');
     if(raw.after_page!==undefined&&(!Number.isInteger(raw.after_page)||raw.after_page<0||raw.after_page>498))throw Error('Posición de PDF inválida');
@@ -106,5 +120,5 @@ const PdfEditor=(()=>{
       });followPoint=null;currentPage=targetPage+1;drawCurrent();refreshPreview();toast(`PDF insertado: ${pdf.pages} ${pdf.pages===1?'página':'páginas'}`);
     }catch(e){$('status').textContent='No se pudo insertar el PDF';toast(e.message);resumeEditor(insertion);}
   };
-  return {isLine,normalize,block,request,composed,failed,hasAnchors,noteCaret,isBusy:()=>busy,status:()=>progress};
+  return {isLine,normalize,block,request,composed,failed,hasAnchors,noteCaret,cleanSlots,isBusy:()=>busy,status:()=>progress};
 })();

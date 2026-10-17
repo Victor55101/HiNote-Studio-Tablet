@@ -1258,6 +1258,7 @@ require('./toolbar_focus.spec.cjs')({test,setup,select,lines,paste,assert,openTa
 require('./v50.spec.cjs')({test,setup,select,lines,assert,openMath,graphPane});
 require('./v51.spec.cjs')({test,setup,select,assert});
 require('./v52.spec.cjs')({test,setup,select,lines,assert});
+require('./v53.spec.cjs')({test,setup,select,lines,assert,openMath,graphPane});
 
 (async () => {
   const server = http.createServer((request,response) => {

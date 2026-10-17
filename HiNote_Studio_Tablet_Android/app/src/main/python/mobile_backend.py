@@ -130,7 +130,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
     project, cache = Path(project_dir), Path(cache_dir)
     profile_id = json.loads(settings_json or "{}").get("profile", "original")
     library, fallback, profile_revision = calibration.resolve(project, profile_id)
-    inputs = {"version": 52, "paragraphs": doc["paragraphs"], "settings": settings,
+    inputs = {"version": 53, "paragraphs": doc["paragraphs"], "settings": settings,
               "page_insertions": [p["pdf"] for p in doc["paragraphs"] if p.get("type")=="pdf" and "after_page" in p["pdf"]],
               "profile": profile_id, "profile_revision": profile_revision}
     previous = old_info = resume = None

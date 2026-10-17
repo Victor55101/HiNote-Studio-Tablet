@@ -365,7 +365,9 @@ const MathGraphEditor=(()=>{
     let space=null;const labels=[],traceLabels=[];const svg=el('graphSVG');svg.replaceChildren();const ns='http://www.w3.org/2000/svg';
     const add=(tag,attrs,text)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;svg.append(n);if(space&&tag==='text'&&!attrs['data-point-label']){const b=n.getBBox();space.boxes.push([b.x,b.y,b.width,b.height]);}return n;};
     const g=working;if(![g.width,g.height,g.xmin,g.xmax,g.xstep,g.ymin,g.ymax,g.ystep].every(Number.isFinite)||g.xmax<=g.xmin||g.ymax<=g.ymin||g.xstep<=0||g.ystep<=0||g.width<4||g.height<4)return;
-    const geo=graphGeometry(g),{xy,left,right,top,bottom,ax,ay,w,h}=geo;applyGraphView();space=new LabelSpace(w,h);const arrowRight=g.arrows&&right+20<=w-2?right+20:right,arrowTop=g.arrows&&top-20>=2?top-20:top;
+    const geo=graphGeometry(g),{xy,left,right,top,bottom,ax,ay,w,h}=geo;applyGraphView();space=new LabelSpace(w,h);
+    const negativeX=g.arrows&&g.xmin<0,positiveX=g.arrows&&g.xmax>0,negativeY=g.arrows&&g.ymin<0,positiveY=g.arrows&&g.ymax>0;
+    const arrowLeft=negativeX&&left-20>=2?left-20:left,arrowRight=positiveX&&right+20<=w-2?right+20:right,arrowTop=positiveY&&top-20>=2?top-20:top,arrowBottom=negativeY&&bottom+20<=h-2?bottom+20:bottom;
     const line=(points,c,dash=false,width=1)=>{if(c!=='#e1e5eb')space.path(points,width/2);return add('polyline',{points:points.map(p=>p.join(',')).join(' '),fill:'none',stroke:c,'stroke-width':width,'stroke-linecap':'round','stroke-linejoin':'round',...(dash?{'stroke-dasharray':'3.4 3.4'}:{})});};
     for(let x=0;x<=w;x+=40)line([[x,0],[x,h]],'#e1e5eb',false,.5);
     for(let y=0;y<=h;y+=40)line([[0,y],[w,y]],'#e1e5eb',false,.5);
@@ -378,14 +380,19 @@ const MathGraphEditor=(()=>{
       for(let i=0;i<count;i++){
         const v=first+i*step,[x,y]=axis==='x'?xy(v,clamp(0,g.ymin,g.ymax)):xy(clamp(0,g.xmin,g.xmax),v);
         if(g.grid)line(axis==='x'?[[x,top],[x,bottom]]:[[left,y],[right,y]],'#c4ccd5',false,.5);
-        if(g.ticks){if(!g.arrows||(axis==='x'?arrowRight-x:y-arrowTop)>8.1)line(axis==='x'?[[x,ay-2],[x,ay+2]]:[[ax-2,y],[ax+2,y]],g.color,false,g.thickness*.6);if(Math.abs(v)>1e-8)add('text',{x:axis==='x'?x:ax-6,y:axis==='x'?ay+15:y+4,'text-anchor':axis==='x'?'middle':'end','font-size':38*g.size*.675*.72,fill:g.color},formatTick(v));}
+        const clear=axis==='x'?(!negativeX||x-arrowLeft>8.1)&&(!positiveX||arrowRight-x>8.1):(!positiveY||y-arrowTop>8.1)&&(!negativeY||arrowBottom-y>8.1);
+        if(g.ticks){if(clear)line(axis==='x'?[[x,ay-2],[x,ay+2]]:[[ax-2,y],[ax+2,y]],g.color,false,g.thickness*.6);if(Math.abs(v)>1e-8)add('text',{x:axis==='x'?x:ax-6,y:axis==='x'?ay+15:y+4,'text-anchor':axis==='x'?'middle':'end','font-size':38*g.size*.675*.72,fill:g.color},formatTick(v));}
       }
     }
-    line([[left,ay],[arrowRight,ay]],g.color,false,g.thickness*.6);line([[ax,bottom],[ax,arrowTop]],g.color,false,g.thickness*.6);
-    if(g.arrows){line([[arrowRight-5.4,ay-3.4],[arrowRight,ay],[arrowRight-5.4,ay+3.4]],g.color,false,g.thickness*.6);line([[ax-3.4,arrowTop+5.4],[ax,arrowTop],[ax+3.4,arrowTop+5.4]],g.color,false,g.thickness*.6);}
+    line([[arrowLeft,ay],[arrowRight,ay]],g.color,false,g.thickness*.6);line([[ax,arrowBottom],[ax,arrowTop]],g.color,false,g.thickness*.6);
+    const head=(name,points)=>line(points,g.color,false,g.thickness*.6).setAttribute('data-axis-arrow',name);
+    if(positiveX)head('x-positive',[[arrowRight-5.4,ay-3.4],[arrowRight,ay],[arrowRight-5.4,ay+3.4]]);
+    if(negativeX)head('x-negative',[[arrowLeft+5.4,ay-3.4],[arrowLeft,ay],[arrowLeft+5.4,ay+3.4]]);
+    if(positiveY)head('y-positive',[[ax-3.4,arrowTop+5.4],[ax,arrowTop],[ax+3.4,arrowTop+5.4]]);
+    if(negativeY)head('y-negative',[[ax-3.4,arrowBottom-5.4],[ax,arrowBottom],[ax+3.4,arrowBottom-5.4]]);
     const font=38*g.size*.675;
-    add('text',{x:right,y:Math.min(h-5,ay+(g.ticks?35:24)),'text-anchor':'end',fill:g.color,'font-size':font},g.xlabel);
-    add('text',{x:ax+8,y:Math.max(font+3,top-7),fill:g.color,'font-size':font},g.ylabel);
+    add('text',{x:g.xmax>0?right:left,y:Math.min(h-5,ay+(g.ticks?35:24)),'text-anchor':g.xmax>0?'end':'start',fill:g.color,'font-size':font},g.xlabel);
+    add('text',{x:Math.min(w-font,ax+8),y:g.ymax>0?Math.max(font+3,top-7):Math.min(h-5,arrowBottom+font+6),fill:g.color,'font-size':font},g.ylabel);
     add('text',{x:w/2,y:Math.max(20,top-28),'text-anchor':'middle','font-size':font,fill:g.color},g.title);
     g.series.forEach((t,ti)=>{
       const pts=t.points.map(p=>xy(p.x,p.y)),path=t.type==='curve'?smooth(t.points.map(p=>[p.x,p.y])).map(p=>xy(...p)):pts;if(t.type!=='points'&&pts.length>1)line(path,t.color,t.dashed,(t.width||g.thickness)*.6);

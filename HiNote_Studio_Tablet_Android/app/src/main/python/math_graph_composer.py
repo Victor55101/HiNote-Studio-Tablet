@@ -528,8 +528,13 @@ def draw_graph(obj, painter):
     # Labels occupy reserved margins; plot area is independent of handwriting size.
     geometry=graph_geometry(obj);xy=geometry['xy']
     left,right,top,bottom,ax,ay=(geometry[k] for k in ('left','right','top','bottom','ax','ay'))
-    arrow_right=right+HALF if obj.get('arrows',True) and right+HALF<=w-3 else right
-    arrow_top=top-HALF if obj.get('arrows',True) and top-HALF>=3 else top
+    arrows=obj.get('arrows',True)
+    negative_x,positive_x=arrows and obj['xmin']<0,arrows and obj['xmax']>0
+    negative_y,positive_y=arrows and obj['ymin']<0,arrows and obj['ymax']>0
+    arrow_left=left-HALF if negative_x and left-HALF>=3 else left
+    arrow_right=right+HALF if positive_x and right+HALF<=w-3 else right
+    arrow_top=top-HALF if positive_y and top-HALF>=3 else top
+    arrow_bottom=bottom+HALF if negative_y and bottom+HALF<=h-3 else bottom
     labels=[];trace_labels=[]
     xzero=max(obj["xmin"],min(obj["xmax"],0));yzero=max(obj["ymin"],min(obj["ymax"],0))
     def line(coords,c=ink,width=thickness,dashed=False):
@@ -581,18 +586,25 @@ def draw_graph(obj, painter):
             x,y=xy(value,yzero) if axis=="x" else xy(xzero,value)
             if obj.get("grid",False):line([(x,top),(x,bottom)] if axis=="x" else [(left,y),(right,y)],"#C4CCD5",1)
             if obj.get("ticks",True):
-                if not obj.get('arrows',True) or (arrow_right-x if axis=='x' else y-arrow_top)>12:
+                clear=(not negative_x or x-arrow_left>12) and (not positive_x or arrow_right-x>12) if axis=='x' else (not positive_y or y-arrow_top>12) and (not negative_y or arrow_bottom-y>12)
+                if clear:
                     line([(x,ay-3),(x,ay+3)] if axis=="x" else [(ax-3,y),(ax+3,y)])
                 if abs(value)>1e-9:
                     text=format_tick(value)
                     label(text,x,ay+22, s=size*.72,align="center") if axis=="x" else label(text,ax-9,y+6,s=size*.72,align="right")
     # Keep stems and arrow wings in one ink tool with matching width/caps.
-    painter.path(out,[(left,ay),(arrow_right,ay)],ink,thickness)
-    painter.path(out,[(ax,bottom),(ax,arrow_top)],ink,thickness)
-    if obj.get("arrows",True):
+    painter.path(out,[(arrow_left,ay),(arrow_right,ay)],ink,thickness)
+    painter.path(out,[(ax,arrow_bottom),(ax,arrow_top)],ink,thickness)
+    if positive_x:
         painter.path(out,[(arrow_right-8,ay-5),(arrow_right,ay),(arrow_right-8,ay+5)],ink,thickness)
+    if negative_x:
+        painter.path(out,[(arrow_left+8,ay-5),(arrow_left,ay),(arrow_left+8,ay+5)],ink,thickness)
+    if positive_y:
         painter.path(out,[(ax-5,arrow_top+8),(ax,arrow_top),(ax+5,arrow_top+8)],ink,thickness)
-    label(obj.get("xlabel","x"),right,ay+(30 if obj.get('ticks',True) else 8),align="right",vertical='top');label(obj.get("ylabel","y"),ax+12,top-10)
+    if negative_y:
+        painter.path(out,[(ax-5,arrow_bottom-8),(ax,arrow_bottom),(ax+5,arrow_bottom-8)],ink,thickness)
+    label(obj.get("xlabel","x"),right if obj['xmax']>0 else left,ay+(30 if obj.get('ticks',True) else 8),align="right" if obj['xmax']>0 else "left",vertical='top')
+    label(obj.get("ylabel","y"),ax+12,top-10 if obj['ymax']>0 else arrow_bottom+12,vertical='baseline' if obj['ymax']>0 else 'top')
     if obj.get("title"):label(obj["title"],w/2,max(GRID*.5,top-GRID*.7),align="center")
     for trace in obj["series"]:
         painter.check();c=trace.get("color",ink);width=trace.get('width',thickness)

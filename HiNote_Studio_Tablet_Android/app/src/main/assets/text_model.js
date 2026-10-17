@@ -131,7 +131,7 @@ function listMarkers(lines){
 function paragraphIndent(meta){return meta.list ? (meta.list.indent??meta.list.level) : (meta.indent||0);}
 function decorateParagraph(node,line,marker){
   const meta=paragraphOf(line),encoded=Object.keys(meta).length?JSON.stringify(meta):'';
-  node.classList.toggle('pdfGap',!!meta.pdfGap);if(meta.pdfGap)node.dataset.placeholder='Escribe en una hoja nueva';else delete node.dataset.placeholder;
+  node.classList.toggle('pdfGap',!!meta.pdfGap);node.classList.toggle('pdfTextPage',!!meta.pdfGap&&!!lineText(line));delete node.dataset.placeholder;
   const signature=encoded+'|'+marker;if(node._paragraphSignature===signature)return;node._paragraphSignature=signature;
   if(encoded)node.dataset.paragraph=encoded;else delete node.dataset.paragraph;
   if(meta.list){
@@ -262,6 +262,7 @@ function patchRuns(lines,selection,patch,includeMarkers=false){
 function toggleTextAttribute(key){const values=selectionStyles();applyStyle({[key]:!(values.length&&values.every(s=>s[key]))});}
 function toggleScript(script){const values=selectionStyles();applyStyle({script:values.length&&values.every(s=>(s.script||'normal')===script)?'normal':script});}
 function startNativeEdit(){
+  TypingCaret.hide();
   const mark=bookmark();if(!mark)return;
   nativeEdit={lines:readLines(),mark,style:insertionStyle(mark)};
 }
@@ -384,3 +385,36 @@ function scrollCaretIntoView(root=editor){
     if(delta){parent.scrollTop+=delta;rect={...rect,top:rect.top-delta,bottom:rect.bottom-delta};}
   }
 }
+
+// Show the pending insertion size without inserting a sentinel character into
+// the document. The native input connection and composing range stay intact.
+const TypingCaret=(()=>{
+  let caret=null,measure=null,actual=null,target=null;
+  function hide(){editor.classList.remove('pendingCaret');if(caret)caret.style.display='none';}
+  function init(){
+    if(caret)return;
+    caret=document.createElement('div');caret.id='typingCaret';caret.className='typingCaret';caret.setAttribute('aria-hidden','true');caret.style.display='none';editor.parentElement.append(caret);
+    measure=document.createElement('div');measure.className='caretMeasure';measure.setAttribute('aria-hidden','true');
+    for(let i=0;i<3;i++){const span=document.createElement('span');span.textContent='M';measure.append(span);}actual=measure.children[1];target=measure.children[2];document.body.append(measure);
+    for(const event of ['selectionchange','focusin','focusout','visibilitychange'])document.addEventListener(event,()=>requestAnimationFrame(update));
+    window.addEventListener('resize',update);editor.parentElement.addEventListener('scroll',update,{passive:true});
+  }
+  function rect(node){const range=document.createRange();range.selectNodeContents(node);return range.getBoundingClientRect();}
+  function update(){
+    const sel=getSelection(),mark=bookmark();
+    if(ime||markerSelection||document.hidden||!editor.isContentEditable||editor.closest('[inert]')||document.activeElement!==editor||!mark||!collapsed(mark)||!pointEqual(typingState?.point,mark.start)||!sel?.rangeCount||!sel.isCollapsed||!rangeInside(sel.getRangeAt(0))){hide();return;}
+    const line=editor.children[mark.start.line];if(!line||line.dataset.pdf||line.dataset.tableId||line.dataset.objectId){hide();return;}
+    const node=sel.focusNode.nodeType===Node.TEXT_NODE?sel.focusNode.parentElement:sel.focusNode,css=getComputedStyle(editor),nativeCSS=getComputedStyle(node);
+    const style=typingState.style,size=parseFloat(css.fontSize)*style.scale*(['sub','sup'].includes(style.script)? .65:1);
+    const currentScript=node.closest('[data-script]')?.dataset.script||'normal',script=style.script||'normal';
+    if(Math.abs(parseFloat(nativeCSS.fontSize)-size)<.1&&currentScript===script){hide();return;}
+    init();measure.style.font=css.font;measure.style.fontFamily=css.fontFamily;measure.style.fontSize=css.fontSize;measure.style.lineHeight=css.lineHeight;
+    actual.style.fontSize=nativeCSS.fontSize;actual.style.verticalAlign=currentScript==='sup'?'super':currentScript==='sub'?'sub':'baseline';actual.style.fontWeight=nativeCSS.fontWeight;
+    target.style.fontSize=size+'px';target.style.verticalAlign=script==='sup'?'super':script==='sub'?'sub':'baseline';target.style.fontWeight=String(Math.min(900,(style.bold?700:400)+style.thickness*25));
+    const a=rect(actual),t=rect(target),range=sel.getRangeAt(0),anchor=range.getBoundingClientRect(),lineBox=line.getBoundingClientRect(),lineCSS=getComputedStyle(line);
+    const x=anchor.height?anchor.left:lineBox.left+parseFloat(lineCSS.paddingLeft||0),y=anchor.height?anchor.top+t.top-a.top:lineBox.top+t.top-measure.getBoundingClientRect().top;
+    const scroll=editor.parentElement,box=scroll.getBoundingClientRect();
+    caret.style.left=(x-box.left+scroll.scrollLeft-scroll.clientLeft)+'px';caret.style.top=(y-box.top+scroll.scrollTop-scroll.clientTop)+'px';caret.style.height=t.height+'px';caret.style.display='block';editor.classList.add('pendingCaret');
+  }
+  return {update,hide};
+})();

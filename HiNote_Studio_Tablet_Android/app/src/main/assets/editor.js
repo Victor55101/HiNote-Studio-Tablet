@@ -157,7 +157,9 @@ function selectionStyles() {
   return selectedLineIndexes(mark).flatMap(i=>isBlockLine(lines[i])?[]:sliceSegments(lines[i],i===mark.start.line?mark.start.offset:0,i===mark.end.line?mark.end.offset:Infinity).map(cleanStyle));
 }
 function syncTextControls() {
-  const styles=selectionStyles();if(!styles.length)return;
+  TypingCaret.update();
+  const styles=selectionStyles();
+  if(!styles.length){for(const id of ['boldBtn','italicBtn','underlineBtn','subscriptBtn','superscriptBtn']){$(id).setAttribute('aria-pressed','false');$(id).classList.remove('active');}$('caseSel').disabled=true;return;}
   const common=key=>styles.every(s=>s[key]===styles[0][key])?styles[0][key]:null;
   for(const [id,key,factor] of [['sizeSel','scale',100],['thicknessSel','thickness',1],['opacity','opacity',1]]){
     let value=common(key);
@@ -173,9 +175,9 @@ function syncTextControls() {
   const opacity=common('opacity'),color=common('color');
   $('hexInput').value=color??'';$('hexInput').placeholder=color===null?'Mixto':'';
   $('colorPick').value=color||'#000000';$('colorPick').dataset.mixed=String(color===null);
-  for(const [id,value] of [['subscriptBtn','sub'],['superscriptBtn','sup']]){const active=styles.every(s=>s.script===value),mixed=!active&&styles.some(s=>s.script===value);$(id).setAttribute('aria-pressed',mixed?'mixed':String(active));$(id).classList.toggle('active',active);}
+  for(const [id,value] of [['subscriptBtn','sub'],['superscriptBtn','sup']]){const active=!!styles.length&&styles.every(s=>s.script===value),mixed=!active&&styles.some(s=>s.script===value);$(id).setAttribute('aria-pressed',mixed?'mixed':String(active));$(id).classList.toggle('active',active);}
   $('caseSel').value='';$('caseSel').disabled=!!markerSelection||!bookmark()||collapsed(bookmark());
-  for(const key of ['bold','italic','underline']){const active=styles.every(s=>s[key]),mixed=!active&&styles.some(s=>s[key]);$(key+'Btn').setAttribute('aria-pressed',mixed?'mixed':String(active));$(key+'Btn').classList.toggle('active',active);}
+  for(const key of ['bold','italic','underline']){const active=!!styles.length&&styles.every(s=>s[key]),mixed=!active&&styles.some(s=>s[key]);$(key+'Btn').setAttribute('aria-pressed',mixed?'mixed':String(active));$(key+'Btn').classList.toggle('active',active);}
 }
 function syncListControls(){
   if(document.activeElement===$('listIndent'))return;
@@ -205,6 +207,7 @@ function restoreSelection(mark, focus=true) {
   savedSelection = bookmark();
   if(!editorGesture?.preserve&&markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
   if(focus){syncTextControls();syncListControls();}
+  else TypingCaret.update();
 }
 function resumeEditor(mark=bookmark()) {
   if(!mark||!editor.isContentEditable||editor.closest('[inert]'))return false;
@@ -233,6 +236,7 @@ function edit(operation, keepControlFocus=false) {
   normalizeRoots(); checkpoint();
   const mark = bookmark() || {start: {line: 0, offset: 0}, end: {line: 0, offset: 0}};
   const result = operation(readLines(), mark); if (!result) return;
+  Object.assign(result,PdfEditor.cleanSlots(result.lines,result.selection||mark));
   const n = result.lines.reduce((sum, line) => sum + lineText(line).length, 0) + result.lines.length - 1;
   if (n + TableEditor.count()+MathGraphEditor.count() > MAX_CHARS) { toast('El documento admite hasta 200000 caracteres'); return; }
   if (result.lines.length > 10000) { toast('El documento admite hasta 10000 párrafos'); return; }
@@ -249,7 +253,8 @@ function undoRedo(direction) {
   checkpoint(); const next = historyIndex + direction;
   if (next < 0 || next >= history.length) return;
   historyIndex = next; const entry = history[next], data=JSON.parse(entry.data), sameText=JSON.stringify(readLines())===JSON.stringify(data.lines)&&JSON.stringify(TableEditor.state().tables)===JSON.stringify(data.tables||{})&&JSON.stringify(MathGraphEditor.state().mathObjects)===JSON.stringify(data.mathObjects||{});
-  typingState=null;markerSelection=entry.markers||null;TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(data.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(entry.selection);
+  const cleaned=PdfEditor.cleanSlots(data.lines,entry.selection);
+  typingState=null;markerSelection=entry.markers||null;TableEditor.restore(data);MathGraphEditor.restore(data);renderLines(cleaned.lines); ImageEditor.restore(data); ImageEditor.select(entry.imageSelection); restoreSelection(cleaned.selection);
   if(sameText){ImageEditor.modified();drawCurrent();}else changed();
 }
 function replaceText(lines, mark, text, soft=false, rich=null) {
@@ -420,7 +425,7 @@ function restoreDraft() {
     // indentation in the paragraph so level 0 now really reaches the margin.
     if(draft.version<38){const base=Math.floor(bounded(draft.settings?.list_indent_squares,0,6,1));draft.lines=draft.lines.map(line=>!isBlockLine(line)&&listRegex.test(lineText(line))?mergeSegments([{text:'    '.repeat(base),...styleAt(line,0)},...line]):line);}
     if(draft.version<46)draft.lines=migrateTextLists(draft.lines);
-    renderLines(draft.lines);typingState=null; $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
+    renderLines(PdfEditor.cleanSlots(draft.lines).lines);typingState=null; $('noteTitle').value = String(draft.title || 'Nueva nota').slice(0, 128);
     for (const [id, key, min, max, fallback] of [['letterSpacing','letter_spacing',-8,8,0],['wordSpacing','word_spacing',12,60,26],['lineRows','line_grid_rows',1,4,1],['listIndent','list_indent_squares',0,6,1]]) $(id).value = bounded(draft.settings?.[key], min, max, fallback);
     $('gridCheck').checked = draft.grid !== false; $('autoPreview').checked = draft.auto !== false; return true;
   } catch (_) { return false; }
@@ -444,6 +449,7 @@ function controls() {
   MathGraphEditor.updateControls();
   window.StudioUI?.ribbon();window.StudioUI?.meta();
   syncMarkerSelection();
+  if(!editor.isContentEditable)TypingCaret.hide();
   scheduleAutoPreview(n);
 }
 function showExportFolder(raw) {
