@@ -250,6 +250,8 @@ const TableEditor = (() => {
     if(!target||locked()||working||drag||e.button>0)return;
     if(target.matches('.tableSelect')&&ImageEditor.hitAt(e))return;
     const node=target.closest('.tableHit'),id=node.dataset.id;if(!tables[id])return;
+    // An unselected body belongs to page navigation until a tap is released.
+    if(id!==selectedId)return;
     e.preventDefault();e.stopPropagation();checkpoint();const previousSelection=selectedId;selectedId=id;
     const pageTable=composition.table_pages[currentPage].find(t=>t.id===id);
     drag={previousSelection,kind:target.matches('.tableResize')?'tableResize':'tableMove',id,pointer:e.pointerId,x:e.clientX,y:e.clientY,before:clone(tables[id]),node,pageTable};

@@ -495,7 +495,10 @@ const MathGraphEditor=(()=>{
     overlay.onpointerdown=e=>{
       const target=e.target.closest('.objectSelect,.objectResize');if(!target||locked()||working||drag||e.button>0)return;
       if(target.matches('.objectSelect')&&ImageEditor.hitAt(e))return;
-      const node=target.closest('.objectHit'),id=node.dataset.id;e.preventDefault();e.stopPropagation();checkpoint();const previousSelection=selectedId;selectedId=id;
+      const node=target.closest('.objectHit'),id=node.dataset.id;
+      // First tap selects; dragging an unselected object pans the page instead.
+      if(id!==selectedId)return;
+      e.preventDefault();e.stopPropagation();checkpoint();const previousSelection=selectedId;selectedId=id;
       drag={previousSelection,id,pointer:e.pointerId,x:e.clientX,y:e.clientY,before:get(id),kind:target.matches('.objectResize')?'objectResize':'objectMove',node};
       ImageEditor.finishGesture(true);ImageEditor.select(null);TableEditor.clearSelection();
       el('previewWrap').classList.add('objectManipulating');node.classList.add('objectTarget');target.setPointerCapture(e.pointerId);

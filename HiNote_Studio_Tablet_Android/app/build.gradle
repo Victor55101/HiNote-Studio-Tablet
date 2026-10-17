@@ -11,8 +11,8 @@ android {
         applicationId 'com.hinote.studio'
         minSdk 24
         targetSdk 35
-        versionCode 53
-        versionName '5.3-tablet'
+        versionCode 54
+        versionName '5.4-tablet'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {

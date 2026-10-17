@@ -178,9 +178,10 @@ const ImageEditor = (() => {
   const direction=(a,b)=>Math.atan2(b.clientY-a.clientY,b.clientX-a.clientX)*180/Math.PI;
   function startPair(){
     const [a,b]=[...pointers.values()];if(!a||!b)return;
-    if(gesture?.imageTap){checkpoint();const original=state();select(gesture.imageTap);gesture={...gesture,image:true,original};}
     const im=selected();const mid={clientX:(a.clientX+b.clientX)/2,clientY:(a.clientY+b.clientY)/2};
-    gesture={...gesture,type:gesture?.image&&im?'pairImage':'pairView',base:im?clone(im):null,start:point(mid),distance:Math.max(1,distance(a,b)),direction:direction(a,b),zoom,mid,
+    // A pinch never completes a pending tap or promotes an unselected image.
+    // Only a gesture that began on a selected image can transform that image.
+    gesture={...gesture,type:gesture?.image&&im?'pairImage':'pairView',imageTap:null,mathTap:false,moved:true,base:im?clone(im):null,start:point(mid),distance:Math.max(1,distance(a,b)),direction:direction(a,b),zoom,mid,
       scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function pointerDown(e){
@@ -196,7 +197,7 @@ const ImageEditor = (() => {
     // it. Outside the (possibly rotated) image bounds the table remains usable.
     const im=active?(handle?selected():hit(p)):null;
     const mathObject=math?.closest('.objectHit,.tableHit')?.dataset.id;
-    if(im){
+    if(im&&im.id===selectedId){
       select(im.id);checkpoint();gesture={type:handle==='rotate'?'rotate':handle&&handle!=='move'?'resize':'move',image:true,handle,base:clone(im),original:state(),start:point(e),startClient:pointerData(e),moved:false,mathObject,angle:Math.atan2(p.y-im.y-im.height/2,p.x-im.x-im.width/2)*180/Math.PI};
     }else gesture={type:'pan',image:false,imageTap:im?.id||null,start:pointerData(e),scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop,mathObject,tableTap:!!math?.classList.contains('tableSelect'),mathTap:!im&&!!math,moved:false};
   }
@@ -239,10 +240,11 @@ const ImageEditor = (() => {
     if(pointers.size===0&&gesture?.image)window.StudioUI?.absorbTap?.(e);
     if(pointers.size===0&&gesture?.type==='rotate'&&!gesture.moved){const im=selected();if(im)im.angle=normalizeAngle(gesture.base.angle+90);}
     if(pointers.size===0){const g=gesture,math=g?.mathTap?g.mathObject:null,table=g?.tableTap,im=g?.imageTap&&!g?.moved?g.imageTap:null;if(g?.image||g?.mathObject||g?.moved||im)suppressMathClickUntil=Date.now()+500;finishGesture(false);if(im)select(im);else if(math){if(table)TableEditor.selectPreview(math);else MathGraphEditor.selectPreview(math);}else if(g?.type==='pan'&&!g.moved)select(null);return;}
-    // After a two-finger gesture, the remaining finger pans/moves from its new position.
+    if(pointers.size>=2){startPair();return;}
+    // After multitouch, the remaining finger pans/moves from its new position.
     const a=[...pointers.values()][0],im=selected();
     if(gesture?.image&&im)gesture={...gesture,type:'move',base:clone(im),start:point(a)};
-    else gesture={type:'pan',image:false,start:a,scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
+    else gesture={type:'pan',image:false,moved:true,start:a,scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function updateCrop(){
     if(!crop)return;
@@ -278,12 +280,14 @@ const ImageEditor = (() => {
   el('imageBack').onclick=()=>reorder(false);el('imageFront').onclick=()=>reorder(true);
   el('deleteImage').onclick=()=>edit(()=>{images=images.filter(im=>im.id!==selectedId);selectedId=null;});
   el('duplicateImage').onclick=()=>{if(images.length>=200||images.filter(im=>im.page===currentPage).length>=20){toast('Límite: 20 imágenes por página y 200 por nota');return;}edit(()=>{const im=selected();if(im){const copy=clone(im);copy.id=newId();copy.x+=25;copy.y+=25;fit(copy);images.push(copy);selectedId=copy.id;}});};
-  // A second finger switches an object-body drag to a page pinch. Track in
-  // capture phase because the object owns the first pointer's drag events.
+  // Decide multitouch in capture phase, before a selected table/formula can
+  // claim the second finger of a gesture that started by panning the page.
   el('previewWrap').addEventListener('pointerdown',e=>{
     if(e.pointerType!=='touch')return;previewTouches.set(e.pointerId,pointerData(e));
-    if(previewTouches.size!==2||(!MathGraphEditor.isDragging()&&!TableEditor.isDragging()))return;
+    if(previewTouches.size<2||(!gesture&&!MathGraphEditor.isDragging()&&!TableEditor.isDragging()))return;
     e.preventDefault();e.stopImmediatePropagation();
+    if(previewTouches.size>2){pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);return;}
+    if(gesture?.image){pointerDown(e);return;}
     MathGraphEditor.cancelPreviewDrag();TableEditor.cancelPreviewDrag();finishGesture(true);
     pointers=new Map(previewTouches);gesture={type:'pan',image:false,moved:true};startPair();
     for(const id of pointers.keys())el('previewWrap').setPointerCapture(id);
