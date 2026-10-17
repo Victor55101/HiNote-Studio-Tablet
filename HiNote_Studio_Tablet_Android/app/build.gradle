@@ -11,8 +11,9 @@ android {
         applicationId 'com.hinote.studio'
         minSdk 24
         targetSdk 35
-        versionCode 22
-        versionName '2.2-tablet'
+        versionCode 54
+        versionName '5.4-tablet'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -25,10 +26,42 @@ android {
         }
     }
 
+    buildFeatures { buildConfig true }
+    flavorDimensions 'edition'
+    productFlavors {
+        stable {
+            dimension 'edition'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'false'
+            manifestPlaceholders = [appLabel: 'HiNote Studio']
+        }
+        probe {
+            dimension 'edition'
+            // V34 CI builds used an ephemeral signing key. Install alongside
+            // them so the user's existing diagnostic draft is never removed.
+            applicationIdSuffix '.probe35'
+            versionCode 37
+            versionName '3.7-tablet'
+            versionNameSuffix '-pruebas'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'true'
+            manifestPlaceholders = [appLabel: 'HiNote Studio Pruebas V37']
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    // Old generated calibration banks must never be bundled with the new one.
+    androidResources { ignoreAssetsPattern 'glyphs_v11.json:glyphs_v22.json:glyphs_v23.json' }
+    testOptions { unitTests.includeAndroidResources = true }
+}
+
+dependencies {
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
 }
 
 chaquopy {
