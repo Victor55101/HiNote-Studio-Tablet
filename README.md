@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V54
+# HiNote Studio Tablet — V55
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V55 mantiene la cabecera y la cinta con sus medidas al abrir el teclado, conserva el ajuste inferior y permite que el teclado del sistema gestione sugerencias y autocorrección con teclas físicas. Automático respeta la configuración del sistema; el modo físico conserva la conexión nativa y se llama «Físico y sugerencias». Parte de V54. Detalles: [docs/V55.md](docs/V55.md).
 
 V54 exige tocar y soltar un objeto antes de poder moverlo. Arrastrar sobre una imagen, tabla, fórmula o gráfica sin seleccionar desplaza la hoja; usar dos dedos amplía la vista sin modificar ni seleccionar ese objeto. Los gestos que empiezan en la hoja conservan ese destino aunque el segundo dedo caiga sobre un objeto seleccionado. Detalles y pruebas: [docs/V54.md](docs/V54.md).
 

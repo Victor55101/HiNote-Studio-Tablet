@@ -2,6 +2,7 @@ package com.hinote.studio;
 
 import android.app.Activity;
 import android.content.Context;
+import android.text.InputType;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.WindowManager;
@@ -22,101 +23,126 @@ import static org.junit.Assert.*;
 public class EditorWebViewTest {
     static class RecordingWebView extends EditorWebView {
         final List<KeyEvent> delivered=new ArrayList<>();
-        int connections;
-        boolean connectionAvailable=true;
+        int connections;boolean connectionAvailable=true;InputConnection nativeConnection;
         RecordingWebView(Context context){super(context);}
-        @Override protected InputConnection createEditorConnection(EditorInfo attributes){connections++;return connectionAvailable?new BaseInputConnection(this,true):null;}
+        @Override protected InputConnection createEditorConnection(EditorInfo attributes){
+            connections++;return nativeConnection=connectionAvailable?new BaseInputConnection(this,true):null;
+        }
         @Override protected boolean deliverHardwareKey(KeyEvent event){delivered.add(event);return true;}
     }
-    private static KeyEvent key(int action,int code,int modifiers){return new KeyEvent(1,2,action,code,0,modifiers,4,0,0,InputDevice.SOURCE_KEYBOARD);}
-    @Test public void coldPhysicalModeInitializesNativeComposerOnceBeforeUnmodifiedKeyPairs(){
-        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();
-        activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode","physical").commit();
-        var web=new RecordingWebView(activity);activity.setContentView(web);var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();web.setEditing(true);
-        try{
-            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
-            // Robolectric cannot run Chromium's composer. Check its connection
-            // lifecycle and unchanged input stream; no app-side text conversion.
+    private static KeyEvent key(int action,int code,int modifiers){
+        return new KeyEvent(1,2,action,code,0,modifiers,4,0,0,InputDevice.SOURCE_KEYBOARD);
+    }
+    static class Session implements AutoCloseable {
+        final org.robolectric.android.controller.ActivityController<Activity> host=Robolectric.buildActivity(Activity.class).setup();
+        final Activity activity=host.get();final RecordingWebView web=new RecordingWebView(activity);
+        final KeyboardController keyboard=new KeyboardController(activity,web);
+        Session(){activity.setContentView(web);web.setKeyboard(keyboard);keyboard.start();web.setEditing(true);}
+        void connected(){
+            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
+            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,activity.getWindow().getAttributes().softInputMode&WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST);
+        }
+        @Override public void close(){keyboard.stop();web.destroy();host.pause().stop().destroy();}
+    }
+    @Test public void textSpaceEnterDeleteAndDeadKeysReachImeFirstInEveryMode(){
+        try(Session s=new Session()){
+            for(String mode:new String[]{"auto","physical","virtual"}){
+                s.keyboard.setMode(mode);s.web.delivered.clear();
+                for(int code:new int[]{KeyEvent.KEYCODE_A,KeyEvent.KEYCODE_SPACE,KeyEvent.KEYCODE_ENTER,KeyEvent.KEYCODE_DEL,KeyEvent.KEYCODE_APOSTROPHE,KeyEvent.KEYCODE_GRAVE}){
+                    KeyEvent down=key(KeyEvent.ACTION_DOWN,code,0),up=KeyEvent.changeAction(down,KeyEvent.ACTION_UP);
+                    assertFalse(s.keyboard.routeBeforeIme(down));
+                    assertFalse(s.web.dispatchKeyEventPreIme(down));assertFalse(s.web.dispatchKeyEventPreIme(up));
+                    // Simulate an IME consuming this word: the app must not deliver it itself.
+                    assertTrue(s.web.delivered.isEmpty());s.connected();
+                }
+            }
+        }
+    }
+    @Test public void unhandledHardwarePairsReachEditorExactlyOnceAfterIme(){
+        try(Session s=new Session()){
+            KeyEvent down=key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_O,KeyEvent.META_SHIFT_ON),up=KeyEvent.changeAction(down,KeyEvent.ACTION_UP);
+            assertFalse(s.web.dispatchKeyEventPreIme(down));assertTrue(s.web.dispatchKeyEvent(down));
+            assertFalse(s.web.dispatchKeyEventPreIme(up));assertTrue(s.web.dispatchKeyEvent(up));
+            assertEquals(2,s.web.delivered.size());assertSame(down,s.web.delivered.get(0));assertSame(up,s.web.delivered.get(1));s.connected();
+            s.keyboard.stop();s.keyboard.start();s.keyboard.windowFocused();s.connected();
+        }
+    }
+    @Test public void coldHardwareFallbackReusesChromiumComposerAcrossAccentAndLetter(){
+        try(Session s=new Session()){
+            s.keyboard.setMode("physical");
             for(int code:new int[]{KeyEvent.KEYCODE_APOSTROPHE,KeyEvent.KEYCODE_A,KeyEvent.KEYCODE_SPACE,KeyEvent.KEYCODE_GRAVE,KeyEvent.KEYCODE_N}){
                 KeyEvent down=key(KeyEvent.ACTION_DOWN,code,KeyEvent.META_ALT_RIGHT_ON),up=KeyEvent.changeAction(down,KeyEvent.ACTION_UP);
-                web.dispatchKeyEvent(down);web.dispatchKeyEvent(up);
-                assertEquals(1,web.connections);assertSame(down,web.delivered.get(web.delivered.size()-2));assertSame(up,web.delivered.get(web.delivered.size()-1));
-                assertFalse(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
+                s.web.dispatchKeyEvent(down);s.web.dispatchKeyEvent(up);assertEquals(1,s.web.connections);
+                assertSame(down,s.web.delivered.get(s.web.delivered.size()-2));assertSame(up,s.web.delivered.get(s.web.delivered.size()-1));s.connected();
             }
-            keyboard.setMode("virtual");keyboard.setMode("physical");web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_E,0));assertEquals(1,web.connections);
-            web.onWindowFocusChanged(false);web.onWindowFocusChanged(true);web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_APOSTROPHE,0));assertEquals(2,web.connections);
-            web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_E,0));assertEquals(2,web.connections);
-            web.setEditing(true);web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_I,0));assertEquals(3,web.connections); // another DOM field
-        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
+            s.keyboard.setMode("virtual");s.keyboard.setMode("physical");s.web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_E,0));assertEquals(1,s.web.connections);
+            s.web.onWindowFocusChanged(false);s.web.onWindowFocusChanged(true);s.web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_I,0));assertEquals(2,s.web.connections);
+        }
     }
     @Test public void systemCreatedConnectionIsReusedAndUnavailableConnectionsCanRetry(){
-        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();var web=new RecordingWebView(activity);activity.setContentView(web);
-        var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();web.setEditing(true);
-        try{
-            web.onCreateInputConnection(new EditorInfo());web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_APOSTROPHE,0));assertEquals(1,web.connections);
-            web.setEditing(true);web.connectionAvailable=false;web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_SHIFT_LEFT,0));assertEquals(2,web.connections);
-            web.connectionAvailable=true;web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,KeyEvent.META_SHIFT_ON));assertEquals(3,web.connections);
-            web.dispatchKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_A,KeyEvent.META_SHIFT_ON));assertEquals(3,web.connections);
-        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
+        try(Session s=new Session()){
+            s.web.onCreateInputConnection(new EditorInfo());s.web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_APOSTROPHE,0));assertEquals(1,s.web.connections);
+            s.web.setEditing(true);s.web.connectionAvailable=false;s.web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_SHIFT_LEFT,0));assertEquals(2,s.web.connections);
+            s.web.connectionAvailable=true;s.web.dispatchKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,KeyEvent.META_SHIFT_ON));assertEquals(3,s.web.connections);
+            s.web.dispatchKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_A,KeyEvent.META_SHIFT_ON));assertEquals(3,s.web.connections);
+        }
     }
-    @Test public void firstPhysicalCharacterAndKeyUpReachEditorExactlyOnce(){
-        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();var web=new RecordingWebView(activity);activity.setContentView(web);
-        var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();keyboard.setMode("auto");
-        try{
-            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
-            KeyEvent down=key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_O,KeyEvent.META_SHIFT_ON),up=KeyEvent.changeAction(down,KeyEvent.ACTION_UP);
-            assertTrue(web.dispatchKeyEventPreIme(down));assertTrue(web.dispatchKeyEventPreIme(up));
-            assertEquals(2,web.delivered.size());assertSame(down,web.delivered.get(0));assertSame(up,web.delivered.get(1));
-            assertEquals(KeyEvent.META_SHIFT_ON,web.delivered.get(0).getMetaState());
-            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
-            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING,activity.getWindow().getAttributes().softInputMode&WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST);
-            keyboard.stop();keyboard.start();keyboard.windowFocused();
-            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING,activity.getWindow().getAttributes().softInputMode&WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST);
-            assertTrue(web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DEL,0)));assertEquals(3,web.delivered.size());
-        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
-    }
-    @Test public void virtualOverrideKeepsPhysicalPairsTogetherWithoutHidingIme(){
-        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();var web=new RecordingWebView(activity);activity.setContentView(web);
-        var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();keyboard.setMode("virtual");
-        try{
-            assertTrue(web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,0)));assertTrue(web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_A,0)));assertEquals(2,web.delivered.size());
-            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,activity.getWindow().getAttributes().softInputMode&WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST);
-            keyboard.setMode("auto");KeyEvent soft=new KeyEvent(1,2,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,0,0,-1,0,KeyEvent.FLAG_SOFT_KEYBOARD,InputDevice.SOURCE_KEYBOARD);
-            web.dispatchKeyEventPreIme(soft);assertEquals(2,web.delivered.size());
-        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
-    }
-
-    @Test public void modifiersAndReleasesStayTogetherAcrossImeGateAndModeChanges(){
-        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();var web=new RecordingWebView(activity);activity.setContentView(web);
-        var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();keyboard.setMode("auto");
-        try{
-            for(int code:new int[]{KeyEvent.KEYCODE_SHIFT_LEFT,KeyEvent.KEYCODE_SHIFT_RIGHT,KeyEvent.KEYCODE_CTRL_LEFT,KeyEvent.KEYCODE_ALT_RIGHT,KeyEvent.KEYCODE_FUNCTION,KeyEvent.KEYCODE_CAPS_LOCK}){
-                web.delivered.clear();KeyEvent down=key(KeyEvent.ACTION_DOWN,code,0),up=KeyEvent.changeAction(down,KeyEvent.ACTION_UP);
-                assertTrue(web.dispatchKeyEventPreIme(down));keyboard.setMode("virtual");
-                web.dispatchKeyEvent(up);assertEquals(2,web.delivered.size());assertSame(down,web.delivered.get(0));assertSame(up,web.delivered.get(1));
-                web.releaseHardwareKeys();assertEquals(2,web.delivered.size());keyboard.setMode("auto");
+    @Test public void altGrAndOrdinaryModifiersReachImeWhileCtrlShortcutsKeepTheirRelease(){
+        try(Session s=new Session()){
+            for(int code:new int[]{KeyEvent.KEYCODE_SHIFT_LEFT,KeyEvent.KEYCODE_SHIFT_RIGHT,KeyEvent.KEYCODE_ALT_RIGHT,KeyEvent.KEYCODE_CAPS_LOCK}){
+                assertFalse(s.web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,code,0)));
+                assertFalse(s.web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_UP,code,0)));
             }
-            web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_SHIFT_LEFT,KeyEvent.META_SHIFT_ON));
-            int before=web.delivered.size();web.onWindowFocusChanged(false);assertEquals(before+1,web.delivered.size());
-            KeyEvent release=web.delivered.get(before);assertEquals(KeyEvent.ACTION_UP,release.getAction());assertEquals(0,release.getMetaState());assertTrue(release.isCanceled());
-            web.releaseHardwareKeys();assertEquals(before+1,web.delivered.size());
-            keyboard.stop();assertTrue(WindowManager.LayoutParams.mayUseInputMethod(activity.getWindow().getAttributes().flags));
-        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
+            KeyEvent altGr=key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_Q,KeyEvent.META_CTRL_ON|KeyEvent.META_ALT_RIGHT_ON|KeyEvent.META_ALT_ON);
+            assertFalse(s.web.dispatchKeyEventPreIme(altGr));assertTrue(s.web.delivered.isEmpty());
+            for(int code:new int[]{KeyEvent.KEYCODE_A,KeyEvent.KEYCODE_Z,KeyEvent.KEYCODE_B}){
+                s.web.delivered.clear();KeyEvent down=key(KeyEvent.ACTION_DOWN,code,KeyEvent.META_CTRL_ON);
+                assertTrue(s.web.dispatchKeyEventPreIme(down));s.keyboard.setMode("virtual");
+                KeyEvent up=key(KeyEvent.ACTION_UP,code,0);assertTrue(s.web.dispatchKeyEventPreIme(up));
+                assertEquals(2,s.web.delivered.size());assertSame(down,s.web.delivered.get(0));assertSame(up,s.web.delivered.get(1));
+                s.web.releaseHardwareKeys();assertEquals(2,s.web.delivered.size());s.connected();
+            }
+        }
+    }
+    @Test public void focusLossReleasesOnlyKeysActuallyDeliveredToEditor(){
+        try(Session s=new Session()){
+            s.web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,0));assertTrue(s.web.delivered.isEmpty());
+            s.web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_B,KeyEvent.META_CTRL_ON));assertEquals(1,s.web.delivered.size());
+            s.web.onWindowFocusChanged(false);assertEquals(2,s.web.delivered.size());
+            KeyEvent release=s.web.delivered.get(1);assertEquals(KeyEvent.ACTION_UP,release.getAction());assertEquals(0,release.getMetaState());assertTrue(release.isCanceled());
+            s.web.releaseHardwareKeys();assertEquals(2,s.web.delivered.size());
+        }
     }
     @Test public void fnArrowsBecomeNavigationWithoutDroppingShiftOrLosingKeyUp(){
-        var host=Robolectric.buildActivity(Activity.class).setup();var activity=host.get();var web=new RecordingWebView(activity);activity.setContentView(web);
-        var keyboard=new KeyboardController(activity,web);web.setKeyboard(keyboard);keyboard.start();
-        try{
+        try(Session s=new Session()){
             int[] arrows={KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT,KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN};
             int[] expected={KeyEvent.KEYCODE_MOVE_HOME,KeyEvent.KEYCODE_MOVE_END,KeyEvent.KEYCODE_PAGE_UP,KeyEvent.KEYCODE_PAGE_DOWN};
             for(int i=0;i<arrows.length;i++){
-                web.delivered.clear();KeyEvent down=key(KeyEvent.ACTION_DOWN,arrows[i],KeyEvent.META_FUNCTION_ON|KeyEvent.META_SHIFT_ON);
-                web.dispatchKeyEventPreIme(down);web.dispatchKeyEvent(key(KeyEvent.ACTION_UP,arrows[i],0));
-                assertEquals(2,web.delivered.size());assertEquals(expected[i],web.delivered.get(0).getKeyCode());assertTrue(web.delivered.get(0).isShiftPressed());assertFalse(web.delivered.get(0).isFunctionPressed());assertEquals(expected[i],web.delivered.get(1).getKeyCode());
-                assertEquals(down.getDeviceId(),web.delivered.get(0).getDeviceId());
+                s.web.delivered.clear();KeyEvent down=key(KeyEvent.ACTION_DOWN,arrows[i],KeyEvent.META_FUNCTION_ON|KeyEvent.META_SHIFT_ON);
+                s.web.dispatchKeyEventPreIme(down);s.web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_UP,arrows[i],0));
+                assertEquals(2,s.web.delivered.size());assertEquals(expected[i],s.web.delivered.get(0).getKeyCode());
+                assertTrue(s.web.delivered.get(0).isShiftPressed());assertFalse(s.web.delivered.get(0).isFunctionPressed());
+                assertEquals(expected[i],s.web.delivered.get(1).getKeyCode());assertEquals(down.getDeviceId(),s.web.delivered.get(0).getDeviceId());
             }
             KeyEvent home=key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MOVE_HOME,KeyEvent.META_SHIFT_ON);assertSame(home,EditorWebView.navigationKey(home));
-            KeyEvent volume=key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_VOLUME_UP,0);assertFalse(keyboard.routeBeforeIme(volume));
-        }finally{keyboard.stop();web.destroy();host.pause().stop().destroy();}
+            assertFalse(s.keyboard.routeBeforeIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_VOLUME_UP,0)));
+        }
+    }
+    @Test public void normalTextKeepsNativeConnectionWithAutocorrectionAndNoFullscreenExtraction(){
+        try(Session s=new Session()){
+            EditorInfo info=new EditorInfo();info.inputType=InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+            InputConnection actual=s.web.onCreateInputConnection(info);assertSame(s.web.nativeConnection,actual);
+            assertNotEquals(0,info.inputType&InputType.TYPE_TEXT_FLAG_AUTO_CORRECT);
+            assertNotEquals(0,info.inputType&InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+            assertNotEquals(0,info.imeOptions&EditorInfo.IME_FLAG_NO_EXTRACT_UI);assertNotEquals(0,info.imeOptions&EditorInfo.IME_FLAG_NO_FULLSCREEN);
+            s.keyboard.setMode("physical");s.keyboard.setMode("virtual");s.keyboard.setMode("auto");assertEquals(1,s.web.connections);s.connected();
+        }
+    }
+    @Test public void numericPasswordEmailAndExplicitLiteralFieldsKeepTheirInputHints(){
+        for(int type:new int[]{InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL,InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS}){
+            EditorInfo info=new EditorInfo();info.inputType=type;EditorWebView.configureEditorInfo(info);assertEquals(type,info.inputType);
+        }
     }
 }

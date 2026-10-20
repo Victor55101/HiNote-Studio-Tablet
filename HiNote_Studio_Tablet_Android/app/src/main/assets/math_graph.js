@@ -134,7 +134,7 @@ const MathGraphEditor=(()=>{
     const span=cls=>{const n=document.createElement('span');n.className=cls;return n;};
     function render(n,path=[],label='Expresión',caretOnly=false){
       if(n.type==='text'){
-        const input=document.createElement('input');input.type='text';input.className='mathSlot'+(caretOnly&&!n.text?' mathCaret':'');input.maxLength=2048;input.value=n.text;input.placeholder=caretOnly?'':'□';input.setAttribute('aria-label',label);input.dataset.path=JSON.stringify(path);
+        const input=document.createElement('input');input.type='text';input.spellcheck=false;input.setAttribute('autocorrect','off');input.setAttribute('autocapitalize','off');input.className='mathSlot'+(caretOnly&&!n.text?' mathCaret':'');input.maxLength=2048;input.value=n.text;input.placeholder=caretOnly?'':'□';input.setAttribute('aria-label',label);input.dataset.path=JSON.stringify(path);
         const size=()=>{input.classList.toggle('mathCaret',caretOnly&&!n.text);input.style.width=(Math.max(caretOnly?.12:1,n.text.length)*.62+.18)+'em';};
         size();input.style.color=n.color||working.color;const item={input,node:n,path,start:0,end:0};fields.push(item);
         const capture=()=>{if(document.activeElement!==input)return;item.start=input.selectionStart;item.end=input.selectionEnd;field=item;stage.querySelectorAll('.mathTemplate').forEach(t=>t.classList.remove('mathActiveTemplate'));input.closest('.mathTemplate')?.classList.add('mathActiveTemplate');};

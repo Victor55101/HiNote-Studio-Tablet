@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V54
+name: Build HiNote Studio Tablet V55
 on:
   workflow_dispatch:
   push:
@@ -49,6 +49,8 @@ jobs:
           gradle-version: '8.13'
       - run: gradle --no-daemon testStableDebugUnitTest testProbeDebugUnitTest assembleStableDebug assembleStableDebugAndroidTest
         working-directory: HiNote_Studio_Tablet_Android
+      - name: Verify packaged editor and APK signature
+        run: python .github/scripts/verify_apk.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -57,8 +59,14 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V54
-          path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/stable/debug/app-stable-debug.apk
+          name: HiNote-Studio-Tablet-APK-V55
+          path: dist/HiNote-Studio-Tablet-V55.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-V55-verification
+          path: |
+            dist/apk-verification.json
+            dist/apk-signature.txt
       - name: Package local signing tool
         run: |
           mkdir -p signing-tools

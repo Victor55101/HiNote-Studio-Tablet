@@ -1060,7 +1060,7 @@ test('V43 keyboard mode touch selection updates native mode and visible text onc
     window.modeCalls=[];AndroidBridge.setKeyboardMode=value=>{modeCalls.push(value);setTimeout(()=>onKeyboardState(JSON.stringify({nativeGate:true,mode:value,hardware:true,suppress:value==='physical'})),25);};
     onKeyboardState('{"nativeGate":true,"mode":"auto","hardware":true,"suppress":false}');
   });
-  for(const [mode,label] of [['virtual','Mostrar virtual'],['physical','Solo físico'],['auto','Automático'],['virtual','Mostrar virtual']]){
+  for(const [mode,label] of [['virtual','Mostrar virtual'],['physical','Físico y sugerencias'],['auto','Automático'],['virtual','Mostrar virtual']]){
     await page.locator('[data-select-for=keyboardMode]').tap();await page.locator('.selectMenu [data-value='+mode+']').tap();
     await page.waitForFunction(m=>$('keyboardMode').value===m,mode);await page.waitForTimeout(60);
     assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),label);
@@ -1068,7 +1068,7 @@ test('V43 keyboard mode touch selection updates native mode and visible text onc
   }
   assert.deepEqual(await page.evaluate(()=>modeCalls),['virtual','physical','auto','virtual']);
   await page.evaluate(()=>onKeyboardState('{"nativeGate":true,"mode":"physical","hardware":true,"suppress":true}'));
-  assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),'Solo físico');
+  assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),'Físico y sugerencias');
 });
 test('V44 keyboard mode remains enabled through native startup calibration loading',async page=>{
   await page.addInitScript(()=>{
@@ -1079,7 +1079,7 @@ test('V44 keyboard mode remains enabled through native startup calibration loadi
   await page.reload();await page.waitForFunction(()=>CalibrationUI.isBusy());
   assert.equal(await page.isEnabled('[data-select-for=keyboardMode]'),true,'Native catalog loading must not disable the header keyboard selector');
   await page.evaluate(()=>onCalibrationResult(catalogTicket,null,'Prueba de carga terminada'));
-  for(const [mode,label] of [['virtual','Mostrar virtual'],['physical','Solo físico'],['auto','Automático']]){
+  for(const [mode,label] of [['virtual','Mostrar virtual'],['physical','Físico y sugerencias'],['auto','Automático']]){
     await page.locator('[data-select-for=keyboardMode]').tap();await page.locator('.selectMenu [data-value='+mode+']').tap();
     assert.equal(await page.inputValue('#keyboardMode'),mode);assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),label);
   }
@@ -1260,6 +1260,7 @@ require('./v51.spec.cjs')({test,setup,select,assert});
 require('./v52.spec.cjs')({test,setup,select,lines,assert});
 require('./v53.spec.cjs')({test,setup,select,lines,assert,openMath,graphPane});
 require('./v54.spec.cjs')({test,setup,assert,openMath,openTable,importImage});
+require('./v55.spec.cjs')({test,setup,select,lines,assert,openTable,openMath});
 
 (async () => {
   const server = http.createServer((request,response) => {

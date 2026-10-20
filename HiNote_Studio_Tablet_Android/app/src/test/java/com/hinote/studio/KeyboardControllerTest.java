@@ -19,6 +19,10 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,manifest=Config.NONE)
 public class KeyboardControllerTest {
+    @Test public void automaticRequestsHonorSystemPreferenceWhileVirtualIsExplicit(){
+        assertEquals(android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT,KeyboardController.showFlags("auto"));
+        assertEquals(0,KeyboardController.showFlags("virtual"));
+    }
     @Test public void automaticModeUsesInteractionAndKeepsManualOverrides(){
         assertTrue(KeyboardController.suppress("auto",true));assertFalse(KeyboardController.suppress("auto",false));
         assertFalse(KeyboardController.suppress("virtual",true));assertTrue(KeyboardController.suppress("physical",false));
@@ -49,7 +53,7 @@ public class KeyboardControllerTest {
         void finger(){event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);keyboard.beginTouchInput();}
         @Override public void close(){keyboard.stop();web.destroy();host.pause().stop().destroy();}
     }
-    @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeDisconnectedAcrossKeysAndWindowFocusable()throws Exception{
+    @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeConnectedAcrossKeysAndWindowFocusable()throws Exception{
         try(Session s=new Session()){
             s.activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             // Robolectric does not run Chromium's focus delegate. Verify the
@@ -58,15 +62,15 @@ public class KeyboardControllerTest {
             assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             s.keyboard.observe(physicalTyping());
-            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             int updates=s.activity.windowUpdates,flags=s.flags();
             for(int i=0;i<60;i++){
                 s.keyboard.observe(physicalTyping());
                 s.keyboard.observe(KeyEvent.changeAction(physicalTyping(),KeyEvent.ACTION_UP));
-                assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+                assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
                 assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             }
-            // Focus/configuration callbacks must not release the gate either.
+            // Modes, typing and configuration callbacks must keep the IME connected.
             s.keyboard.refresh();s.keyboard.publish();
             assertEquals(updates,s.activity.windowUpdates);assertEquals(flags,s.flags());
             assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
@@ -74,20 +78,20 @@ public class KeyboardControllerTest {
             s.finger();assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             assertEquals(0,s.flags()&WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
             assertTrue(s.state().getBoolean("hardware"));
-            s.keyboard.observe(physicalTyping());assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.observe(physicalTyping());assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
         }
     }
-    @Test @Config(sdk={28,31}) public void imeGateFollowsManualModesResumeAndHardwareRemoval()throws Exception{
+    @Test @Config(sdk={28,31}) public void imeAvailabilitySurvivesManualModesResumeAndHardwareRemoval()throws Exception{
         try(Session s=new Session()){
             s.keyboard.setMode("physical");s.finger();
-            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             s.keyboard.setMode("virtual");s.keyboard.observe(physicalTyping());
             assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
-            s.keyboard.setMode("auto");assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
-            s.keyboard.stop();s.keyboard.start();assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.setMode("auto");assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.stop();s.keyboard.start();assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             s.finger();assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             s.event(MotionEvent.ACTION_HOVER_MOVE,InputDevice.SOURCE_MOUSE);
-            assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
             Configuration config=s.activity.getResources().getConfiguration();
             config.keyboard=Configuration.KEYBOARD_NOKEYS;config.hardKeyboardHidden=Configuration.HARDKEYBOARDHIDDEN_YES;
             s.keyboard.onInputDeviceRemoved(4);

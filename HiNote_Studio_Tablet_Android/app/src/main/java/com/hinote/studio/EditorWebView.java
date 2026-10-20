@@ -2,6 +2,7 @@ package com.hinote.studio;
 
 import android.content.Context;
 import android.os.SystemClock;
+import android.text.InputType;
 import android.view.KeyEvent;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -21,14 +22,24 @@ class EditorWebView extends WebView {
     @Override public InputConnection onCreateInputConnection(EditorInfo attributes){
         InputConnection connection=createEditorConnection(attributes);
         connectionReady=connection!=null;
+        if(connection!=null)configureEditorInfo(attributes);
         return connection;
     }
+    static void configureEditorInfo(EditorInfo attributes){
+        int type=attributes.inputType,variation=type&InputType.TYPE_MASK_VARIATION;
+        if((type&InputType.TYPE_MASK_CLASS)==InputType.TYPE_CLASS_TEXT
+            &&(type&InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)==0
+            &&(variation==InputType.TYPE_TEXT_VARIATION_NORMAL||variation==InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
+                ||variation==InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE||variation==InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE)){
+            attributes.inputType|=InputType.TYPE_TEXT_FLAG_AUTO_CORRECT;
+        }
+        // Keep landscape editing in the app; the IME still owns its UI.
+        attributes.imeOptions|=EditorInfo.IME_FLAG_NO_EXTRACT_UI|EditorInfo.IME_FLAG_NO_FULLSCREEN;
+    }
     private void prepareHardwareInput(){
-        // On a cold physical-only start Android does not ask an IME-blocked
-        // window for its connection. Chromium then dispatches raw keys without
-        // its native dead-key composer. Initialize the ordinary WebView
-        // connection once per focused editor, without showing/restarting an IME.
-        // Never recreate it between an accent and the following key.
+        // Fallback for unhandled hardware keys arriving before Android creates
+        // the focused editor's connection. Reuse Chromium's dead-key composer;
+        // never recreate the connection between an accent and its letter.
         if(!connectionReady&&(editing||onCheckIsTextEditor()))onCreateInputConnection(new EditorInfo());
     }
     protected boolean deliverHardwareKey(KeyEvent event){return super.dispatchKeyEvent(event);}
@@ -55,16 +66,22 @@ class EditorWebView extends WebView {
         if(keyboard!=null)keyboard.observe(event);
         return handled;
     }
+    private boolean ownsShortcutRelease(KeyEvent event){
+        KeyEvent down=pressed.get(((long)event.getDeviceId()<<32)|(event.getKeyCode()&0xffffffffL));
+        return event.getAction()==KeyEvent.ACTION_UP&&down!=null&&keyboard.routeBeforeIme(down);
+    }
     @Override public boolean dispatchKeyEventPreIme(KeyEvent event){
-        if(keyboard!=null&&keyboard.routeBeforeIme(event)){
+        if(keyboard!=null&&KeyboardController.hardwareKey(event))keyboard.observe(event);
+        if(keyboard!=null&&(keyboard.routeBeforeIme(event)||ownsShortcutRelease(event))){
             route(event);
             return true; // no second delivery to the IME or Chromium
         }
         return super.dispatchKeyEventPreIme(event);
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
-        // The disconnected IME can send keys directly here instead of pre-IME.
-        boolean handled=keyboard!=null&&keyboard.routeBeforeIme(event)?route(event):super.dispatchKeyEvent(event);
+        // Android reaches this stage after the IME had the opportunity to
+        // consume/compose text. Deliver unhandled hardware events exactly once.
+        boolean handled=keyboard!=null&&KeyboardController.hardwareKey(event)?route(event):super.dispatchKeyEvent(event);
         int key=event.getKeyCode();
         return handled||(editing&&key>=KeyEvent.KEYCODE_DPAD_UP&&key<=KeyEvent.KEYCODE_DPAD_RIGHT);
     }
