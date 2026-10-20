@@ -45,6 +45,9 @@ module.exports=({test,setup,select,lines,assert,openTable,openMath})=>{
   };
   test('V55 IME correction commits accents and Space without losing selected text formatting',async page=>{
     await setup(page,'Antes ');await select(page,{line:0,offset:6});await page.selectOption('#sizeSel','90');await page.fill('#hexInput','#FF0000');await nativeState(page);
+    // The color input intentionally retains focus while its value is edited.
+    // Return to the document before sending the IME's composing word.
+    await page.evaluate(()=>editor.focus({preventScroll:true}));assert.equal(await page.evaluate(()=>document.activeElement.id),'editor');
     const z=await page.evaluate(()=>zoom);await commitWord(page,'Vazquez','Vázquez');
     assert.deepEqual(await lines(page),['Antes Vázquez ']);assert.equal(await page.evaluate(()=>document.activeElement.id),'editor');assert.equal(await page.evaluate(()=>zoom),z);
     const runs=await page.evaluate(()=>readLines()[0]);const corrected=runs.filter(s=>s.color==='#FF0000').map(s=>s.text).join('');assert.equal(corrected,'Vázquez ');assert.ok(runs.filter(s=>s.color==='#FF0000').every(s=>s.scale===.9));
