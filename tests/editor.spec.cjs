@@ -28,6 +28,9 @@ async function paste(page, text) {
   }, text);
 }
 
+// Run the current keyboard regressions first, then the full editor suite.
+require('./v55.spec.cjs')({test,setup,select,lines,assert,openTable,openMath});
+
 test('Multiline paste replaces selection and leaves caret before suffix', async page => {
   await setup(page, 'abcDEFghi'); await select(page, {line:0,offset:3}, {line:0,offset:6});
   await paste(page, 'uno\ndos\n'); assert.deepEqual(await lines(page), ['abcuno','dos','ghi']);
@@ -1260,7 +1263,6 @@ require('./v51.spec.cjs')({test,setup,select,assert});
 require('./v52.spec.cjs')({test,setup,select,lines,assert});
 require('./v53.spec.cjs')({test,setup,select,lines,assert,openMath,graphPane});
 require('./v54.spec.cjs')({test,setup,assert,openMath,openTable,importImage});
-require('./v55.spec.cjs')({test,setup,select,lines,assert,openTable,openMath});
 
 (async () => {
   const server = http.createServer((request,response) => {
