@@ -42,8 +42,11 @@ public class KeyboardControllerTest {
         @Override public void onWindowAttributesChanged(WindowManager.LayoutParams attributes){windowUpdates++;super.onWindowAttributesChanged(attributes);}
     }
     private static class RecordingWebView extends WebView {
-        boolean writable=true;
+        boolean writable=true,focused=true;
         RecordingWebView(Context context){super(context);}
+        // Robolectric has no Chromium focus delegate. Supply the focus that
+        // the real DOM editor has in the browser regressions.
+        @Override public boolean hasFocus(){return focused;}
         @Override public void evaluateJavascript(String script,ValueCallback<String> result){
             if(result!=null)result.onReceiveValue(writable?"true":"false");
         }
@@ -112,6 +115,14 @@ public class KeyboardControllerTest {
             s.finger();s.keyboard.requestTouchKeyboard();s.keyboard.setMode("physical");s.pending();assertFalse(s.visible());
             s.keyboard.setMode("auto");s.finger();s.keyboard.requestTouchKeyboard();s.keyboard.observe(physicalTyping());s.pending();assertFalse(s.visible());
             s.finger();s.keyboard.requestTouchKeyboard();s.keyboard.stop();s.pending();assertFalse(s.visible());
+        }
+    }
+    @Test public void keyboardOpeningRequiresBothWindowAndEditorFocus()throws Exception{
+        try(Session s=new Session()){
+            s.finger();s.keyboard.requestTouchKeyboard();s.activity.focused=false;s.pending();assertFalse(s.visible());
+            s.activity.focused=true;s.finger();s.keyboard.requestTouchKeyboard();s.web.focused=false;s.pending();assertFalse(s.visible());
+            s.keyboard.setMode("virtual");assertFalse(s.visible());
+            s.web.focused=true;s.keyboard.setMode("virtual");assertTrue(s.visible());
         }
     }
     @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeConnectedAcrossKeysAndWindowFocusable()throws Exception{
