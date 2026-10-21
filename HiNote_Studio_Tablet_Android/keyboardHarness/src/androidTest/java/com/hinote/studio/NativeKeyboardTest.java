@@ -43,9 +43,12 @@ public class NativeKeyboardTest {
     }
     private Bundle ime(String command)throws Exception{
         AtomicReference<Bundle> result=new AtomicReference<>();CountDownLatch done=new CountDownLatch(1);
-        Intent intent=new Intent(context,HarnessIme.CommandReceiver.class).putExtra("command",command);
+        // Keep test IPC off the emulator's congested boot-time background
+        // broadcast queue. This does not change native key delivery or the IME.
+        Intent intent=new Intent(context,HarnessIme.CommandReceiver.class)
+            .addFlags(Intent.FLAG_RECEIVER_FOREGROUND).putExtra("command",command);
         context.sendOrderedBroadcast(intent,null,new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){result.set(getResultExtras(true));done.countDown();}},new Handler(Looper.getMainLooper()),0,null,null);
-        assertTrue("IME process callback",done.await(3,TimeUnit.SECONDS));return result.get();
+        assertTrue("IME process callback",done.await(10,TimeUnit.SECONDS));return result.get();
     }
     @Before public void start()throws Exception{
         test=InstrumentationRegistry.getInstrumentation();context=test.getTargetContext();
