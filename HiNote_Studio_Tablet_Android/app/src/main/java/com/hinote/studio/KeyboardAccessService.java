@@ -55,6 +55,16 @@ public class KeyboardAccessService extends AccessibilityService {
     static boolean ownsHiddenOverride(Client value){
         return available()&&client.get()==value&&connected.override!=null&&connected.override.hidesKeys();
     }
+    static boolean releaseHiddenOverride(Client value){
+        if(!ownsHiddenOverride(value))return false;
+        boolean released=connected.override.release();
+        if(!released)connected.requestSystemCleanup();
+        return released;
+    }
+    static boolean candidateSessionAllowed(Client value){
+        return available()&&client.get()==value&&connected.override!=null
+            &&!connected.override.ownsMode()&&!connected.override.wasRefused()&&!connected.override.anotherPolicy();
+    }
     static void releaseKeys(Client value){if(client.get()==value&&connected!=null)connected.release();}
     static String status(){
         if(Build.VERSION.SDK_INT<29)return "unsupported";

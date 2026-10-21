@@ -176,6 +176,10 @@ public class NativeKeyboardTest {
         await("Keys closed by that same physical press",()->!visibleIme()[0]);
         await("Candidates visible from that first press",()->visibleIme()[1]);
         Bundle after=ime("state");assertEquals(before.getInt("typed")+1,after.getInt("typed"));assertEquals(before.getInt("dropped"),after.getInt("dropped"));
+        int inputType=after.getInt("inputType");
+        assertEquals("Native text InputConnection retained",android.text.InputType.TYPE_CLASS_TEXT,inputType&android.text.InputType.TYPE_MASK_CLASS);
+        assertTrue("Native autocorrection remains enabled",(inputType&android.text.InputType.TYPE_TEXT_FLAG_AUTO_CORRECT)!=0);
+        assertEquals("Suggestions not disabled",0,inputType&android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
     }
     private void lateShow()throws Exception{
         mode("virtual");await("Virtual keys shown",()->visibleIme()[0]);

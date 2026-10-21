@@ -25,7 +25,7 @@ import java.util.Set;
 class KeyboardController implements InputManager.InputDeviceListener,KeyboardAccessService.Client {
     private final Activity activity;private final WebView web;private final InputManager inputs;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private volatile String mode;private volatile boolean hardware,physicalInput;
+    private volatile String mode;private volatile boolean hardware,physicalInput,candidateWindowAllowed;
     private boolean active,editing,keyObserved,touchPending,visibilityApplied,softKeyboardSuppressed;
     private long touchStarted,interactionRevision,editorRevision;
     private final Set<Long> heldKeys=new HashSet<>();
@@ -60,10 +60,10 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
             ||event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE);
     }
     void start(){if(active)return;active=true;KeyboardAccessService.watch(this);if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
-    void stop(){active=false;visibilityApplied=false;cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();KeyboardAccessService.unwatch(this);if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
+    void stop(){active=false;visibilityApplied=false;candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();KeyboardAccessService.unwatch(this);if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
     @Override public void keyboardAccessChanged(){
         if(!active)return;
-        if(!nativeVisibilityControl()){cancelPendingInput();heldKeys.clear();}
+        if(!nativeVisibilityControl()){candidateWindowAllowed=false;cancelPendingInput();heldKeys.clear();}
         publish();
         if(BuildConfig.KEYBOARD_TRIAL&&"virtual".equals(mode))showForModeSelection();
     }
@@ -106,7 +106,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         if(!BuildConfig.KEYBOARD_TRIAL)return;
         // Multi-window activities may stay resumed while another app has focus.
         // Release the global override there too, not just during onPause.
-        cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();KeyboardAccessService.releaseKeys(this);
+        candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();KeyboardAccessService.releaseKeys(this);
     }
     void observe(KeyEvent event){
         if(!active||!hardwareKey(event))return;
@@ -172,7 +172,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     // inputmode precedes its default focus action; nothing consumes the touch.
     void beginTouchInput(){
         if(!touchAllowed())return;
-        cancelPendingInput();cancelCloseVerification();physicalInput=false;publish();
+        candidateWindowAllowed=false;cancelPendingInput();cancelCloseVerification();physicalInput=false;publish();
     }
     void requestTouchKeyboard(){
         if(!touchAllowed()||suppress(mode,physicalInput))return;
@@ -192,13 +192,13 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     }
     void setMode(String value){
         if(!validMode(value))return;
-        cancelTouch();cancelPendingInput();cancelCloseVerification();mode=value;
+        candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();mode=value;
         // Reselecting Solo físico is also an explicit close request.
         if("physical".equals(mode)&&nativeVisibilityControl())visibilityApplied=false;
         activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode",mode).apply();publish();
         if("virtual".equals(mode))showForModeSelection();
     }
-    String state(){return "{\"nativeGate\":"+nativeVisibilityControl()+",\"pendingPhysicalInput\":"+pendingInput+",\"imeConnected\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)
+    String state(){return "{\"nativeGate\":"+(nativeVisibilityControl()&&!candidateWindowAllowed)+",\"pendingPhysicalInput\":"+pendingInput+",\"imeConnected\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)
         +",\"keyboardTrial\":"+BuildConfig.KEYBOARD_TRIAL+",\"keyboardAssist\":"+JSONObject.quote(BuildConfig.KEYBOARD_TRIAL?KeyboardAccessService.status():"off")+"}";}
     void publish(){
         if(!active)return;
@@ -217,11 +217,13 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         if(blocked&&pendingInput!=0)return;
         boolean releasingVirtual=KeyboardAccessService.ownsVirtualOverride(this);
         boolean wasHidden=KeyboardAccessService.ownsHiddenOverride(this);
-        boolean nativePolicy=blocked&&activity.hasWindowFocus()&&web.hasFocus()&&KeyboardAccessService.physicalKeys(this);
+        boolean candidatesOnly=candidateWindowAllowed&&KeyboardAccessService.candidateSessionAllowed(this);
+        boolean nativePolicy=blocked&&activity.hasWindowFocus()&&web.hasFocus()
+            &&(candidatesOnly||KeyboardAccessService.physicalKeys(this));
         if(nativePolicy&&!wasHidden&&KeyboardAccessService.ownsHiddenOverride(this))restoreNativeCandidates(true);
         else if(nativePolicy&&releasingVirtual&&!KeyboardAccessService.ownsVirtualOverride(this))restoreNativeCandidates(false);
         int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            |(blocked&&!nativePolicy?WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
+            |(blocked&&(!nativePolicy||candidatesOnly)?WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
         if(activity.getWindow().getAttributes().softInputMode!=softMode){
             activity.getWindow().setSoftInputMode(softMode);
             activity.getWindow().getDecorView().requestApplyInsets();web.requestLayout();
@@ -253,6 +255,16 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
                         if(restored[0]||!canRestoreCandidates(sequence,interaction,editor,true))return;
                         if(result==InputMethodManager.RESULT_UNCHANGED_HIDDEN||result==InputMethodManager.RESULT_HIDDEN){
                             restored[0]=true;
+                            // HIDDEN also blocks the IME's own candidates-only
+                            // window on Android 12. The explicit hide above has
+                            // cleared its pending show request: release only our
+                            // temporary policy, then suppress WebView's automatic
+                            // key opening while preserving its text connection.
+                            candidateWindowAllowed=true;
+                            if(!KeyboardAccessService.releaseHiddenOverride(KeyboardController.this)){
+                                candidateWindowAllowed=false;return;
+                            }
+                            publish();
                             handler.postDelayed(()->{
                                 if(canRestoreCandidates(sequence,interaction,editor,true))ime.restartInput(web);
                             },80);
@@ -288,13 +300,14 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     private boolean canRestoreCandidates(int sequence,long interaction,long editor,boolean hiddenPolicy){
         return active&&editing&&hardware&&sequence==candidatesSequence&&interaction==interactionRevision&&editor==editorRevision
             &&pendingInput==0&&heldKeys.isEmpty()&&nativeVisibilityControl()&&suppress(mode,physicalInput)
-            &&(hiddenPolicy?KeyboardAccessService.ownsHiddenOverride(this):!KeyboardAccessService.virtualKeysEnabled(this))
+            &&(hiddenPolicy?(KeyboardAccessService.ownsHiddenOverride(this)
+                ||candidateWindowAllowed&&KeyboardAccessService.candidateSessionAllowed(this)):!KeyboardAccessService.virtualKeysEnabled(this))
             &&activity.hasWindowFocus()&&web.hasFocus();
     }
     // Called on an actual DOM editor change, not on input/composition updates.
     // A title, table or dialog must honor Solo físico too, without losing focus.
     void editingFieldFocused(){
-        editorRevision++;editing=true;
+        editorRevision++;editing=true;candidateWindowAllowed=false;
         if(!active)return;
         if(suppress(mode,physicalInput)){
             if(pendingInput==0&&heldKeys.isEmpty()){visibilityApplied=false;publish();}
@@ -305,7 +318,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     void editingFieldTouched(){
         if(active&&"physical".equals(mode)&&pendingInput==0&&heldKeys.isEmpty()){
             if(!nativeVisibilityControl()||fullKeyboardPanelVisible()){
-                visibilityApplied=false;publish();
+                candidateWindowAllowed=false;visibilityApplied=false;publish();
                 if(nativeVisibilityControl()&&fullKeyboardPanelVisible())hideSoftKeyboard();
             }
             else verifyPhysicalClose();
@@ -325,7 +338,10 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
             handler.postDelayed(()->{
             if(!active||request!=closeSequence||!suppress(mode,physicalInput)||pendingInput!=0||!heldKeys.isEmpty()
                 ||!activity.hasWindowFocus()||!web.hasFocus())return;
-            if(fullKeyboardPanelVisible())hideSoftKeyboard();
+            if(fullKeyboardPanelVisible()){
+                if(candidateWindowAllowed){candidateWindowAllowed=false;visibilityApplied=false;publish();}
+                else hideSoftKeyboard();
+            }
             },delay);
         }
     }
