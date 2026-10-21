@@ -313,7 +313,12 @@ public class MainActivity extends Activity {
                 catch(Exception e){if(!token.isCancelled())send("onPageResult",id+","+quote(snapshot)+","+index+",null,"+quote(message(e)));}
             });
         }
-        @JavascriptInterface public void setEditingField(boolean editing){runOnUiThread(()->{if(!destroyed&&webView instanceof EditorWebView)((EditorWebView)webView).setEditing(editing);});}
+        @JavascriptInterface public void setEditingField(boolean editing){runOnUiThread(()->{
+            if(!destroyed&&webView instanceof EditorWebView){
+                ((EditorWebView)webView).setEditing(editing);
+                if(editing&&keyboardController!=null)keyboardController.editingFieldFocused();
+            }
+        });}
         @JavascriptInterface public String getKeyboardState(){return keyboardController==null?"{}":keyboardController.state();}
         @JavascriptInterface public void setKeyboardMode(String mode){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.setMode(mode);});}
         @JavascriptInterface public void beginTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.beginTouchInput();});}

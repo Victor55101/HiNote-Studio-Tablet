@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V55
+name: Build HiNote Studio Tablet V56
 on:
   workflow_dispatch:
   push:
@@ -59,11 +59,11 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V55
-          path: dist/HiNote-Studio-Tablet-V55.apk
+          name: HiNote-Studio-Tablet-APK-V56
+          path: dist/HiNote-Studio-Tablet-V56.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-V55-verification
+          name: HiNote-V56-verification
           path: |
             dist/apk-verification.json
             dist/apk-signature.txt

@@ -21,16 +21,15 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     private final Activity activity;private final WebView web;private final InputManager inputs;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private volatile String mode;private volatile boolean hardware,physicalInput;
-    private boolean active,keyObserved,touchPending;
+    private boolean active,keyObserved,touchPending,visibilityApplied,softKeyboardSuppressed;
     private long touchStarted,interactionRevision;
     KeyboardController(Activity activity,WebView web){
         this.activity=activity;this.web=web;inputs=(InputManager)activity.getSystemService(Context.INPUT_SERVICE);
         mode=activity.getPreferences(Context.MODE_PRIVATE).getString("keyboard-mode","auto");
         if(!validMode(mode))mode="auto";
     }
-    static int showFlags(String mode){return "virtual".equals(mode)?0:InputMethodManager.SHOW_IMPLICIT;}
     static boolean validMode(String value){return "auto".equals(value)||"virtual".equals(value)||"physical".equals(value);}
-    // Suppress only app-forced keyboard opening, never the IME connection.
+    // Suppress the soft input view, never the native IME connection.
     // Connection is informational. Auto follows actual interaction, even when
     // the NearLink keyboard stays connected throughout a touch editing session.
     static boolean suppress(String mode,boolean physicalInput){return "physical".equals(mode)||("auto".equals(mode)&&physicalInput);}
@@ -50,7 +49,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
             ||event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE);
     }
     void start(){if(active)return;active=true;if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
-    void stop(){active=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
+    void stop(){active=false;visibilityApplied=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
     void refresh(){
         boolean found=false;if(inputs!=null)for(int id:inputs.getInputDeviceIds()){
             InputDevice device=inputs.getInputDevice(id);
@@ -89,8 +88,8 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     }
     private void usePhysicalInput(){
         cancelTouch();boolean changed=!physicalInput;physicalInput=true;
-        // Inform the ribbon once per interaction change. Never disconnect or
-        // hide the IME here: it owns candidate bars and hardware autocorrection.
+        // Close the keys once when switching to physical input. Repeated keys
+        // must not dismiss the IME's candidates or finish the composing word.
         if(changed)publish();
     }
     private void cancelTouch(){touchPending=false;interactionRevision++;}
@@ -110,10 +109,10 @@ final class KeyboardController implements InputManager.InputDeviceListener {
             if(ime==null)return;
             handler.postDelayed(()->{
                 if(request!=interactionRevision||!touchAllowed()||suppress(mode,physicalInput)||!activity.hasWindowFocus()||!web.hasFocus())return;
-                // Keep the existing input connection and composing word intact.
-                // Auto respects the system's hardware-keyboard preference.
-                // Only the user's explicit virtual mode requests the full IME.
-                ime.showSoftInput(web,showFlags(mode));touchPending=false;
+                // A completed finger/pen tap is an explicit request in both
+                // Auto and Virtual, including with a connected NearLink keyboard.
+                // Keep the existing input connection; do not use SHOW_FORCED.
+                ime.showSoftInput(web,0);touchPending=false;
             },50);
         });
     }
@@ -121,24 +120,47 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         if(!validMode(value))return;
         cancelTouch();mode=value;
         activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode",mode).apply();publish();
+        if("virtual".equals(mode))showForModeSelection();
     }
-    String state(){return "{\"nativeGate\":true,\"imeConnected\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)+"}";}
+    String state(){return "{\"nativeGate\":false,\"imeConnected\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)+"}";}
     void publish(){
         if(!active)return;
         applyWindowPolicy();
         web.evaluateJavascript("window.onKeyboardState && window.onKeyboardState("+JSONObject.quote(state())+");",null);
     }
     private void applyWindowPolicy(){
-        // All modes remain IME targets. Physical mode only skips explicit
-        // full-keyboard requests; Android and the IME choose keys/candidates
-        // according to the user's hardware-keyboard settings.
+        // inputmode=none prevents WebView's automatic opening while preserving
+        // its ordinary text InputConnection. A window-level disconnect would
+        // also remove native candidates, correction and hardware composition.
         int flag=WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
         if((activity.getWindow().getAttributes().flags&flag)!=0)activity.getWindow().clearFlags(flag);
-        int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED;
+        boolean blocked=suppress(mode,physicalInput);
+        int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            |(blocked?WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
         if(activity.getWindow().getAttributes().softInputMode!=softMode){
             activity.getWindow().setSoftInputMode(softMode);
             activity.getWindow().getDecorView().requestApplyInsets();web.requestLayout();
         }
+        if(blocked&&(!visibilityApplied||!softKeyboardSuppressed))hideSoftKeyboard();
+        visibilityApplied=true;softKeyboardSuppressed=blocked;
+    }
+    // Called on an actual DOM editor change, not on input/composition updates.
+    // A title, table or dialog must honor Solo físico too, without losing focus.
+    void editingFieldFocused(){if(active&&suppress(mode,physicalInput))hideSoftKeyboard();}
+    private void hideSoftKeyboard(){
+        InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if(ime!=null&&activity.hasWindowFocus())ime.hideSoftInputFromWindow(web.getWindowToken(),0);
+    }
+    private void showForModeSelection(){
+        if(!active)return;
+        long request=interactionRevision;
+        // The published state restores the field's original inputmode first.
+        web.evaluateJavascript("Boolean(window.hinoteKeyboardCanShow && window.hinoteKeyboardCanShow())",value->{
+            if(!"true".equals(value)||request!=interactionRevision||!active||!"virtual".equals(mode)
+                ||!activity.hasWindowFocus()||!web.hasFocus())return;
+            InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if(ime!=null)ime.showSoftInput(web,0);
+        });
     }
     @Override public void onInputDeviceAdded(int id){refresh();}
     @Override public void onInputDeviceChanged(int id){refresh();}

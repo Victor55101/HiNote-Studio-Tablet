@@ -26,7 +26,7 @@ aapt = max(sdk.glob("*/aapt"), key=version)
 badging = subprocess.run([str(aapt), "dump", "badging", str(APK)], check=True, text=True, capture_output=True).stdout
 package = next(line for line in badging.splitlines() if line.startswith("package:"))
 assert "name='com.hinote.studio'" in package, package
-assert "versionCode='55'" in package and "versionName='5.5-tablet'" in package, package
+assert "versionCode='56'" in package and "versionName='5.6-tablet'" in package, package
 signer = max(sdk.glob("*/lib/apksigner.jar"), key=lambda path: tuple(int(n) for n in re.findall(r"\d+", path.parent.parent.name)))
 signature = subprocess.run(["java", "-jar", str(signer), "verify", "--verbose", "--print-certs", str(APK)], check=True, text=True, capture_output=True).stdout
 (DESTINATION / "apk-signature.txt").write_text(signature)
@@ -38,9 +38,9 @@ for report in sorted((ROOT / "HiNote_Studio_Tablet_Android/app/build/reports/tes
     assert counts["failures"] == 0, report
     tests.append({"suite": report.parent.name, **counts})
 assert {entry["suite"] for entry in tests} == {"testStableDebugUnitTest", "testProbeDebugUnitTest"}, tests
-target = DESTINATION / "HiNote-Studio-Tablet-V55.apk"
+target = DESTINATION / "HiNote-Studio-Tablet-V56.apk"
 shutil.copy2(APK, target)
-result = {"file": target.name, "version": "5.5-tablet", "version_code": 55, "bytes": target.stat().st_size,
+result = {"file": target.name, "version": "5.6-tablet", "version_code": 56, "bytes": target.stat().st_size,
           "sha256": sha256(target.read_bytes()).hexdigest(), "certificate_sha256": certificate,
           "abis": abis, "editor_assets_matched": len(checked), "android_unit_tests": tests}
 (DESTINATION / "apk-verification.json").write_text(json.dumps(result, indent=2))

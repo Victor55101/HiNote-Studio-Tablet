@@ -1,12 +1,17 @@
 package com.hinote.studio;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.res.Configuration;
+import android.os.Looper;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.ValueCallback;
 import android.webkit.WebView;
+import java.time.Duration;
 import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -15,14 +20,11 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.android.controller.ActivityController;
 import static org.junit.Assert.*;
+import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,manifest=Config.NONE)
 public class KeyboardControllerTest {
-    @Test public void automaticRequestsHonorSystemPreferenceWhileVirtualIsExplicit(){
-        assertEquals(android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT,KeyboardController.showFlags("auto"));
-        assertEquals(0,KeyboardController.showFlags("virtual"));
-    }
     @Test public void automaticModeUsesInteractionAndKeepsManualOverrides(){
         assertTrue(KeyboardController.suppress("auto",true));assertFalse(KeyboardController.suppress("auto",false));
         assertFalse(KeyboardController.suppress("virtual",true));assertTrue(KeyboardController.suppress("physical",false));
@@ -35,15 +37,24 @@ public class KeyboardControllerTest {
         return MotionEvent.obtain(1,1,action,1,new MotionEvent.PointerProperties[]{pointer},new MotionEvent.PointerCoords[]{position},0,0,1,1,4,0,source,0);
     }
     public static class RecordingActivity extends Activity {
-        int windowUpdates;
+        int windowUpdates;boolean focused=true;
+        @Override public boolean hasWindowFocus(){return focused;}
         @Override public void onWindowAttributesChanged(WindowManager.LayoutParams attributes){windowUpdates++;super.onWindowAttributesChanged(attributes);}
+    }
+    private static class RecordingWebView extends WebView {
+        boolean writable=true;
+        RecordingWebView(Context context){super(context);}
+        @Override public void evaluateJavascript(String script,ValueCallback<String> result){
+            if(result!=null)result.onReceiveValue(writable?"true":"false");
+        }
     }
     private static final class Session implements AutoCloseable {
         final ActivityController<RecordingActivity> host=Robolectric.buildActivity(RecordingActivity.class).setup();
-        final RecordingActivity activity=host.get();final WebView web=new WebView(activity);
+        final RecordingActivity activity=host.get();final RecordingWebView web=new RecordingWebView(activity);
         final KeyboardController keyboard=new KeyboardController(activity,web);
+        final InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
         Session(){
-            activity.setContentView(web);
+            activity.setContentView(web);web.requestFocus();
             Configuration config=activity.getResources().getConfiguration();config.keyboard=Configuration.KEYBOARD_QWERTY;config.hardKeyboardHidden=Configuration.HARDKEYBOARDHIDDEN_NO;
             keyboard.start();keyboard.setMode("auto");
         }
@@ -51,7 +62,57 @@ public class KeyboardControllerTest {
         int flags(){return activity.getWindow().getAttributes().flags;}
         void event(int action,int source){MotionEvent e=motion(action,source);try{keyboard.observe(e);}finally{e.recycle();}}
         void finger(){event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);keyboard.beginTouchInput();}
+        void open(){ime.showSoftInput(web,0);assertTrue(visible());}
+        boolean visible(){return shadowOf(ime).isSoftInputVisible();}
+        void pending(){shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(80));}
         @Override public void close(){keyboard.stop();web.destroy();host.pause().stop().destroy();}
+    }
+    @Test @Config(sdk={28,31}) public void soloFisicoClosesExistingKeysWithoutDisconnectingIme()throws Exception{
+        try(Session s=new Session()){
+            s.open();s.keyboard.setMode("physical");assertFalse(s.visible());
+            assertTrue(s.state().getBoolean("imeConnected"));assertFalse(s.state().getBoolean("nativeGate"));
+            assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN,s.activity.getWindow().getAttributes().softInputMode&WindowManager.LayoutParams.SOFT_INPUT_MASK_STATE);
+            s.finger();s.keyboard.requestTouchKeyboard();s.pending();assertFalse(s.visible());
+            // An IME may show its candidates again while processing hardware
+            // input. Typing, configuration and same-mode reports must not hide them.
+            s.open();for(int i=0;i<20;i++)s.keyboard.observe(physicalTyping());
+            s.keyboard.refresh();s.keyboard.publish();s.keyboard.setMode("physical");assertTrue(s.visible());
+        }
+    }
+    @Test @Config(sdk={28,31}) public void automaticClosesOnHardwareAndReopensOnDeliberateTouch()throws Exception{
+        try(Session s=new Session()){
+            s.open();s.keyboard.observe(physicalTyping());assertFalse(s.visible());
+            s.finger();s.keyboard.requestTouchKeyboard();s.pending();assertTrue(s.visible());
+            assertTrue(s.state().getBoolean("hardware"));assertFalse(s.state().getBoolean("suppress"));
+            s.keyboard.observe(physicalTyping());assertFalse(s.visible());
+            s.open();s.keyboard.observe(physicalTyping());assertTrue(s.visible());
+            s.finger();s.event(MotionEvent.ACTION_HOVER_MOVE,InputDevice.SOURCE_MOUSE);assertFalse(s.visible());
+        }
+    }
+    @Test @Config(sdk={28,31}) public void virtualModeOpensNowAndDoesNotCloseForPhysicalTyping()throws Exception{
+        try(Session s=new Session()){
+            s.keyboard.setMode("physical");assertFalse(s.visible());
+            s.keyboard.setMode("virtual");assertTrue(s.visible());
+            s.keyboard.observe(physicalTyping());s.event(MotionEvent.ACTION_HOVER_MOVE,InputDevice.SOURCE_MOUSE);assertTrue(s.visible());
+            s.keyboard.setMode("auto");assertFalse(s.visible());
+        }
+    }
+    @Test public void suppressedFocusInTitleCellsAndDialogsHidesKeysButNotRepeatedInput()throws Exception{
+        try(Session s=new Session()){
+            s.keyboard.setMode("physical");
+            for(int i=0;i<4;i++){s.open();s.keyboard.editingFieldFocused();assertFalse(s.visible());}
+            s.keyboard.setMode("virtual");s.keyboard.editingFieldFocused();assertTrue(s.visible());
+            s.web.writable=false;s.ime.hideSoftInputFromWindow(s.web.getWindowToken(),0);
+            s.keyboard.setMode("virtual");assertFalse(s.visible());
+        }
+    }
+    @Test public void staleTouchAndModeCallbacksCannotReopenKeysAfterPhysicalMode()throws Exception{
+        try(Session s=new Session()){
+            s.finger();s.keyboard.requestTouchKeyboard();s.keyboard.setMode("physical");s.pending();assertFalse(s.visible());
+            s.keyboard.setMode("auto");s.finger();s.keyboard.requestTouchKeyboard();s.keyboard.observe(physicalTyping());s.pending();assertFalse(s.visible());
+            s.finger();s.keyboard.requestTouchKeyboard();s.keyboard.stop();s.pending();assertFalse(s.visible());
+        }
     }
     @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeConnectedAcrossKeysAndWindowFocusable()throws Exception{
         try(Session s=new Session()){

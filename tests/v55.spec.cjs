@@ -1,6 +1,6 @@
 // IME commits use Chromium's native input path; the Android provider is not emulated.
 module.exports=({test,setup,select,lines,assert,openTable,openMath})=>{
-  const nativeState=page=>page.evaluate(()=>onKeyboardState(JSON.stringify({nativeGate:true,imeConnected:true,mode:'auto',hardware:true,suppress:true})));
+  const nativeState=page=>page.evaluate(()=>onKeyboardState(JSON.stringify({nativeGate:false,imeConnected:true,mode:'auto',hardware:true,suppress:true})));
   const metrics=page=>page.evaluate(()=>{
     const rect=selector=>{const n=document.querySelector(selector),r=n.getBoundingClientRect(),s=getComputedStyle(n);return {x:r.x,y:r.y,width:r.width,height:r.height,font:s.fontSize,padding:s.padding};};
     return {
@@ -24,18 +24,19 @@ module.exports=({test,setup,select,lines,assert,openTable,openMath})=>{
     await page.setViewportSize({width:1536,height:1000});await setup(page,'Texto');await select(page,{line:0,offset:5});
     const before=await metrics(page);
     for(const suppress of [true,false,true]){
-      await page.evaluate(suppress=>onKeyboardState(JSON.stringify({nativeGate:true,imeConnected:true,mode:'auto',hardware:true,suppress})),suppress);
-      assert.deepEqual(await metrics(page),before);assert.equal(await page.getAttribute('#editor','inputmode'),null);
+      await page.evaluate(suppress=>onKeyboardState(JSON.stringify({nativeGate:false,imeConnected:true,mode:'auto',hardware:true,suppress})),suppress);
+      assert.deepEqual(await metrics(page),before);assert.equal(await page.getAttribute('#editor','inputmode'),suppress?'none':null);
     }
     // Docking a suggestions-only row changes the available height, not the ribbon.
     await page.setViewportSize({width:1536,height:920});const after=await metrics(page);assert.deepEqual(after.fixed,before.fixed);
   });
-  test('V55 native physical mode keeps text and decimal hints available in every editor',async page=>{
-    await setup(page,'Texto');await page.evaluate(()=>onKeyboardState(JSON.stringify({nativeGate:true,imeConnected:true,mode:'physical',hardware:true,suppress:true})));
-    assert.equal(await page.getAttribute('#editor','inputmode'),null);assert.equal(await page.getAttribute('#noteTitle','inputmode'),null);
-    assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),'Físico y sugerencias');
-    await openTable(page);assert.equal(await page.locator('.cellEditor').first().getAttribute('inputmode'),null);assert.equal(await page.locator('.cellEditor').first().getAttribute('autocorrect'),'on');
-    await page.click('#tableCancel');await openMath(page,'graph');assert.equal(await page.getAttribute('#graphPointX','inputmode'),'decimal');
+  test('V55 native physical mode preserves correction and restores decimal hints in virtual mode',async page=>{
+    await setup(page,'Texto');await page.evaluate(()=>onKeyboardState(JSON.stringify({nativeGate:false,imeConnected:true,mode:'physical',hardware:true,suppress:true})));
+    assert.equal(await page.getAttribute('#editor','inputmode'),'none');assert.equal(await page.getAttribute('#noteTitle','inputmode'),'none');
+    assert.equal(await page.locator('[data-select-for=keyboardMode] .selectValue').textContent(),'Solo físico');
+    await openTable(page);assert.equal(await page.locator('.cellEditor').first().getAttribute('inputmode'),'none');assert.equal(await page.locator('.cellEditor').first().getAttribute('autocorrect'),'on');
+    await page.click('#tableCancel');await openMath(page,'graph');assert.equal(await page.getAttribute('#graphPointX','inputmode'),'none');
+    await page.evaluate(()=>onKeyboardState(JSON.stringify({nativeGate:false,imeConnected:true,mode:'virtual',hardware:true,suppress:false})));assert.equal(await page.getAttribute('#graphPointX','inputmode'),'decimal');
     await page.click('#mathCancel');await openMath(page,'formula');assert.equal(await page.locator('.mathSlot').first().getAttribute('autocorrect'),'off');assert.equal(await page.locator('.mathSlot').first().getAttribute('spellcheck'),'false');
   });
   const commitWord=async(page,word,corrected)=>{

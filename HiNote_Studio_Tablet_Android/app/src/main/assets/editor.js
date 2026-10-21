@@ -658,7 +658,7 @@ NotebookUI.init();
 // Physical keys continue reaching the editable fields; only their soft-keyboard
 // hint changes. Preserve decimal/text hints when returning to virtual input.
 (()=>{
-  const originalModes=new WeakMap();let suppress=false,nativeGate=false,mode='auto',touch=null,touchRevision=0;
+  const originalModes=new WeakMap();let suppress=false,nativeGate=false,physicalInput=false,mode='auto',touch=null,touchRevision=0;
   const fieldSelector='textarea,[contenteditable],input:not([type]),input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],input[type=url],input[type=tel]';
   function typingField(target){
     const node=target instanceof Element?target.closest(fieldSelector):null;
@@ -672,7 +672,7 @@ NotebookUI.init();
     });
   }
   window.onKeyboardState=raw=>{try{
-    const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;mode=data.mode||'auto';$('keyboardMode').value=mode;
+    const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;physicalInput=data.interaction==='physical';mode=data.mode||'auto';$('keyboardMode').value=mode;
     if(suppress){touch=null;touchRevision++;}updateFields();window.StudioUI?.syncSelects?.();
   }catch(_){}};
   window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);
@@ -683,7 +683,7 @@ NotebookUI.init();
     touch={id:event.pointerId,node,x:event.clientX,y:event.clientY,moved:false};
     // Restore the field's original hint before its default focus/selection.
     // A mouse click never enters this path, even when it focuses the same field.
-    suppress=false;updateFields();window.AndroidBridge?.beginTouchKeyboard?.();
+    suppress=false;physicalInput=false;updateFields();window.AndroidBridge?.beginTouchKeyboard?.();
   },true);
   document.addEventListener('pointermove',event=>{if(touch&&event.pointerId===touch.id&&Math.hypot(event.clientX-touch.x,event.clientY-touch.y)>12)touch.moved=true;},true);
   document.addEventListener('pointercancel',()=>{touch=null;touchRevision++;},true);
@@ -695,7 +695,13 @@ NotebookUI.init();
         window.AndroidBridge?.requestTouchKeyboard?.();
     });
   },true);
-  $('keyboardMode').onchange=()=>{mode=$('keyboardMode').value;touch=null;touchRevision++;if(window.AndroidBridge?.setKeyboardMode)AndroidBridge.setKeyboardMode(mode);else toast('La detección del teclado está disponible en Android.');};
+  $('keyboardMode').onchange=()=>{
+    mode=$('keyboardMode').value;touch=null;touchRevision++;
+    // Update before the native callback: selecting Solo físico must prevent
+    // the next tap from opening keys; Virtual restores decimal/text hints.
+    suppress=mode==='physical'||(mode==='auto'&&physicalInput);updateFields();
+    if(window.AndroidBridge?.setKeyboardMode)AndroidBridge.setKeyboardMode(mode);else toast('La detección del teclado está disponible en Android.');
+  };
   new MutationObserver(updateFields).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['contenteditable']});
   if(window.AndroidBridge?.getKeyboardState)onKeyboardState(AndroidBridge.getKeyboardState());
 })();
