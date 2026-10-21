@@ -216,11 +216,10 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         // and its text acknowledgement/UP. This used to consume the first key.
         if(blocked&&pendingInput!=0)return;
         boolean releasingVirtual=KeyboardAccessService.ownsVirtualOverride(this);
-        boolean wasHidden=KeyboardAccessService.ownsHiddenOverride(this);
         boolean candidatesOnly=candidateWindowAllowed&&KeyboardAccessService.candidateSessionAllowed(this);
         boolean nativePolicy=blocked&&activity.hasWindowFocus()&&web.hasFocus()
             &&(candidatesOnly||KeyboardAccessService.physicalKeys(this));
-        if(nativePolicy&&!wasHidden&&KeyboardAccessService.ownsHiddenOverride(this))restoreNativeCandidates(true);
+        if(nativePolicy&&KeyboardAccessService.ownsHiddenOverride(this))restoreNativeCandidates(true);
         else if(nativePolicy&&releasingVirtual&&!KeyboardAccessService.ownsVirtualOverride(this))restoreNativeCandidates(false);
         int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             |(blocked&&(!nativePolicy||candidatesOnly)?WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
@@ -250,27 +249,30 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
                 // The first edit is already acknowledged and its key released.
                 // Wait for the native close result before rebuilding candidates;
                 // otherwise the framework's pending hide can erase them again.
-                ime.hideSoftInputFromWindow(web.getWindowToken(),0,new ResultReceiver(handler){
+                Runnable closed=()->{
+                    if(restored[0]||!canRestoreCandidates(sequence,interaction,editor,true))return;
+                    restored[0]=true;
+                    // HIDDEN also blocks the IME's own candidates-only window
+                    // on Android 12. Clear the pending show request, then release
+                    // only our temporary policy and let WebView suppress its
+                    // automatic key opening while retaining its text connection.
+                    candidateWindowAllowed=true;
+                    if(!KeyboardAccessService.releaseHiddenOverride(KeyboardController.this)){
+                        candidateWindowAllowed=false;return;
+                    }
+                    publish();
+                    handler.postDelayed(()->{
+                        if(canRestoreCandidates(sequence,interaction,editor,true))ime.restartInput(web);
+                    },80);
+                };
+                boolean requested=ime.hideSoftInputFromWindow(web.getWindowToken(),0,new ResultReceiver(handler){
                     @Override protected void onReceiveResult(int result,Bundle data){
-                        if(restored[0]||!canRestoreCandidates(sequence,interaction,editor,true))return;
-                        if(result==InputMethodManager.RESULT_UNCHANGED_HIDDEN||result==InputMethodManager.RESULT_HIDDEN){
-                            restored[0]=true;
-                            // HIDDEN also blocks the IME's own candidates-only
-                            // window on Android 12. The explicit hide above has
-                            // cleared its pending show request: release only our
-                            // temporary policy, then suppress WebView's automatic
-                            // key opening while preserving its text connection.
-                            candidateWindowAllowed=true;
-                            if(!KeyboardAccessService.releaseHiddenOverride(KeyboardController.this)){
-                                candidateWindowAllowed=false;return;
-                            }
-                            publish();
-                            handler.postDelayed(()->{
-                                if(canRestoreCandidates(sequence,interaction,editor,true))ime.restartInput(web);
-                            },80);
-                        }
+                        if(result==InputMethodManager.RESULT_UNCHANGED_HIDDEN||result==InputMethodManager.RESULT_HIDDEN)closed.run();
                     }
                 });
+                // Android returns false without a ResultReceiver callback when
+                // its policy already closed the IME. Do not await a missing ACK.
+                if(!requested)handler.post(closed);
             });
             return;
         }

@@ -190,6 +190,9 @@ public class NativeKeyboardTest {
     }
     private void candidates()throws Exception{
         mode("physical");int before=ime("state").getInt("selections");
+        press(KeyEvent.KEYCODE_H);
+        await("Solo físico accepts its first letter",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
+        await("Solo físico retains visible native candidates",()->visibleIme()[1]&&!visibleIme()[0]);
         String[] words={"uno","dos","tres"};
         for(int n=0;n<3;n++){
             js("document.getElementById('editor').textContent='';document.getElementById('editor').focus()");
