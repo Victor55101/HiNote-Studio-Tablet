@@ -35,7 +35,8 @@ assert "com.hinote.studio.keyboardtrial57.notes-files" in manifest, "Provider wo
 with ZipFile(APK) as archive:
     assert "res/xml/keyboard_control.xml" in archive.namelist(), "Missing accessibility capabilities declaration"
 capabilities = subprocess.run([str(aapt), "dump", "xmltree", str(APK), "res/xml/keyboard_control.xml"], check=True, text=True, capture_output=True).stdout
-for attribute in ("accessibilityEventTypes", "canRetrieveWindowContent", "canRequestFilterKeyEvents", "canPerformGestures", "canRequestTouchExplorationMode", "isAccessibilityTool"):
+assert "android:accessibilityEventTypes(" not in capabilities, "Service must use the default zero events"
+for attribute in ("canRetrieveWindowContent", "canRequestFilterKeyEvents", "canPerformGestures", "canRequestTouchExplorationMode", "isAccessibilityTool"):
     line = next(line for line in capabilities.splitlines() if "android:" + attribute + "(" in line)
     assert line.rstrip().endswith("0x0"), line
 signer = max(sdk.glob("*/lib/apksigner.jar"), key=lambda path: tuple(int(n) for n in re.findall(r"\d+", path.parent.parent.name)))

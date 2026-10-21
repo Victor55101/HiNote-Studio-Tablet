@@ -77,7 +77,9 @@ public class KeyboardTrialTest {
         try(XmlResourceParser xml=app.getResources().getXml(info.metaData.getInt("android.accessibilityservice"))){
             while(xml.next()!=XmlResourceParser.START_TAG){}
             String ns="http://schemas.android.com/apk/res/android";
-            assertEquals(0,xml.getAttributeIntValue(ns,"accessibilityEventTypes",-1));
+            // Omitting accessibilityEventTypes means zero events; numeric 0
+            // is not a valid AAPT flags literal for this attribute.
+            assertEquals(0,xml.getAttributeIntValue(ns,"accessibilityEventTypes",0));
             for(String capability:new String[]{"canRetrieveWindowContent","canRequestFilterKeyEvents","canPerformGestures","canRequestTouchExplorationMode","isAccessibilityTool"})
                 assertFalse(capability,xml.getAttributeBooleanValue(ns,capability,true));
         }
