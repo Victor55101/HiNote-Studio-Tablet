@@ -125,6 +125,14 @@ public class KeyboardControllerTest {
             s.web.focused=true;s.keyboard.setMode("virtual");assertTrue(s.visible());
         }
     }
+    @Test public void physicalModeSelectedBeforeWindowFocusClosesKeysWhenFocusArrives()throws Exception{
+        try(Session s=new Session()){
+            s.open();s.activity.focused=false;s.keyboard.setMode("physical");assertTrue(s.visible());
+            s.activity.focused=true;s.keyboard.windowFocused();assertFalse(s.visible());
+            // A subsequent focus/configuration report must not dismiss candidates.
+            s.open();s.keyboard.windowFocused();assertTrue(s.visible());
+        }
+    }
     @Test @Config(sdk={28,31}) public void physicalTypingKeepsImeConnectedAcrossKeysAndWindowFocusable()throws Exception{
         try(Session s=new Session()){
             s.activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

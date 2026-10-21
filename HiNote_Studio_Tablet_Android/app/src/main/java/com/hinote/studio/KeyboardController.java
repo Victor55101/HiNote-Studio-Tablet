@@ -141,15 +141,17 @@ final class KeyboardController implements InputManager.InputDeviceListener {
             activity.getWindow().setSoftInputMode(softMode);
             activity.getWindow().getDecorView().requestApplyInsets();web.requestLayout();
         }
-        if(blocked&&(!visibilityApplied||!softKeyboardSuppressed))hideSoftKeyboard();
-        visibilityApplied=true;softKeyboardSuppressed=blocked;
+        if(blocked&&(!visibilityApplied||!softKeyboardSuppressed))visibilityApplied=hideSoftKeyboard();
+        else if(!blocked)visibilityApplied=true;
+        softKeyboardSuppressed=blocked;
     }
     // Called on an actual DOM editor change, not on input/composition updates.
     // A title, table or dialog must honor Solo físico too, without losing focus.
     void editingFieldFocused(){if(active&&suppress(mode,physicalInput))hideSoftKeyboard();}
-    private void hideSoftKeyboard(){
+    private boolean hideSoftKeyboard(){
         InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-        if(ime!=null&&activity.hasWindowFocus())ime.hideSoftInputFromWindow(web.getWindowToken(),0);
+        if(ime==null||!activity.hasWindowFocus()||web.getWindowToken()==null)return false;
+        ime.hideSoftInputFromWindow(web.getWindowToken(),0);return true;
     }
     private void showForModeSelection(){
         if(!active)return;
