@@ -26,7 +26,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     private final Activity activity;private final WebView web;private final InputManager inputs;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private volatile String mode;private volatile boolean hardware,physicalInput;
-    private boolean active,keyObserved,touchPending,visibilityApplied,softKeyboardSuppressed;
+    private boolean active,editing,keyObserved,touchPending,visibilityApplied,softKeyboardSuppressed;
     private long touchStarted,interactionRevision,editorRevision;
     private final Set<Long> heldKeys=new HashSet<>();
     private int inputSequence;
@@ -118,11 +118,6 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
             boolean first=heldKeys.add(identity);
             keyObserved=true;hardware=true;
             if(first){
-                // When the system preference is on, queue the native input-view
-                // suppression before this original key reaches the IME. No
-                // inputmode change, replay, or hide after its candidates arrive.
-                if(!physicalInput&&suppress(mode,true)&&KeyboardAccessService.virtualKeysEnabled(this))
-                    KeyboardAccessService.physicalKeys(this);
                 long previousVerification=verifyCloseUntil;
                 boolean defer=nativeVisibilityControl()&&suppress(mode,true)
                     &&(!physicalInput||previousVerification>SystemClock.uptimeMillis());
@@ -221,8 +216,10 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         // and its text acknowledgement/UP. This used to consume the first key.
         if(blocked&&pendingInput!=0)return;
         boolean releasingVirtual=KeyboardAccessService.ownsVirtualOverride(this);
+        boolean wasHidden=KeyboardAccessService.ownsHiddenOverride(this);
         boolean nativePolicy=blocked&&activity.hasWindowFocus()&&web.hasFocus()&&KeyboardAccessService.physicalKeys(this);
-        if(nativePolicy&&releasingVirtual&&!KeyboardAccessService.ownsVirtualOverride(this))restoreNativeCandidates();
+        if(nativePolicy&&!wasHidden&&KeyboardAccessService.ownsHiddenOverride(this))restoreNativeCandidates(true);
+        else if(nativePolicy&&releasingVirtual&&!KeyboardAccessService.ownsVirtualOverride(this))restoreNativeCandidates(false);
         int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             |(blocked&&!nativePolicy?WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
         if(activity.getWindow().getAttributes().softInputMode!=softMode){
@@ -239,12 +236,34 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         else if(!blocked)visibilityApplied=true;
         softKeyboardSuppressed=blocked;
     }
-    private void restoreNativeCandidates(){
+    private void restoreNativeCandidates(boolean hiddenPolicy){
         final int sequence=++candidatesSequence;
         final long interaction=interactionRevision,editor=editorRevision;
         final boolean[] restored={false};
+        if(hiddenPolicy){
+            handler.post(()->{
+                if(!canRestoreCandidates(sequence,interaction,editor,true))return;
+                InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+                if(ime==null)return;
+                // The first edit is already acknowledged and its key released.
+                // Wait for the native close result before rebuilding candidates;
+                // otherwise the framework's pending hide can erase them again.
+                ime.hideSoftInputFromWindow(web.getWindowToken(),0,new ResultReceiver(handler){
+                    @Override protected void onReceiveResult(int result,Bundle data){
+                        if(restored[0]||!canRestoreCandidates(sequence,interaction,editor,true))return;
+                        if(result==InputMethodManager.RESULT_UNCHANGED_HIDDEN||result==InputMethodManager.RESULT_HIDDEN){
+                            restored[0]=true;
+                            handler.postDelayed(()->{
+                                if(canRestoreCandidates(sequence,interaction,editor,true))ime.restartInput(web);
+                            },80);
+                        }
+                    }
+                });
+            });
+            return;
+        }
         Runnable probe=()->{
-            if(!canRestoreCandidates(sequence,interaction,editor)||restored[0])return;
+            if(!canRestoreCandidates(sequence,interaction,editor,false)||restored[0])return;
             InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
             if(ime==null)return;
             // With the hardware preference restored to off, this implicit
@@ -253,7 +272,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
             // configuration reset which can hide that window after first input.
             ime.showSoftInput(web,InputMethodManager.SHOW_IMPLICIT,new ResultReceiver(handler){
                 @Override protected void onReceiveResult(int result,Bundle data){
-                    if(restored[0]||!canRestoreCandidates(sequence,interaction,editor))return;
+                    if(restored[0]||!canRestoreCandidates(sequence,interaction,editor,false))return;
                     if(result==InputMethodManager.RESULT_UNCHANGED_HIDDEN||result==InputMethodManager.RESULT_HIDDEN){
                         restored[0]=true;
                         // Refresh only the native session for this same editor,
@@ -266,22 +285,23 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         };
         handler.post(probe);handler.postDelayed(probe,80);
     }
-    private boolean canRestoreCandidates(int sequence,long interaction,long editor){
-        return active&&sequence==candidatesSequence&&interaction==interactionRevision&&editor==editorRevision
+    private boolean canRestoreCandidates(int sequence,long interaction,long editor,boolean hiddenPolicy){
+        return active&&editing&&hardware&&sequence==candidatesSequence&&interaction==interactionRevision&&editor==editorRevision
             &&pendingInput==0&&heldKeys.isEmpty()&&nativeVisibilityControl()&&suppress(mode,physicalInput)
-            &&!KeyboardAccessService.virtualKeysEnabled(this)&&activity.hasWindowFocus()&&web.hasFocus();
+            &&(hiddenPolicy?KeyboardAccessService.ownsHiddenOverride(this):!KeyboardAccessService.virtualKeysEnabled(this))
+            &&activity.hasWindowFocus()&&web.hasFocus();
     }
     // Called on an actual DOM editor change, not on input/composition updates.
     // A title, table or dialog must honor Solo físico too, without losing focus.
     void editingFieldFocused(){
-        editorRevision++;
+        editorRevision++;editing=true;
         if(!active)return;
         if(suppress(mode,physicalInput)){
             if(pendingInput==0&&heldKeys.isEmpty()){visibilityApplied=false;publish();}
         }
         else if(BuildConfig.KEYBOARD_TRIAL&&"virtual".equals(mode))showForModeSelection();
     }
-    void editingFieldBlurred(){editorRevision++;}
+    void editingFieldBlurred(){editorRevision++;editing=false;}
     void editingFieldTouched(){
         if(active&&"physical".equals(mode)&&pendingInput==0&&heldKeys.isEmpty()){
             if(!nativeVisibilityControl()||fullKeyboardPanelVisible()){

@@ -15,6 +15,7 @@ import android.provider.Settings;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.graphics.Bitmap;
 import org.json.JSONArray;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -43,7 +44,20 @@ public class NativeKeyboardTest {
     private void await(String message,Condition condition)throws Exception{
         long end=SystemClock.uptimeMillis()+10000;
         while(SystemClock.uptimeMillis()<end){if(condition.satisfied())return;SystemClock.sleep(40);}
+        saveScreen();
         fail(message+"; native="+ime("state")+"; frame="+frame()+"; editor="+js("JSON.stringify({active:document.activeElement?.id,canShow:hinoteKeyboardCanShow(),state:JSON.parse(AndroidBridge.getKeyboardState()),text:document.getElementById('editor').textContent})"));
+    }
+    private boolean[] visibleIme(){
+        // Inspect rendered pixels, not just the IME's internal 'shown' flag:
+        // WindowManager can keep an internally shown IME surface hidden.
+        Bitmap captured=automation.takeScreenshot();assertNotNull("Emulator screenshot",captured);
+        Bitmap bitmap=captured.getConfig()==Bitmap.Config.HARDWARE?captured.copy(Bitmap.Config.ARGB_8888,false):captured;
+        int[] pixels=new int[bitmap.getWidth()*bitmap.getHeight()];bitmap.getPixels(pixels,0,bitmap.getWidth(),0,0,bitmap.getWidth(),bitmap.getHeight());
+        int keys=0,candidates=0;for(int i=0;i<pixels.length;i+=16){if(pixels[i]==HarnessIme.KEYS_COLOR)keys++;if(pixels[i]==HarnessIme.CANDIDATES_COLOR)candidates++;}
+        if(bitmap!=captured)bitmap.recycle();captured.recycle();return new boolean[]{keys>300,candidates>100};
+    }
+    private void saveScreen()throws Exception{
+        shell("su 0 screencap -p /data/local/tmp/hinote-keyboard-shots/"+testName.getMethodName()+".png");
     }
     private String frame(){
         AtomicReference<String> value=new AtomicReference<>();test.runOnMainSync(()->{
@@ -156,17 +170,18 @@ public class NativeKeyboardTest {
         assertTrue(automation.injectInputEvent(new KeyEvent(now,now,action,code,0,modifiers,deviceId,0,0,InputDevice.SOURCE_KEYBOARD),true));
     }
     private void firstLetter()throws Exception{
-        mode("virtual");await("Virtual keys shown",()->ime("state").getBoolean("keys"));
+        mode("virtual");await("Virtual keys shown",()->visibleIme()[0]);
         mode("auto");Bundle before=ime("state");press(KeyEvent.KEYCODE_H);
         await("First h delivered to DOM without another key",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
-        await("Keys closed by that same physical press",()->!ime("state").getBoolean("keys"));
-        await("Candidates visible from that first press",()->ime("state").getBoolean("candidates"));
+        await("Keys closed by that same physical press",()->!visibleIme()[0]);
+        await("Candidates visible from that first press",()->visibleIme()[1]);
         Bundle after=ime("state");assertEquals(before.getInt("typed")+1,after.getInt("typed"));assertEquals(before.getInt("dropped"),after.getInt("dropped"));
     }
     private void lateShow()throws Exception{
-        mode("virtual");await("Virtual keys shown",()->ime("state").getBoolean("keys"));
+        mode("virtual");await("Virtual keys shown",()->visibleIme()[0]);
         ime("late");mode("physical");SystemClock.sleep(900);
-        assertFalse("Late provider keys closed: "+ime("state")+" frame="+frame()+" state="+js("AndroidBridge.getKeyboardState()"),ime("state").getBoolean("keys"));
+        boolean keys=visibleIme()[0];if(keys)saveScreen();
+        assertFalse("Late provider keys closed: "+ime("state")+" frame="+frame()+" state="+js("AndroidBridge.getKeyboardState()"),keys);
         press(KeyEvent.KEYCODE_H);await("Typing still reaches physical editor",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
     }
     private void candidates()throws Exception{

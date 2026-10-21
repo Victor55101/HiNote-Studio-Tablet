@@ -17,6 +17,7 @@ import android.widget.TextView;
 
 /** CI-only IME in another process. Delays commits and can reproduce a late key-panel show. */
 public final class HarnessIme extends InputMethodService {
+    static final int KEYS_COLOR=0xffc47c2b,CANDIDATES_COLOR=0xff527fa5;
     private static HarnessIme instance;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private View keyView,candidatesView;
@@ -31,7 +32,7 @@ public final class HarnessIme extends InputMethodService {
         // InputMethodService replaces the supplied LayoutParams with WRAP_CONTENT.
         // Enforce a realistic panel height so docked-pane detection is exercised.
         view.setMinimumHeight(Math.round(height*getResources().getDisplayMetrics().density));
-        view.setBackgroundColor(0xffcdd8dd);view.setLayoutParams(new ViewGroup.LayoutParams(-1,Math.round(height*getResources().getDisplayMetrics().density)));
+        view.setBackgroundColor("TEST KEYS".equals(label)?KEYS_COLOR:CANDIDATES_COLOR);view.setLayoutParams(new ViewGroup.LayoutParams(-1,Math.round(height*getResources().getDisplayMetrics().density)));
         return view;
     }
     @Override public View onCreateInputView(){return keyView=panel("TEST KEYS",240);}

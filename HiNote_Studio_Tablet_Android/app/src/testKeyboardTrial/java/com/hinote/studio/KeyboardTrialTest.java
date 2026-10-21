@@ -211,10 +211,10 @@ public class KeyboardTrialTest {
             assertTrue(shadowOf(s.ime).isSoftInputVisible());
         }
     }
-    @Test public void enabledPreferenceQueuesPhysicalPolicyBeforeTheFirstNativeKey()throws Exception{
+    @Test public void enabledPreferenceWaitsForTheFirstNativeEditBeforeClosingKeys()throws Exception{
         try(Session s=new Session(true)){
             s.keyboard.setMode("auto");s.finger();assertEquals(0,s.service.get().backend.mode);
-            s.keyboard.observe(key());assertEquals(1,s.service.get().backend.mode);
+            s.keyboard.observe(key());assertEquals(0,s.service.get().backend.mode);
             s.apply();assertEquals(1,s.service.get().backend.mode);
             assertEquals("physical",new JSONObject(s.keyboard.state()).getString("interaction"));
             assertEquals("physical",new JSONObject(s.keyboard.state()).getString("keyboardAssist"));

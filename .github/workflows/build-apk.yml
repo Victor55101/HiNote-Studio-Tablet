@@ -46,6 +46,7 @@ jobs:
             HiNote_Studio_Tablet_Android/keyboardHarness/build/reports/androidTests/
             HiNote_Studio_Tablet_Android/keyboardHarness/build/outputs/androidTest-results/
             HiNote_Studio_Tablet_Android/keyboardHarness/build/native-logcat.txt
+            HiNote_Studio_Tablet_Android/keyboardHarness/build/native-shots/
           if-no-files-found: ignore
   test:
     runs-on: ubuntu-latest

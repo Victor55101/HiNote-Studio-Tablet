@@ -4,7 +4,8 @@ mkdir -p keyboardHarness/build
 adb root
 adb wait-for-device
 adb shell su 0 id
-trap 'adb logcat -d > keyboardHarness/build/native-logcat.txt' EXIT
+adb shell mkdir -p /data/local/tmp/hinote-keyboard-shots
+trap 'adb logcat -d > keyboardHarness/build/native-logcat.txt; adb pull /data/local/tmp/hinote-keyboard-shots keyboardHarness/build/native-shots >/dev/null 2>&1 || true' EXIT
 adb logcat -c
 # Resolve and compile before device tests; retry only transient Maven throttling,
 # never a compilation error or a failing keyboard assertion.

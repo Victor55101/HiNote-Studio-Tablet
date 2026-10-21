@@ -52,6 +52,9 @@ public class KeyboardAccessService extends AccessibilityService {
     static boolean ownsVirtualOverride(Client value){
         return available()&&client.get()==value&&connected.override!=null&&connected.override.permitsKeys();
     }
+    static boolean ownsHiddenOverride(Client value){
+        return available()&&client.get()==value&&connected.override!=null&&connected.override.hidesKeys();
+    }
     static void releaseKeys(Client value){if(client.get()==value&&connected!=null)connected.release();}
     static String status(){
         if(Build.VERSION.SDK_INT<29)return "unsupported";
