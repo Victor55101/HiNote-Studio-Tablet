@@ -329,6 +329,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void setKeyboardMode(String mode){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.setMode(mode);});}
         @JavascriptInterface public void beginTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.beginTouchInput();});}
         @JavascriptInterface public void requestTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.requestTouchKeyboard();});}
+        @JavascriptInterface public void keyboardInputApplied(int request){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.inputApplied(request);});}
+        @JavascriptInterface public void requestPhysicalKeyboardHide(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.editingFieldTouched();});}
         @JavascriptInterface public void openKeyboardTrialSetup(){runOnUiThread(()->{if(!destroyed)KeyboardTrialSetup.show(MainActivity.this);});}
         @JavascriptInterface public void requestOpenNotes(String snapshot,String title,boolean grid,String images,int pages){
             if(destroyed||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;

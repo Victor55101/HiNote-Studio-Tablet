@@ -1,0 +1,50 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.hinote.studio'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.hinote.studio.keyboardharness'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName '1'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        buildConfigField 'boolean', 'KEYBOARD_TRIAL', 'true'
+    }
+    buildFeatures { buildConfig true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets.main.java.srcDir layout.buildDirectory.dir('generated/sharedKeyboardJava')
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/keyboardAssets')
+}
+
+tasks.register('copyKeyboardSources', Copy) {
+    from('../app/src/main/java') {
+        include 'com/hinote/studio/KeyboardController.java', 'com/hinote/studio/KeyboardAccessService.java',
+            'com/hinote/studio/SoftKeyboardOverride.java', 'com/hinote/studio/EditorWebView.java',
+            'com/hinote/studio/EditorInputLayout.java'
+    }
+    into layout.buildDirectory.dir('generated/sharedKeyboardJava')
+}
+tasks.register('copyKeyboardAsset') {
+    def editor = file('../app/src/main/assets/editor.js')
+    inputs.file editor
+    outputs.dir layout.buildDirectory.dir('generated/keyboardAssets')
+    doLast {
+        String source = editor.getText('UTF-8')
+        int start = source.indexOf('// Physical keys continue')
+        if (start < 0) throw new GradleException('Keyboard asset marker missing')
+        File directory = layout.buildDirectory.dir('generated/keyboardAssets').get().asFile
+        directory.mkdirs()
+        new File(directory, 'keyboard.js').setText(source.substring(start), 'UTF-8')
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'copyKeyboardSources', 'copyKeyboardAsset' }
+
+dependencies {
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

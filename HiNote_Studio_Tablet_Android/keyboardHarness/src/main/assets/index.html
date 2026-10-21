@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{font:20px sans-serif;padding:12px}.hidden{display:none!important}#editor{border:1px solid #555;min-height:160px;padding:12px}input{display:block;margin:12px}select{font-size:20px}
+</style></head><body>
+<select id="keyboardMode"><option value="auto">Automático</option><option value="virtual">Mostrar virtual</option><option value="physical">Solo físico</option></select>
+<button id="keyboardTrialSettings" class="hidden">Control</button><span id="keyboardTrialState"></span>
+<div id="editor" contenteditable="true" autocorrect="on" spellcheck="true" aria-label="Test text"></div>
+<input id="noteTitle" type="text" autocorrect="on"><input id="decimal" type="number" inputmode="decimal">
+<script>
+window.$=id=>document.getElementById(id);window.toast=()=>{};
+let focused=null;
+function editing(){const next=document.activeElement;if(next===focused)return;focused=next;AndroidBridge.setEditingField(next.isContentEditable||next.tagName==='INPUT');}
+document.addEventListener('focusin',editing);document.addEventListener('focusout',()=>queueMicrotask(editing));
+</script><script src="keyboard.js"></script></body></html>

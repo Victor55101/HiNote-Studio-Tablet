@@ -104,6 +104,25 @@ public class EditorWebViewTest {
             }
         }
     }
+    @Test public void candidateNumbersAndTheirModifiersVisitImeBeforeAnyEditorDelivery(){
+        try(Session s=new Session()){
+            for(int code:new int[]{KeyEvent.KEYCODE_CTRL_LEFT,KeyEvent.KEYCODE_CTRL_RIGHT,KeyEvent.KEYCODE_1,KeyEvent.KEYCODE_2,KeyEvent.KEYCODE_3,
+                KeyEvent.KEYCODE_NUMPAD_1,KeyEvent.KEYCODE_NUMPAD_2,KeyEvent.KEYCODE_NUMPAD_3}){
+                KeyEvent down=key(KeyEvent.ACTION_DOWN,code,KeyEvent.META_CTRL_ON),up=key(KeyEvent.ACTION_UP,code,0);
+                assertFalse(s.keyboard.routeBeforeIme(down));assertFalse(s.web.dispatchKeyEventPreIme(down));assertFalse(s.web.dispatchKeyEventPreIme(up));
+                // If the provider consumes the chord, it must never reach the editor.
+                assertTrue(s.web.delivered.isEmpty());
+            }
+        }
+    }
+    @Test public void unhandledCandidateChordStillReachesEditorOnlyOnceAfterIme(){
+        try(Session s=new Session()){
+            KeyEvent down=key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_2,KeyEvent.META_CTRL_ON),up=key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_2,0);
+            assertFalse(s.web.dispatchKeyEventPreIme(down));assertTrue(s.web.dispatchKeyEvent(down));
+            assertFalse(s.web.dispatchKeyEventPreIme(up));assertTrue(s.web.dispatchKeyEvent(up));
+            assertEquals(List.of(down,up),s.web.delivered);
+        }
+    }
     @Test public void focusLossReleasesOnlyKeysActuallyDeliveredToEditor(){
         try(Session s=new Session()){
             s.web.dispatchKeyEventPreIme(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_A,0));assertTrue(s.web.delivered.isEmpty());

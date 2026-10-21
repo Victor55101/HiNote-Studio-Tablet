@@ -658,7 +658,7 @@ NotebookUI.init();
 // Physical keys continue reaching the editable fields; only their soft-keyboard
 // hint changes. Preserve decimal/text hints when returning to virtual input.
 (()=>{
-  const originalModes=new WeakMap();let suppress=false,nativeGate=false,physicalInput=false,mode='auto',touch=null,touchRevision=0;
+  const originalModes=new WeakMap();let suppress=false,nativeGate=false,physicalInput=false,mode='auto',touch=null,touchRevision=0,pendingPhysicalInput=0;
   const fieldSelector='textarea,[contenteditable],input:not([type]),input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],input[type=url],input[type=tel]';
   function typingField(target){
     const node=target instanceof Element?target.closest(fieldSelector):null;
@@ -684,13 +684,25 @@ NotebookUI.init();
     });
   }
   window.onKeyboardState=raw=>{try{
-    const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;physicalInput=data.interaction==='physical';mode=data.mode||'auto';$('keyboardMode').value=mode;
+    const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;pendingPhysicalInput=Number(data.pendingPhysicalInput)||0;physicalInput=data.interaction==='physical';mode=data.mode||'auto';$('keyboardMode').value=mode;
     const trial=data.keyboardTrial===true,assist=data.keyboardAssist;
     $('keyboardTrialSettings').classList.toggle('hidden',!trial);$('keyboardTrialState').classList.toggle('hidden',!trial);
     $('keyboardTrialState').textContent=({ready:'Control preparado',active:'Teclas virtuales permitidas',permission:'Activa el control en Accesibilidad',setting:'Revisa el ajuste del teclado físico',refused:'El sistema no permitió el control',busy:'Otro servicio controla el teclado',unsupported:'Requiere Android 10 o posterior',unknown:'Comprueba los ajustes del teclado'})[assist]||'';
     if(suppress){touch=null;touchRevision++;}updateFields();window.StudioUI?.syncSelects?.();
   }catch(_){}};
   window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);
+  function acknowledgePhysicalInput(){
+    const request=pendingPhysicalInput;if(!request)return;
+    // Run after every listener for this edit, including composition handling.
+    // The bridge receives only a sequence number, never the text being typed.
+    queueMicrotask(()=>window.AndroidBridge?.keyboardInputApplied?.(request));
+  }
+  document.addEventListener('input',acknowledgePhysicalInput,true);
+  document.addEventListener('compositionend',acknowledgePhysicalInput,true);
+  for(const type of ['keydown','beforeinput'])document.addEventListener(type,event=>{
+    const request=pendingPhysicalInput;
+    if(request)queueMicrotask(()=>{if(event.defaultPrevented)window.AndroidBridge?.keyboardInputApplied?.(request);});
+  },true);
   document.addEventListener('pointerdown',event=>{
     touch=null;touchRevision++;
     if((event.pointerType!=='touch'&&event.pointerType!=='pen')||!event.isPrimary||mode==='physical')return;
@@ -703,6 +715,9 @@ NotebookUI.init();
   document.addEventListener('pointermove',event=>{if(touch&&event.pointerId===touch.id&&Math.hypot(event.clientX-touch.x,event.clientY-touch.y)>12)touch.moved=true;},true);
   document.addEventListener('pointercancel',()=>{touch=null;touchRevision++;},true);
   document.addEventListener('pointerup',event=>{
+    if(mode==='physical'&&(event.pointerType==='touch'||event.pointerType==='pen')&&typingField(event.target)){
+      requestAnimationFrame(()=>{if(mode==='physical')window.AndroidBridge?.requestPhysicalKeyboardHide?.();});
+    }
     if(!touch||event.pointerId!==touch.id)return;
     const gesture=touch,request=touchRevision;touch=null;if(gesture.moved)return;
     requestAnimationFrame(()=>{

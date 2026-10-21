@@ -29,6 +29,7 @@ async function paste(page, text) {
 }
 
 // Run the current keyboard regressions first, then the full editor suite.
+require('./v58.spec.cjs')({test,setup,select,lines,assert,openMath});
 require('./v57.spec.cjs')({test,setup,select,lines,assert});
 require('./v56.spec.cjs')({test,setup,select,lines,assert,openTable,openMath});
 require('./v55.spec.cjs')({test,setup,select,lines,assert,openTable,openMath});
