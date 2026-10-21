@@ -50,4 +50,14 @@ module.exports=({test,setup,select,lines,assert,openTable,openMath})=>{
     await session.send('Input.insertText',{text:'Vázquez'});await page.keyboard.press('Space');
     assert.deepEqual(await lines(page),['Antes Vázquez ']);assert.equal(await page.getAttribute('#editor','inputmode'),'none');assert.equal(await page.evaluate(()=>document.activeElement.id),'editor');
   });
+  test('V56 suppressing soft keys cannot enable prose correction in decimal or literal fields',async page=>{
+    await setup(page,'Texto');await state(page,'virtual',false);await openMath(page,'graph');
+    const before=await page.locator('#graphPointX').evaluate(n=>Object.fromEntries(['inputmode','autocorrect','autocomplete'].map(k=>[k,n.getAttribute(k)])));
+    await state(page,'physical',true);
+    assert.equal(await page.getAttribute('#graphPointX','inputmode'),'none');assert.equal(await page.getAttribute('#graphPointX','autocorrect'),'off');assert.equal(await page.getAttribute('#graphPointX','autocomplete'),'off');
+    assert.equal(await page.getAttribute('#editor','autocorrect'),'on');
+    await state(page,'virtual',false);assert.deepEqual(await page.locator('#graphPointX').evaluate(n=>Object.fromEntries(['inputmode','autocorrect','autocomplete'].map(k=>[k,n.getAttribute(k)]))),before);
+    await page.click('#mathCancel');await openMath(page,'formula');await state(page,'physical',true);
+    assert.equal(await page.locator('.mathSlot').first().getAttribute('autocorrect'),'off');assert.equal(await page.locator('.mathSlot').first().getAttribute('autocomplete'),'off');
+  });
 };

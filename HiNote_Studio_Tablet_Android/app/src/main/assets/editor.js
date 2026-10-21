@@ -667,8 +667,20 @@ NotebookUI.init();
   }
   function updateFields(){
     document.querySelectorAll(fieldSelector).forEach(node=>{
-      if(suppress&&!nativeGate){if(!originalModes.has(node))originalModes.set(node,node.getAttribute('inputmode'));if(node.getAttribute('inputmode')!=='none')node.setAttribute('inputmode','none');}
-      else if(originalModes.has(node)){const mode=originalModes.get(node);if(mode===null)node.removeAttribute('inputmode');else node.setAttribute('inputmode',mode);originalModes.delete(node);}
+      if(suppress&&!nativeGate){
+        if(!originalModes.has(node))originalModes.set(node,Object.fromEntries(['inputmode','autocorrect','autocomplete'].map(name=>[name,node.getAttribute(name)])));
+        const original=originalModes.get(node);
+        if(node.getAttribute('inputmode')!=='none')node.setAttribute('inputmode','none');
+        // Chromium keeps a text connection with inputmode=none. Do not let
+        // that turn numbers, passwords, addresses or literal math into prose.
+        if(node.matches('input[type=number],input[type=email],input[type=password],input[type=url],input[type=tel]')
+          ||/^(decimal|numeric|email|url|tel)$/.test(original.inputmode||'')||original.autocorrect==='off'){
+          for(const name of ['autocorrect','autocomplete'])if(node.getAttribute(name)!=='off')node.setAttribute(name,'off');
+        }
+      }else if(originalModes.has(node)){
+        for(const [name,value] of Object.entries(originalModes.get(node))){if(value===null)node.removeAttribute(name);else if(node.getAttribute(name)!==value)node.setAttribute(name,value);}
+        originalModes.delete(node);
+      }
     });
   }
   window.onKeyboardState=raw=>{try{
