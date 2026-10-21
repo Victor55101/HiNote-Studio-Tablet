@@ -145,7 +145,11 @@ public class KeyboardTrialTest {
             s.keyboard.setMode("auto");s.finger();assertEquals(2,s.service.get().backend.mode);
             EditorInputLayout root=new EditorInputLayout(s.activity.get(),s.keyboard);
             View child=new View(s.activity.get()){@Override public boolean dispatchKeyEventPreIme(KeyEvent event){return true;}};
-            child.setFocusableInTouchMode(true);root.addView(child);s.activity.get().setContentView(root);child.requestFocus();
+            child.setFocusableInTouchMode(true);root.addView(child);s.activity.get().setContentView(root);
+            // Lay out the replacement hierarchy before requesting focus. A
+            // zero-size child is not an eligible key target in Android 12.
+            root.measure(View.MeasureSpec.makeMeasureSpec(800,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(600,View.MeasureSpec.EXACTLY));
+            root.layout(0,0,800,600);assertTrue(child.requestFocus());assertSame(child,root.getFocusedChild());
             assertTrue(root.dispatchKeyEventPreIme(key()));
             assertEquals(0,s.service.get().backend.mode);
             assertEquals("physical",new JSONObject(s.keyboard.state()).getString("interaction"));

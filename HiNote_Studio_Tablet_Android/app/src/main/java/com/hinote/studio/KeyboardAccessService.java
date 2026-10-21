@@ -41,14 +41,18 @@ public class KeyboardAccessService extends AccessibilityService {
     static void releaseKeys(Client value){if(client.get()==value&&connected!=null)connected.release();}
     static String status(){
         if(Build.VERSION.SDK_INT<29)return "unsupported";
-        if(!available())return "permission";
-        if(connected.override!=null&&connected.override.wasRefused())return "refused";
-        if(connected.override!=null&&connected.override.ownsMode())return "active";
-        if(connected.override!=null&&connected.override.anotherPolicy())return "busy";
+        // JavascriptInterface state reads run off the UI thread. Hold one
+        // snapshot while onUnbind may clear the connected service concurrently.
+        KeyboardAccessService service=connected;
+        if(!BuildConfig.KEYBOARD_TRIAL||service==null)return "permission";
+        SoftKeyboardOverride control=service.override;
+        if(control!=null&&control.wasRefused())return "refused";
+        if(control!=null&&control.ownsMode())return "active";
+        if(control!=null&&control.anotherPolicy())return "busy";
         try{
             // Read only. Android itself saves/restores this preference through
             // SoftKeyboardController; this application never writes secure settings.
-            if(Settings.Secure.getInt(connected.getContentResolver(),"show_ime_with_hard_keyboard",0)!=0)return "setting";
+            if(Settings.Secure.getInt(service.getContentResolver(),"show_ime_with_hard_keyboard",0)!=0)return "setting";
         }catch(SecurityException ignored){return "unknown";}
         return "ready";
     }
