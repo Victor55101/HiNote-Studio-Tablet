@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.os.ParcelFileDescriptor;
 import android.provider.Settings;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -20,9 +21,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.Rule;
+import org.junit.rules.TestName;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
@@ -31,7 +37,8 @@ import static org.junit.Assert.*;
 public class NativeKeyboardTest {
     Instrumentation test;Context context;UiAutomation automation;HarnessActivity activity;
     String oldIme,oldEnabledImes,oldServices,oldAccessibility,oldShow;
-    int deviceId;
+    int deviceId;String eventPath;
+    @Rule public TestName testName=new TestName();
     interface Condition { boolean satisfied()throws Exception; }
     private void await(String message,Condition condition)throws Exception{
         long end=SystemClock.uptimeMillis()+10000;
@@ -50,7 +57,14 @@ public class NativeKeyboardTest {
         Intent intent=new Intent(context,HarnessIme.CommandReceiver.class)
             .addFlags(Intent.FLAG_RECEIVER_FOREGROUND).putExtra("command",command);
         context.sendOrderedBroadcast(intent,null,new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){result.set(getResultExtras(true));done.countDown();}},new Handler(Looper.getMainLooper()),0,null,null);
-        assertTrue("IME process callback",done.await(10,TimeUnit.SECONDS));return result.get();
+        assertTrue("IME process callback",done.await(10,TimeUnit.SECONDS));result.get().size();return result.get();
+    }
+    private String shell(String command)throws Exception{
+        try(InputStream input=new ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command))){
+            ByteArrayOutputStream output=new ByteArrayOutputStream();byte[] buffer=new byte[2048];int count;
+            while((count=input.read(buffer))!=-1)output.write(buffer,0,count);
+            return new String(output.toByteArray(),StandardCharsets.UTF_8);
+        }
     }
     @Before public void start()throws Exception{
         test=InstrumentationRegistry.getInstrumentation();context=test.getTargetContext();
@@ -62,7 +76,7 @@ public class NativeKeyboardTest {
         oldAccessibility=Settings.Secure.getString(context.getContentResolver(),Settings.Secure.ACCESSIBILITY_ENABLED);
         oldShow=Settings.Secure.getString(context.getContentResolver(),"show_ime_with_hard_keyboard");
         String targetIme=new ComponentName(context,HarnessIme.class).flattenToShortString();
-        Settings.Secure.putInt(context.getContentResolver(),"show_ime_with_hard_keyboard",0);
+        Settings.Secure.putInt(context.getContentResolver(),"show_ime_with_hard_keyboard",testName.getMethodName().endsWith("SettingOn")?1:0);
         Settings.Secure.putString(context.getContentResolver(),Settings.Secure.ENABLED_INPUT_METHODS,targetIme);
         Settings.Secure.putString(context.getContentResolver(),Settings.Secure.DEFAULT_INPUT_METHOD,targetIme);
         Settings.Secure.putString(context.getContentResolver(),Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,new ComponentName(context,KeyboardAccessService.class).flattenToString());
@@ -90,6 +104,14 @@ public class NativeKeyboardTest {
             if(device!=null&&!device.isVirtual()&&device.supportsSource(InputDevice.SOURCE_KEYBOARD)&&device.getKeyboardType()==InputDevice.KEYBOARD_TYPE_ALPHABETIC){deviceId=id;break;}
         }
         assertTrue("Emulator requires an enabled hardware keyboard",deviceId!=-1);
+        String name=InputDevice.getDevice(deviceId).getName();
+        String inventory=shell("for p in /sys/class/input/event*/device/name; do echo \"$p=$(cat \"$p\")\"; done");
+        for(String line:inventory.split("\n"))if(line.endsWith("="+name)){
+            String path=line.substring(0,line.indexOf('='));
+            eventPath="/dev/input/"+path.split("/")[4];break;
+        }
+        assertNotNull("Kernel keyboard device: "+name+" / "+inventory,eventPath);
+        assertTrue("CI emulator root for real kernel input",shell("su 0 id").contains("uid=0"));
     }
     @After public void stop()throws Exception{
         if(activity!=null)test.runOnMainSync(()->{activity.keyboard.stop();activity.finish();});
@@ -104,25 +126,30 @@ public class NativeKeyboardTest {
         }
     }
     private void mode(String value){test.runOnMainSync(()->activity.keyboard.setMode(value));}
-    private void event(int action,int code,int modifiers){
-        long now=SystemClock.uptimeMillis();
-        assertTrue("Inject original hardware event",automation.injectInputEvent(new KeyEvent(now,now,action,code,0,modifiers,deviceId,0,0,InputDevice.SOURCE_KEYBOARD),true));
+    private void event(int action,int code,int modifiers)throws Exception{
+        // Android normalizes UiAutomation-injected keys to device -1. Feed
+        // the emulator's kernel keyboard instead, so the production hardware
+        // classifier and pre-IME path receive an actual device key pair.
+        int scan=code==KeyEvent.KEYCODE_H?35:code==KeyEvent.KEYCODE_CTRL_LEFT?29:code-KeyEvent.KEYCODE_1+2;
+        String result=shell("su 0 sh -c 'sendevent "+eventPath+" 1 "+scan+" "+(action==KeyEvent.ACTION_DOWN?1:0)+"; sendevent "+eventPath+" 0 0 0'");
+        assertTrue("Kernel input accepted: "+result,result.trim().isEmpty());
     }
-    private void press(int code){event(KeyEvent.ACTION_DOWN,code,0);event(KeyEvent.ACTION_UP,code,0);}
-    @Test public void firstPhysicalLetterAppearsOnceAndClosesKeysOnTheSamePress()throws Exception{
+    private void press(int code)throws Exception{event(KeyEvent.ACTION_DOWN,code,0);event(KeyEvent.ACTION_UP,code,0);}
+    private void firstLetter()throws Exception{
         mode("virtual");await("Virtual keys shown",()->ime("state").getBoolean("keys"));
         mode("auto");Bundle before=ime("state");press(KeyEvent.KEYCODE_H);
         await("First h delivered to DOM without another key",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
         await("Keys closed by that same physical press",()->!ime("state").getBoolean("keys"));
+        await("Candidates visible from that first press",()->ime("state").getBoolean("candidates"));
         Bundle after=ime("state");assertEquals(before.getInt("typed")+1,after.getInt("typed"));assertEquals(before.getInt("dropped"),after.getInt("dropped"));
     }
-    @Test public void soloFisicoClosesAProviderShowThatArrivesAfterModeSelection()throws Exception{
+    private void lateShow()throws Exception{
         mode("virtual");await("Virtual keys shown",()->ime("state").getBoolean("keys"));
         ime("late");mode("physical");SystemClock.sleep(900);
-        assertFalse("Late provider keys closed",ime("state").getBoolean("keys"));
+        assertFalse("Late provider keys closed: "+ime("state")+" state="+js("AndroidBridge.getKeyboardState()"),ime("state").getBoolean("keys"));
         press(KeyEvent.KEYCODE_H);await("Typing still reaches physical editor",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
     }
-    @Test public void ctrlOneTwoThreeAreConsumedByNativeCandidateSelection()throws Exception{
+    private void candidates()throws Exception{
         mode("physical");int before=ime("state").getInt("selections");
         String[] words={"uno","dos","tres"};
         for(int n=0;n<3;n++){
@@ -135,4 +162,10 @@ public class NativeKeyboardTest {
         }
         assertEquals(before+3,ime("state").getInt("selections"));
     }
+    @Test public void firstLetterSettingOff()throws Exception{firstLetter();}
+    @Test public void firstLetterSettingOn()throws Exception{firstLetter();}
+    @Test public void lateShowSettingOff()throws Exception{lateShow();}
+    @Test public void lateShowSettingOn()throws Exception{lateShow();}
+    @Test public void candidatesSettingOff()throws Exception{candidates();}
+    @Test public void candidatesSettingOn()throws Exception{candidates();}
 }

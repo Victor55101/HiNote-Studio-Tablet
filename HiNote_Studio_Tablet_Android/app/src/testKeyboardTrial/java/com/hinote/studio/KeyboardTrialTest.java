@@ -35,7 +35,8 @@ import static org.robolectric.Shadows.shadowOf;
 @Config(sdk=31)
 public class KeyboardTrialTest {
     public static class Host extends Activity {
-        @Override public boolean hasWindowFocus(){return true;}
+        boolean windowFocused=true;
+        @Override public boolean hasWindowFocus(){return windowFocused;}
     }
     public static class Service extends KeyboardAccessService {
         final SoftKeyboardOverrideTest.Backend backend=new SoftKeyboardOverrideTest.Backend();
@@ -61,10 +62,12 @@ public class KeyboardTrialTest {
         final Browser web=new Browser(activity.get());final Keyboard keyboard=new Keyboard(activity.get(),web);
         final ServiceController<Service> service=Robolectric.buildService(Service.class).create();
         final InputMethodManager ime=(InputMethodManager)activity.get().getSystemService(Context.INPUT_METHOD_SERVICE);
-        Session(){
+        Session(){this(false);}
+        Session(boolean virtualEnabled){
             activity.get().setContentView(web);web.requestFocus();
             Configuration c=activity.get().getResources().getConfiguration();c.keyboard=Configuration.KEYBOARD_QWERTY;c.hardKeyboardHidden=Configuration.HARDKEYBOARDHIDDEN_NO;
-            Settings.Secure.putInt(activity.get().getContentResolver(),"show_ime_with_hard_keyboard",0);
+            Settings.Secure.putInt(activity.get().getContentResolver(),"show_ime_with_hard_keyboard",virtualEnabled?1:0);
+            service.get().backend.virtualEnabled=virtualEnabled;
             keyboard.start();keyboard.setMode("physical");service.get().connect();idle();
         }
         void idle(){shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(450));}
@@ -79,7 +82,7 @@ public class KeyboardTrialTest {
     }
     @Test public void manifestRegistersOnlyMinimalOptionalKeyboardService()throws Exception{
         Context app=RuntimeEnvironment.getApplication();
-        assertEquals("com.hinote.studio.keyboardtrial58",app.getPackageName());
+        assertEquals("com.hinote.studio.keyboardtrial59",app.getPackageName());
         ServiceInfo info=app.getPackageManager().getServiceInfo(new ComponentName(app,KeyboardAccessService.class),PackageManager.GET_META_DATA);
         assertTrue(info.exported);assertEquals("android.permission.BIND_ACCESSIBILITY_SERVICE",info.permission);
         try(XmlResourceParser xml=app.getResources().getXml(info.metaData.getInt("android.accessibilityservice"))){
@@ -117,7 +120,8 @@ public class KeyboardTrialTest {
     @Test public void losingWindowFocusReleasesModeEvenWhileActivityRemainsResumed(){
         try(Session s=new Session()){
             s.keyboard.setMode("virtual");assertEquals(2,s.service.get().backend.mode);
-            s.keyboard.windowBlurred();assertEquals(0,s.service.get().backend.mode);
+            s.activity.get().windowFocused=false;s.keyboard.windowBlurred();assertEquals(0,s.service.get().backend.mode);
+            s.keyboard.keyboardAccessChanged();s.idle();assertEquals(0,s.service.get().backend.mode);
             s.ime.hideSoftInputFromWindow(s.web.getWindowToken(),0);s.idle();
             assertFalse(shadowOf(s.ime).isSoftInputVisible());assertEquals(0,s.service.get().backend.mode);
         }
@@ -176,7 +180,11 @@ public class KeyboardTrialTest {
             s.keyboard.inputApplied(request);
             shadowOf(Looper.getMainLooper()).idle();assertEquals(2,s.service.get().backend.mode);
             s.up();s.idle();assertEquals(0,s.service.get().backend.mode);
-            assertEquals(0,s.pending());assertFalse(shadowOf(s.ime).isSoftInputVisible());
+            assertEquals(0,s.pending());
+            // Robolectric does not run the IME's settings observer. Remaining
+            // visible here proves we did not send the redundant hide which
+            // would remove real candidates; the emulator checks the final UI.
+            assertTrue(shadowOf(s.ime).isSoftInputVisible());
         }
     }
     @Test public void staleInputAcknowledgementCannotCloseANewerTouchRequest()throws Exception{
@@ -201,6 +209,20 @@ public class KeyboardTrialTest {
             s.keyboard.fullPanel=true;s.keyboard.editingFieldTouched();assertFalse(shadowOf(s.ime).isSoftInputVisible());
             s.keyboard.fullPanel=false;s.ime.showSoftInput(s.web,0);s.keyboard.editingFieldTouched();s.idle();
             assertTrue(shadowOf(s.ime).isSoftInputVisible());
+        }
+    }
+    @Test public void enabledPreferenceQueuesPhysicalPolicyBeforeTheFirstNativeKey()throws Exception{
+        try(Session s=new Session(true)){
+            s.keyboard.setMode("auto");s.finger();assertEquals(0,s.service.get().backend.mode);
+            s.keyboard.observe(key());assertEquals(1,s.service.get().backend.mode);
+            s.apply();assertEquals(1,s.service.get().backend.mode);
+            assertEquals("physical",new JSONObject(s.keyboard.state()).getString("interaction"));
+            assertEquals("physical",new JSONObject(s.keyboard.state()).getString("keyboardAssist"));
+            s.finger();assertEquals(0,s.service.get().backend.mode);
+            assertEquals(1,Settings.Secure.getInt(s.activity.get().getContentResolver(),"show_ime_with_hard_keyboard",0));
+            s.keyboard.setMode("physical");assertEquals(1,s.service.get().backend.mode);
+            s.activity.get().windowFocused=false;s.keyboard.windowBlurred();assertEquals(0,s.service.get().backend.mode);
+            s.keyboard.keyboardAccessChanged();s.idle();assertEquals(0,s.service.get().backend.mode);
         }
     }
 }

@@ -13,12 +13,12 @@ final class KeyboardTrialSetup {
         switch(status){
             case "ready":return "Control preparado";
             case "active":return "Teclas virtuales permitidas";
-            case "setting":return "Desactiva «Mostrar teclado virtual» en los ajustes del teclado físico";
+            case "physical":return "Solo físico preparado";
             case "refused":return "El sistema no permitió el control; revisa Accesibilidad y el ajuste del teclado físico";
             case "busy":return "Otro servicio de Accesibilidad está controlando el teclado";
             case "unsupported":return "Esta prueba requiere Android 10 o posterior";
             case "unknown":return "Servicio conectado; comprueba el ajuste del teclado físico";
-            default:return "Activa «HiNote · Control del teclado V58» en Accesibilidad";
+            default:return "Activa «HiNote · Control del teclado V59» en Accesibilidad";
         }
     }
     static void firstOpen(Activity activity){
@@ -28,10 +28,9 @@ final class KeyboardTrialSetup {
     }
     static void show(Activity activity){
         if(!BuildConfig.KEYBOARD_TRIAL||activity.isFinishing()||activity.isDestroyed())return;
-        new AlertDialog.Builder(activity).setTitle("Prueba del teclado · V58")
+        new AlertDialog.Builder(activity).setTitle("Prueba del teclado · V59")
             .setMessage(statusText(KeyboardAccessService.status())+"\n\n"
-                +"1. En los ajustes del teclado físico, deja desactivado «Mostrar teclado virtual».\n"
-                +"2. En Accesibilidad, activa «HiNote · Control del teclado V58».\n\n"
+                +"En Accesibilidad, activa «HiNote · Control del teclado V59». Puedes dejar «Mostrar teclado virtual» activado o desactivado en el sistema.\n\n"
                 +"Solo físico conserva las sugerencias y herramientas que ofrezca tu teclado. Mostrar virtual solicita las teclas completas. Automático solicita las teclas al tocar un campo y vuelve al teclado físico cuando escribes con él o usas su panel táctil.\n\n"
                 +"El control es temporal y se libera al salir de HiNote. El servicio no lee la pantalla, no registra pulsaciones y no realiza gestos. La compatibilidad con HarmonyOS y cada teclado sigue en prueba.\n\n"
                 +"Puedes volver aquí desde Archivo → Control del teclado.")

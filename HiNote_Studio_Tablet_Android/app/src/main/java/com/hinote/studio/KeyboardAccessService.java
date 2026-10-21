@@ -36,7 +36,18 @@ public class KeyboardAccessService extends AccessibilityService {
     static boolean available(){return BuildConfig.KEYBOARD_TRIAL&&Build.VERSION.SDK_INT>=29&&connected!=null;}
     static boolean allowKeys(Client value){
         if(!available()||client.get()!=value||connected.override==null)return false;
-        return connected.override.allowKeys();
+        boolean applied=connected.override.allowKeys();
+        if(!applied&&connected.override.ownsMode())connected.requestSystemCleanup();
+        return applied;
+    }
+    static boolean physicalKeys(Client value){
+        if(!available()||client.get()!=value||connected.override==null)return false;
+        boolean applied=connected.override.physicalKeys();
+        if(!applied&&connected.override.ownsMode())connected.requestSystemCleanup();
+        return applied;
+    }
+    static boolean virtualKeysEnabled(Client value){
+        return available()&&client.get()==value&&connected.override!=null&&connected.override.virtualKeysEnabled();
     }
     static void releaseKeys(Client value){if(client.get()==value&&connected!=null)connected.release();}
     static String status(){
@@ -47,13 +58,9 @@ public class KeyboardAccessService extends AccessibilityService {
         if(!BuildConfig.KEYBOARD_TRIAL||service==null)return "permission";
         SoftKeyboardOverride control=service.override;
         if(control!=null&&control.wasRefused())return "refused";
+        if(control!=null&&control.hidesKeys())return "physical";
         if(control!=null&&control.ownsMode())return "active";
         if(control!=null&&control.anotherPolicy())return "busy";
-        try{
-            // Read only. Android itself saves/restores this preference through
-            // SoftKeyboardController; this application never writes secure settings.
-            if(Settings.Secure.getInt(service.getContentResolver(),"show_ime_with_hard_keyboard",0)!=0)return "setting";
-        }catch(SecurityException ignored){return "unknown";}
         return "ready";
     }
     protected SoftKeyboardOverride.Backend createBackend(){
@@ -61,6 +68,10 @@ public class KeyboardAccessService extends AccessibilityService {
         return new SoftKeyboardOverride.Backend(){
             public int getMode(){try{return control.getShowMode();}catch(RuntimeException error){return SHOW_MODE_HIDDEN;}}
             public boolean setMode(int mode){try{return control.setShowMode(mode);}catch(RuntimeException error){return false;}}
+            public boolean showsWithHardware(){
+                try{return Settings.Secure.getInt(getContentResolver(),"show_ime_with_hard_keyboard",0)!=0;}
+                catch(SecurityException ignored){return true;}
+            }
         };
     }
     @Override protected void onServiceConnected(){

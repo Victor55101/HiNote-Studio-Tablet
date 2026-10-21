@@ -25,14 +25,14 @@ version = lambda path: tuple(int(n) for n in re.findall(r"\d+", path.parent.name
 aapt = max(sdk.glob("*/aapt"), key=version)
 badging = subprocess.run([str(aapt), "dump", "badging", str(APK)], check=True, text=True, capture_output=True).stdout
 package = next(line for line in badging.splitlines() if line.startswith("package:"))
-assert "name='com.hinote.studio.keyboardtrial58'" in package, package
-assert "versionCode='58'" in package and "versionName='5.8-teclado-prueba'" in package, package
+assert "name='com.hinote.studio.keyboardtrial59'" in package, package
+assert "versionCode='59'" in package and "versionName='5.9-teclado-prueba'" in package, package
 manifest = subprocess.run([str(aapt), "dump", "xmltree", str(APK), "AndroidManifest.xml"], check=True, text=True, capture_output=True).stdout
 assert "com.hinote.studio.KeyboardAccessService" in manifest, "Missing trial service"
 assert "android.permission.BIND_ACCESSIBILITY_SERVICE" in manifest, "Unprotected accessibility service"
 assert "NotesTransferService" not in manifest, "Unrelated Notes probe service must not be bundled"
 assert "BIND_INPUT_METHOD" not in manifest and "HarnessIme" not in manifest, "Test IME must not be bundled in the delivered app"
-assert "com.hinote.studio.keyboardtrial58.notes-files" in manifest, "Provider would conflict with installed stable app"
+assert "com.hinote.studio.keyboardtrial59.notes-files" in manifest, "Provider would conflict with installed stable app"
 with ZipFile(APK) as archive:
     assert "res/xml/keyboard_control.xml" in archive.namelist(), "Missing accessibility capabilities declaration"
 capabilities = subprocess.run([str(aapt), "dump", "xmltree", str(APK), "res/xml/keyboard_control.xml"], check=True, text=True, capture_output=True).stdout
@@ -51,9 +51,9 @@ for report in sorted((ROOT / "HiNote_Studio_Tablet_Android/app/build/reports/tes
     assert counts["failures"] == 0, report
     tests.append({"suite": report.parent.name, **counts})
 assert {entry["suite"] for entry in tests} == {"testStableDebugUnitTest", "testProbeDebugUnitTest", "testKeyboardTrialDebugUnitTest"}, tests
-target = DESTINATION / "HiNote-Studio-Teclado-Prueba-V58.apk"
+target = DESTINATION / "HiNote-Studio-Teclado-Prueba-V59.apk"
 shutil.copy2(APK, target)
-result = {"file": target.name, "version": "5.8-teclado-prueba", "version_code": 58, "package": "com.hinote.studio.keyboardtrial58", "bytes": target.stat().st_size,
+result = {"file": target.name, "version": "5.9-teclado-prueba", "version_code": 59, "package": "com.hinote.studio.keyboardtrial59", "bytes": target.stat().st_size,
           "sha256": sha256(target.read_bytes()).hexdigest(), "certificate_sha256": certificate,
           "abis": abis, "editor_assets_matched": len(checked), "accessibility_events": 0, "screen_reading": False, "gesture_injection": False, "android_unit_tests": tests}
 (DESTINATION / "apk-verification.json").write_text(json.dumps(result, indent=2))

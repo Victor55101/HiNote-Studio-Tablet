@@ -126,3 +126,6 @@ select.nativeSelect{position:absolute!important;left:0!important;top:0!important
 .caretMeasure{position:absolute;left:-10000px;top:0;visibility:hidden;white-space:pre;pointer-events:none}
 @keyframes typingCaretBlink{0%,100%{opacity:1}50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.typingCaret{animation:none}}
+/* The title shares the existing document header instead of consuming a row. */
+.documentHead{gap:12px;min-width:0}.documentHead h2,.documentHead .badge{flex-shrink:0}.documentHead .noteTitle{flex:1 1 0;width:0;min-width:0;margin:0;height:36px;min-height:36px;padding:6px 10px;border-radius:9px}.documentHead .noteTitle:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media(max-width:520px){.documentHead{gap:8px}.documentHead .badge{font-size:10px;padding:6px}.documentHead .noteTitle{font-size:14px}}

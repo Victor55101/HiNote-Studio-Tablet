@@ -19,9 +19,9 @@ import android.widget.TextView;
 public final class HarnessIme extends InputMethodService {
     private static HarnessIme instance;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private View keyView;
+    private View keyView,candidatesView;
     private boolean lateKeys;
-    private long finishedAt;
+    private int inputViewGeneration;
     private int typed,dropped,selections;
     private int inputType;
     @Override public void onCreate(){super.onCreate();instance=this;}
@@ -32,11 +32,11 @@ public final class HarnessIme extends InputMethodService {
         return view;
     }
     @Override public View onCreateInputView(){return keyView=panel("TEST KEYS",240);}
-    @Override public View onCreateCandidatesView(){return panel("uno ¹    dos ²    tres ³",48);}
+    @Override public View onCreateCandidatesView(){return candidatesView=panel("uno ¹    dos ²    tres ³",48);}
     @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);inputType=info.inputType;android.util.Log.i("HarnessIme","start input type="+inputType+" restart="+restarting);setCandidatesViewShown(true);}
     @Override public boolean onEvaluateInputViewShown(){return lateKeys||super.onEvaluateInputViewShown();}
     @Override public boolean onShowInputRequested(int flags,boolean changed){boolean show=lateKeys||super.onShowInputRequested(flags,changed);android.util.Log.i("HarnessIme","show flags="+flags+" changed="+changed+" allowed="+show);return show;}
-    @Override public void onFinishInputView(boolean finishing){finishedAt=SystemClock.uptimeMillis();lateKeys=false;super.onFinishInputView(finishing);}
+    @Override public void onFinishInputView(boolean finishing){inputViewGeneration++;lateKeys=false;super.onFinishInputView(finishing);}
     @Override public boolean onKeyDown(int code,KeyEvent event){
         android.util.Log.i("HarnessIme","key down="+code+" meta="+event.getMetaState()+" device="+event.getDeviceId());
         if(KeyEvent.isModifierKey(code))return true;
@@ -47,12 +47,12 @@ public final class HarnessIme extends InputMethodService {
         }
         int unicode=event.getUnicodeChar();
         if(unicode==0||event.isCtrlPressed()||event.isMetaPressed())return super.onKeyDown(code,event);
-        long time=event.getEventTime();
+        int generation=inputViewGeneration;
         handler.postDelayed(()->{
             // Reproduce a provider discarding work made stale by a close/reset
             // during the original physical event. Appending a synthetic replay
             // in the editor cannot satisfy the native typed counter assertion.
-            if(finishedAt>time){dropped++;return;}
+            if(inputViewGeneration!=generation){dropped++;return;}
             InputConnection target=getCurrentInputConnection();
             if(target!=null){target.commitText(new String(Character.toChars(unicode)),1);typed++;setCandidatesViewShown(true);}
         },60);
@@ -65,6 +65,7 @@ public final class HarnessIme extends InputMethodService {
             if(ime!=null){
                 if("late".equals(intent.getStringExtra("command")))ime.handler.postDelayed(()->{ime.lateKeys=true;ime.requestShowSelf(0);},75);
                 state.putBoolean("keys",ime.keyView!=null&&ime.keyView.isShown());
+                state.putBoolean("candidates",ime.candidatesView!=null&&ime.candidatesView.isShown());
                 state.putBoolean("input",ime.getCurrentInputConnection()!=null);
                 state.putInt("inputType",ime.inputType);
                 state.putInt("typed",ime.typed);state.putInt("dropped",ime.dropped);state.putInt("selections",ime.selections);
