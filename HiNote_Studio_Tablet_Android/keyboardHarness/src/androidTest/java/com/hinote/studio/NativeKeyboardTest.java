@@ -105,10 +105,13 @@ public class NativeKeyboardTest {
         }
         assertTrue("Emulator requires an enabled hardware keyboard",deviceId!=-1);
         String name=InputDevice.getDevice(deviceId).getName();
-        String inventory=shell("for p in /sys/class/input/event*/device/name; do echo \"$p=$(cat \"$p\")\"; done");
-        for(String line:inventory.split("\n"))if(line.endsWith("="+name)){
-            String path=line.substring(0,line.indexOf('='));
-            eventPath="/dev/input/"+path.split("/")[4];break;
+        // UiAutomation uses Runtime.exec, not a shell parser: issue direct
+        // commands rather than relying on quoting, loops or semicolons.
+        String inventory=shell("ls /sys/class/input");
+        for(String entry:inventory.split("\\s+"))if(entry.matches("event[0-9]+")){
+            if(name.equals(shell("cat /sys/class/input/"+entry+"/device/name").trim())){
+                eventPath="/dev/input/"+entry;break;
+            }
         }
         assertNotNull("Kernel keyboard device: "+name+" / "+inventory,eventPath);
         assertTrue("CI emulator root for real kernel input",shell("su 0 id").contains("uid=0"));
@@ -131,7 +134,8 @@ public class NativeKeyboardTest {
         // the emulator's kernel keyboard instead, so the production hardware
         // classifier and pre-IME path receive an actual device key pair.
         int scan=code==KeyEvent.KEYCODE_H?35:code==KeyEvent.KEYCODE_CTRL_LEFT?29:code-KeyEvent.KEYCODE_1+2;
-        String result=shell("su 0 sh -c 'sendevent "+eventPath+" 1 "+scan+" "+(action==KeyEvent.ACTION_DOWN?1:0)+"; sendevent "+eventPath+" 0 0 0'");
+        String result=shell("su 0 sendevent "+eventPath+" 1 "+scan+" "+(action==KeyEvent.ACTION_DOWN?1:0));
+        result+=shell("su 0 sendevent "+eventPath+" 0 0 0");
         assertTrue("Kernel input accepted: "+result,result.trim().isEmpty());
     }
     private void press(int code)throws Exception{event(KeyEvent.ACTION_DOWN,code,0);event(KeyEvent.ACTION_UP,code,0);}
