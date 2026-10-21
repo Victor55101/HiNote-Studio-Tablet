@@ -13,7 +13,7 @@ final class KeyboardTrialSetup {
         switch(status){
             case "ready":return "Control preparado";
             case "active":return "Teclas virtuales permitidas";
-            case "physical":return "Solo físico preparado";
+            case "physical":return "Entrada física activa";
             case "refused":return "El sistema no permitió el control; revisa Accesibilidad y el ajuste del teclado físico";
             case "busy":return "Otro servicio de Accesibilidad está controlando el teclado";
             case "unsupported":return "Esta prueba requiere Android 10 o posterior";

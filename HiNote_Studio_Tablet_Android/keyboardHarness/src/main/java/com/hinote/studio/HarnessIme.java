@@ -28,6 +28,9 @@ public final class HarnessIme extends InputMethodService {
     @Override public void onDestroy(){instance=null;super.onDestroy();}
     private View panel(String label,int height){
         TextView view=new TextView(this);view.setText(label);view.setTextSize(24);
+        // InputMethodService replaces the supplied LayoutParams with WRAP_CONTENT.
+        // Enforce a realistic panel height so docked-pane detection is exercised.
+        view.setMinimumHeight(Math.round(height*getResources().getDisplayMetrics().density));
         view.setBackgroundColor(0xffcdd8dd);view.setLayoutParams(new ViewGroup.LayoutParams(-1,Math.round(height*getResources().getDisplayMetrics().density)));
         return view;
     }
