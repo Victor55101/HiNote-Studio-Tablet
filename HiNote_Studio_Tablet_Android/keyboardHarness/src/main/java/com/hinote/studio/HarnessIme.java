@@ -23,6 +23,7 @@ public final class HarnessIme extends InputMethodService {
     private boolean lateKeys;
     private long finishedAt;
     private int typed,dropped,selections;
+    private int inputType;
     @Override public void onCreate(){super.onCreate();instance=this;}
     @Override public void onDestroy(){instance=null;super.onDestroy();}
     private View panel(String label,int height){
@@ -32,11 +33,12 @@ public final class HarnessIme extends InputMethodService {
     }
     @Override public View onCreateInputView(){return keyView=panel("TEST KEYS",240);}
     @Override public View onCreateCandidatesView(){return panel("uno ¹    dos ²    tres ³",48);}
-    @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);setCandidatesViewShown(true);}
+    @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);inputType=info.inputType;android.util.Log.i("HarnessIme","start input type="+inputType+" restart="+restarting);setCandidatesViewShown(true);}
     @Override public boolean onEvaluateInputViewShown(){return lateKeys||super.onEvaluateInputViewShown();}
-    @Override public boolean onShowInputRequested(int flags,boolean changed){return lateKeys||super.onShowInputRequested(flags,changed);}
+    @Override public boolean onShowInputRequested(int flags,boolean changed){boolean show=lateKeys||super.onShowInputRequested(flags,changed);android.util.Log.i("HarnessIme","show flags="+flags+" changed="+changed+" allowed="+show);return show;}
     @Override public void onFinishInputView(boolean finishing){finishedAt=SystemClock.uptimeMillis();lateKeys=false;super.onFinishInputView(finishing);}
     @Override public boolean onKeyDown(int code,KeyEvent event){
+        android.util.Log.i("HarnessIme","key down="+code+" meta="+event.getMetaState()+" device="+event.getDeviceId());
         if(KeyEvent.isModifierKey(code))return true;
         if(event.isCtrlPressed()&&code>=KeyEvent.KEYCODE_1&&code<=KeyEvent.KEYCODE_3){
             InputConnection target=getCurrentInputConnection();
@@ -64,6 +66,7 @@ public final class HarnessIme extends InputMethodService {
                 if("late".equals(intent.getStringExtra("command")))ime.handler.postDelayed(()->{ime.lateKeys=true;ime.requestShowSelf(0);},75);
                 state.putBoolean("keys",ime.keyView!=null&&ime.keyView.isShown());
                 state.putBoolean("input",ime.getCurrentInputConnection()!=null);
+                state.putInt("inputType",ime.inputType);
                 state.putInt("typed",ime.typed);state.putInt("dropped",ime.dropped);state.putInt("selections",ime.selections);
             }
             setResultCode(1);setResultExtras(state);

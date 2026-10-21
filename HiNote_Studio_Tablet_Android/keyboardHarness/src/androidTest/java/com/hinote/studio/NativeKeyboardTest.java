@@ -13,6 +13,8 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
+import org.json.JSONArray;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.util.concurrent.CountDownLatch;
@@ -34,7 +36,7 @@ public class NativeKeyboardTest {
     private void await(String message,Condition condition)throws Exception{
         long end=SystemClock.uptimeMillis()+10000;
         while(SystemClock.uptimeMillis()<end){if(condition.satisfied())return;SystemClock.sleep(40);}
-        fail(message);
+        fail(message+"; native="+ime("state")+"; editor="+js("JSON.stringify({active:document.activeElement?.id,canShow:hinoteKeyboardCanShow(),state:JSON.parse(AndroidBridge.getKeyboardState()),text:document.getElementById('editor').textContent})"));
     }
     private String js(String code)throws Exception{
         AtomicReference<String> result=new AtomicReference<>();CountDownLatch done=new CountDownLatch(1);
@@ -68,7 +70,19 @@ public class NativeKeyboardTest {
         activity=(HarnessActivity)test.startActivitySync(new Intent(context,HarnessActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         await("Accessibility override connected",KeyboardAccessService::available);
         await("Real keyboard Javascript loaded",()->"function".equals(js("typeof window.onKeyboardState").replace("\"","")));
-        js("document.getElementById('editor').focus()");
+        // A real tap establishes both Android view focus and the Chromium
+        // editing connection, just as the user's first edit does.
+        await("Activity window focused",()->activity.hasWindowFocus());
+        int[] location=new int[2];test.runOnMainSync(()->activity.web.getLocationOnScreen(location));
+        String raw=js("(()=>{const r=document.getElementById('editor').getBoundingClientRect();return [r.left+20,r.top+20,devicePixelRatio]})()");
+        JSONArray point=new JSONArray(raw);float x=location[0]+(float)(point.getDouble(0)*point.getDouble(2)),y=location[1]+(float)(point.getDouble(1)*point.getDouble(2));
+        long when=SystemClock.uptimeMillis();
+        for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP}){
+            MotionEvent tap=MotionEvent.obtain(when,SystemClock.uptimeMillis(),action,x,y,0);tap.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            assertTrue("Tap original editor surface",automation.injectInputEvent(tap,true));tap.recycle();
+        }
+        await("Android WebView focused",()->activity.web.hasFocus());
+        await("DOM editor focused",()->"\"editor\"".equals(js("document.activeElement.id")));
         await("InputConnection established in IME process",()->ime("state").getBoolean("input"));
         deviceId=-1;
         for(int id:InputDevice.getDeviceIds()){
