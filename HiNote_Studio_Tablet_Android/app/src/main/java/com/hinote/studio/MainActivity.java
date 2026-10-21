@@ -105,7 +105,10 @@ public class MainActivity extends Activity {
             android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::handleEditorBack);
         ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setBuiltInZoomControls(false);
         webView.setWebViewClient(new WebViewClient(){
-            @Override public void onPageFinished(WebView view,String url){if(keyboardController!=null)keyboardController.publish();}
+            @Override public void onPageFinished(WebView view,String url){
+                if(keyboardController!=null)keyboardController.publish();
+                if(BuildConfig.KEYBOARD_TRIAL)view.post(()->{if(!destroyed)KeyboardTrialSetup.firstOpen(MainActivity.this);});
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view,String url){return !url.startsWith("file:///android_asset/");}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();
@@ -126,7 +129,10 @@ public class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient());webView.addJavascriptInterface(new Bridge(),"AndroidBridge");
-        setContentView(webView);
+        if(BuildConfig.KEYBOARD_TRIAL){
+            EditorInputLayout root=new EditorInputLayout(this,keyboardController);
+            root.addView(webView,new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));setContentView(root);
+        }else setContentView(webView);
         if(BuildConfig.NOTES_PROBE){
             notesProbe=new NotesProbe(this,(ticket,data,error)->send("onNotesProbeResult",ticket+","+(data==null?"null":quote(data))+","+(error==null?"null":quote(error))));
             notesProbe.receive(getIntent());
@@ -316,13 +322,14 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void setEditingField(boolean editing){runOnUiThread(()->{
             if(!destroyed&&webView instanceof EditorWebView){
                 ((EditorWebView)webView).setEditing(editing);
-                if(editing&&keyboardController!=null)keyboardController.editingFieldFocused();
+                if(keyboardController!=null){if(editing)keyboardController.editingFieldFocused();else keyboardController.editingFieldBlurred();}
             }
         });}
         @JavascriptInterface public String getKeyboardState(){return keyboardController==null?"{}":keyboardController.state();}
         @JavascriptInterface public void setKeyboardMode(String mode){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.setMode(mode);});}
         @JavascriptInterface public void beginTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.beginTouchInput();});}
         @JavascriptInterface public void requestTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.requestTouchKeyboard();});}
+        @JavascriptInterface public void openKeyboardTrialSetup(){runOnUiThread(()->{if(!destroyed)KeyboardTrialSetup.show(MainActivity.this);});}
         @JavascriptInterface public void requestOpenNotes(String snapshot,String title,boolean grid,String images,int pages){
             if(destroyed||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
             if(snapshot==null||!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de exportar");return;}

@@ -17,12 +17,12 @@ import android.webkit.WebView;
 import org.json.JSONObject;
 
 /** App-local keyboard policy. Never changes Android's global IME settings. */
-final class KeyboardController implements InputManager.InputDeviceListener {
+final class KeyboardController implements InputManager.InputDeviceListener,KeyboardAccessService.Client {
     private final Activity activity;private final WebView web;private final InputManager inputs;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private volatile String mode;private volatile boolean hardware,physicalInput;
     private boolean active,keyObserved,touchPending,visibilityApplied,softKeyboardSuppressed;
-    private long touchStarted,interactionRevision;
+    private long touchStarted,interactionRevision,editorRevision;
     KeyboardController(Activity activity,WebView web){
         this.activity=activity;this.web=web;inputs=(InputManager)activity.getSystemService(Context.INPUT_SERVICE);
         mode=activity.getPreferences(Context.MODE_PRIVATE).getString("keyboard-mode","auto");
@@ -48,8 +48,13 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         return event.isFromSource(InputDevice.SOURCE_MOUSE)||event.isFromSource(InputDevice.SOURCE_TOUCHPAD)
             ||event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE);
     }
-    void start(){if(active)return;active=true;if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
-    void stop(){active=false;visibilityApplied=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
+    void start(){if(active)return;active=true;KeyboardAccessService.watch(this);if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
+    void stop(){active=false;visibilityApplied=false;cancelTouch();KeyboardAccessService.unwatch(this);if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
+    @Override public void keyboardAccessChanged(){
+        if(!active)return;
+        publish();
+        if(BuildConfig.KEYBOARD_TRIAL&&"virtual".equals(mode))showForModeSelection();
+    }
     void refresh(){
         boolean found=false;if(inputs!=null)for(int id:inputs.getInputDeviceIds()){
             InputDevice device=inputs.getInputDevice(id);
@@ -76,6 +81,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         // Drop any stale resize frame from the IME in the previous activity.
         activity.getWindow().getDecorView().requestApplyInsets();
         web.requestLayout();web.invalidate();
+        if(BuildConfig.KEYBOARD_TRIAL&&"virtual".equals(mode))showForModeSelection();
     }
     void observe(KeyEvent event){if(physicalKey(event)){keyObserved=true;hardware=true;usePhysicalInput();}}
     void observe(MotionEvent event){
@@ -112,7 +118,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
                 // A completed finger/pen tap is an explicit request in both
                 // Auto and Virtual, including with a connected NearLink keyboard.
                 // Keep the existing input connection; do not use SHOW_FORCED.
-                ime.showSoftInput(web,0);touchPending=false;
+                requestKeys(ime,request,false);touchPending=false;
             },50);
         });
     }
@@ -122,7 +128,8 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode",mode).apply();publish();
         if("virtual".equals(mode))showForModeSelection();
     }
-    String state(){return "{\"nativeGate\":false,\"imeConnected\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)+"}";}
+    String state(){return "{\"nativeGate\":false,\"imeConnected\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)
+        +",\"keyboardTrial\":"+BuildConfig.KEYBOARD_TRIAL+",\"keyboardAssist\":"+JSONObject.quote(BuildConfig.KEYBOARD_TRIAL?KeyboardAccessService.status():"off")+"}";}
     void publish(){
         if(!active)return;
         applyWindowPolicy();
@@ -135,6 +142,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         int flag=WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
         if((activity.getWindow().getAttributes().flags&flag)!=0)activity.getWindow().clearFlags(flag);
         boolean blocked=suppress(mode,physicalInput);
+        if(blocked)KeyboardAccessService.releaseKeys(this);
         int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             |(blocked?WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
         if(activity.getWindow().getAttributes().softInputMode!=softMode){
@@ -147,7 +155,13 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     }
     // Called on an actual DOM editor change, not on input/composition updates.
     // A title, table or dialog must honor Solo físico too, without losing focus.
-    void editingFieldFocused(){if(active&&suppress(mode,physicalInput))hideSoftKeyboard();}
+    void editingFieldFocused(){
+        editorRevision++;
+        if(!active)return;
+        if(suppress(mode,physicalInput))hideSoftKeyboard();
+        else if(BuildConfig.KEYBOARD_TRIAL&&"virtual".equals(mode))showForModeSelection();
+    }
+    void editingFieldBlurred(){editorRevision++;}
     private boolean hideSoftKeyboard(){
         InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
         if(ime==null||!activity.hasWindowFocus()||web.getWindowToken()==null)return false;
@@ -161,8 +175,25 @@ final class KeyboardController implements InputManager.InputDeviceListener {
             if(!"true".equals(value)||request!=interactionRevision||!active||!"virtual".equals(mode)
                 ||!activity.hasWindowFocus()||!web.hasFocus())return;
             InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if(ime!=null)ime.showSoftInput(web,0);
+            if(ime!=null)requestKeys(ime,request,true);
         });
+    }
+    private void requestKeys(InputMethodManager ime,long request,boolean virtualSelection){
+        long editor=editorRevision;
+        boolean overriding=KeyboardAccessService.allowKeys(this);
+        ime.showSoftInput(web,0);
+        if(!overriding)return;
+        // The accessibility setting travels to the IME in another process.
+        // Retry only this explicit request, with a bounded delay, while its
+        // editor, activity and mode remain current. No restart/composition reset.
+        for(int delay:new int[]{120,350})handler.postDelayed(()->{
+            if(!active||request!=interactionRevision||editor!=editorRevision||suppress(mode,physicalInput)
+                ||(virtualSelection&&!"virtual".equals(mode))||!activity.hasWindowFocus()||!web.hasFocus())return;
+            web.evaluateJavascript("Boolean(window.hinoteKeyboardCanShow && window.hinoteKeyboardCanShow())",value->{
+                if("true".equals(value)&&active&&request==interactionRevision&&editor==editorRevision&&!suppress(mode,physicalInput)
+                    &&activity.hasWindowFocus()&&web.hasFocus()&&KeyboardAccessService.allowKeys(this))ime.showSoftInput(web,0);
+            });
+        },delay);
     }
     @Override public void onInputDeviceAdded(int id){refresh();}
     @Override public void onInputDeviceChanged(int id){refresh();}

@@ -1,4 +1,4 @@
-name: Build HiNote Studio Tablet V56
+name: Build HiNote Studio Keyboard Trial V57
 on:
   workflow_dispatch:
   push:
@@ -47,7 +47,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - run: gradle --no-daemon testStableDebugUnitTest testProbeDebugUnitTest assembleStableDebug assembleStableDebugAndroidTest
+      - run: gradle --no-daemon testStableDebugUnitTest testProbeDebugUnitTest testKeyboardTrialDebugUnitTest assembleKeyboardTrialDebug assembleKeyboardTrialDebugAndroidTest
         working-directory: HiNote_Studio_Tablet_Android
       - name: Verify packaged editor and APK signature
         run: python .github/scripts/verify_apk.py
@@ -59,11 +59,11 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V56
-          path: dist/HiNote-Studio-Tablet-V56.apk
+          name: HiNote-Studio-Teclado-Prueba-V57
+          path: dist/HiNote-Studio-Teclado-Prueba-V57.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-V56-verification
+          name: HiNote-V57-verification
           path: |
             dist/apk-verification.json
             dist/apk-signature.txt

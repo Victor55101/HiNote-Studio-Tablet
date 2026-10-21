@@ -685,6 +685,9 @@ NotebookUI.init();
   }
   window.onKeyboardState=raw=>{try{
     const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;physicalInput=data.interaction==='physical';mode=data.mode||'auto';$('keyboardMode').value=mode;
+    const trial=data.keyboardTrial===true,assist=data.keyboardAssist;
+    $('keyboardTrialSettings').classList.toggle('hidden',!trial);$('keyboardTrialState').classList.toggle('hidden',!trial);
+    $('keyboardTrialState').textContent=({ready:'Control preparado',active:'Teclas virtuales permitidas',permission:'Activa el control en Accesibilidad',setting:'Revisa el ajuste del teclado físico',refused:'El sistema no permitió el control',busy:'Otro servicio controla el teclado',unsupported:'Requiere Android 10 o posterior',unknown:'Comprueba los ajustes del teclado'})[assist]||'';
     if(suppress){touch=null;touchRevision++;}updateFields();window.StudioUI?.syncSelects?.();
   }catch(_){}};
   window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);
@@ -714,6 +717,7 @@ NotebookUI.init();
     suppress=mode==='physical'||(mode==='auto'&&physicalInput);updateFields();
     if(window.AndroidBridge?.setKeyboardMode)AndroidBridge.setKeyboardMode(mode);else toast('La detección del teclado está disponible en Android.');
   };
+  $('keyboardTrialSettings').onclick=()=>window.AndroidBridge?.openKeyboardTrialSetup?.();
   new MutationObserver(updateFields).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['contenteditable']});
   if(window.AndroidBridge?.getKeyboardState)onKeyboardState(AndroidBridge.getKeyboardState());
 })();

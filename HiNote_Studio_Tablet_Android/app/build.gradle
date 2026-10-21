@@ -14,6 +14,7 @@ android {
         versionCode 56
         versionName '5.6-tablet'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        buildConfigField 'boolean', 'KEYBOARD_TRIAL', 'false'
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -44,6 +45,15 @@ android {
             versionNameSuffix '-pruebas'
             buildConfigField 'boolean', 'NOTES_PROBE', 'true'
             manifestPlaceholders = [appLabel: 'HiNote Studio Pruebas V37']
+        }
+        keyboardTrial {
+            dimension 'edition'
+            applicationIdSuffix '.keyboardtrial57'
+            versionCode 57
+            versionName '5.7-teclado-prueba'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'false'
+            buildConfigField 'boolean', 'KEYBOARD_TRIAL', 'true'
+            manifestPlaceholders = [appLabel: 'HiNote Studio · Teclado V57']
         }
     }
 
