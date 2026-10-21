@@ -43,7 +43,16 @@ public class NativeKeyboardTest {
     private void await(String message,Condition condition)throws Exception{
         long end=SystemClock.uptimeMillis()+10000;
         while(SystemClock.uptimeMillis()<end){if(condition.satisfied())return;SystemClock.sleep(40);}
-        fail(message+"; native="+ime("state")+"; editor="+js("JSON.stringify({active:document.activeElement?.id,canShow:hinoteKeyboardCanShow(),state:JSON.parse(AndroidBridge.getKeyboardState()),text:document.getElementById('editor').textContent})"));
+        fail(message+"; native="+ime("state")+"; frame="+frame()+"; editor="+js("JSON.stringify({active:document.activeElement?.id,canShow:hinoteKeyboardCanShow(),state:JSON.parse(AndroidBridge.getKeyboardState()),text:document.getElementById('editor').textContent})"));
+    }
+    private String frame(){
+        AtomicReference<String> value=new AtomicReference<>();test.runOnMainSync(()->{
+            android.graphics.Rect visible=new android.graphics.Rect();activity.web.getWindowVisibleDisplayFrame(visible);
+            android.view.WindowInsets insets=activity.web.getRootWindowInsets();
+            value.set("ime="+(insets==null?"null":insets.getInsets(android.view.WindowInsets.Type.ime()).bottom)
+                +",visible="+(insets!=null&&insets.isVisible(android.view.WindowInsets.Type.ime()))
+                +",frameBottom="+visible.bottom+",windowBottom="+activity.getWindowManager().getCurrentWindowMetrics().getBounds().bottom);
+        });return value.get();
     }
     private String js(String code)throws Exception{
         AtomicReference<String> result=new AtomicReference<>();CountDownLatch done=new CountDownLatch(1);
@@ -139,6 +148,13 @@ public class NativeKeyboardTest {
         assertTrue("Kernel input accepted: "+result,result.trim().isEmpty());
     }
     private void press(int code)throws Exception{event(KeyEvent.ACTION_DOWN,code,0);event(KeyEvent.ACTION_UP,code,0);}
+    private void candidateEvent(int action,int code,int modifiers){
+        // The emulator's legacy qwerty.kl has no CTRL mapping. Native modifier
+        // protocol is tested through Android injection; physical pre-IME chord
+        // routing is covered separately by EditorWebViewTest on API 28 and 31.
+        long now=SystemClock.uptimeMillis();
+        assertTrue(automation.injectInputEvent(new KeyEvent(now,now,action,code,0,modifiers,deviceId,0,0,InputDevice.SOURCE_KEYBOARD),true));
+    }
     private void firstLetter()throws Exception{
         mode("virtual");await("Virtual keys shown",()->ime("state").getBoolean("keys"));
         mode("auto");Bundle before=ime("state");press(KeyEvent.KEYCODE_H);
@@ -150,7 +166,7 @@ public class NativeKeyboardTest {
     private void lateShow()throws Exception{
         mode("virtual");await("Virtual keys shown",()->ime("state").getBoolean("keys"));
         ime("late");mode("physical");SystemClock.sleep(900);
-        assertFalse("Late provider keys closed: "+ime("state")+" state="+js("AndroidBridge.getKeyboardState()"),ime("state").getBoolean("keys"));
+        assertFalse("Late provider keys closed: "+ime("state")+" frame="+frame()+" state="+js("AndroidBridge.getKeyboardState()"),ime("state").getBoolean("keys"));
         press(KeyEvent.KEYCODE_H);await("Typing still reaches physical editor",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
     }
     private void candidates()throws Exception{
@@ -158,10 +174,10 @@ public class NativeKeyboardTest {
         String[] words={"uno","dos","tres"};
         for(int n=0;n<3;n++){
             js("document.getElementById('editor').textContent='';document.getElementById('editor').focus()");
-            event(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_CTRL_LEFT,KeyEvent.META_CTRL_ON|KeyEvent.META_CTRL_LEFT_ON);
-            event(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_1+n,KeyEvent.META_CTRL_ON|KeyEvent.META_CTRL_LEFT_ON);
-            event(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_1+n,KeyEvent.META_CTRL_ON|KeyEvent.META_CTRL_LEFT_ON);
-            event(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_CTRL_LEFT,0);
+            candidateEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_CTRL_LEFT,KeyEvent.META_CTRL_ON|KeyEvent.META_CTRL_LEFT_ON);
+            candidateEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_1+n,KeyEvent.META_CTRL_ON|KeyEvent.META_CTRL_LEFT_ON);
+            candidateEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_1+n,KeyEvent.META_CTRL_ON|KeyEvent.META_CTRL_LEFT_ON);
+            candidateEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_CTRL_LEFT,0);
             String expected="\""+words[n]+"\"";await("Candidate "+(n+1)+" selected natively",()->expected.equals(js("document.getElementById('editor').textContent")));
         }
         assertEquals(before+3,ime("state").getInt("selections"));

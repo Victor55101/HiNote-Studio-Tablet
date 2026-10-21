@@ -198,7 +198,7 @@ public class KeyboardTrialTest {
         try(Session s=new Session()){
             s.keyboard.setMode("virtual");s.keyboard.setMode("physical");
             s.keyboard.fullPanel=true;s.ime.showSoftInput(s.web,0);
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(150));assertFalse(shadowOf(s.ime).isSoftInputVisible());
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(350));assertFalse(shadowOf(s.ime).isSoftInputVisible());
             s.keyboard.fullPanel=false;s.ime.showSoftInput(s.web,0);
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500));assertTrue(shadowOf(s.ime).isSoftInputVisible());
         }

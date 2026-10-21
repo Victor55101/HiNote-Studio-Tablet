@@ -7,6 +7,8 @@ import android.hardware.input.InputManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.os.ResultReceiver;
+import android.os.Bundle;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
@@ -28,6 +30,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     private long touchStarted,interactionRevision,editorRevision;
     private final Set<Long> heldKeys=new HashSet<>();
     private int inputSequence;
+    private int candidatesSequence;
     private volatile int pendingInput;
     private boolean inputApplied,pendingNeedsText,pendingDeadKey;
     private long closeSequence,verifyCloseUntil,pendingVerifyUntil;
@@ -217,7 +220,9 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         // Do not close or reconfigure the IME between the first physical DOWN
         // and its text acknowledgement/UP. This used to consume the first key.
         if(blocked&&pendingInput!=0)return;
+        boolean releasingVirtual=KeyboardAccessService.ownsVirtualOverride(this);
         boolean nativePolicy=blocked&&activity.hasWindowFocus()&&web.hasFocus()&&KeyboardAccessService.physicalKeys(this);
+        if(nativePolicy&&releasingVirtual&&!KeyboardAccessService.ownsVirtualOverride(this))restoreNativeCandidates();
         int softMode=WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             |(blocked&&!nativePolicy?WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN:WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
         if(activity.getWindow().getAttributes().softInputMode!=softMode){
@@ -233,6 +238,38 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         }
         else if(!blocked)visibilityApplied=true;
         softKeyboardSuppressed=blocked;
+    }
+    private void restoreNativeCandidates(){
+        final int sequence=++candidatesSequence;
+        final long interaction=interactionRevision,editor=editorRevision;
+        final boolean[] restored={false};
+        Runnable probe=()->{
+            if(!canRestoreCandidates(sequence,interaction,editor)||restored[0])return;
+            InputMethodManager ime=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if(ime==null)return;
+            // With the hardware preference restored to off, this implicit
+            // request is evaluated by the IME without forcing its keys open.
+            // Its result distinguishes an existing candidates window from the
+            // configuration reset which can hide that window after first input.
+            ime.showSoftInput(web,InputMethodManager.SHOW_IMPLICIT,new ResultReceiver(handler){
+                @Override protected void onReceiveResult(int result,Bundle data){
+                    if(restored[0]||!canRestoreCandidates(sequence,interaction,editor))return;
+                    if(result==InputMethodManager.RESULT_UNCHANGED_HIDDEN||result==InputMethodManager.RESULT_HIDDEN){
+                        restored[0]=true;
+                        // Refresh only the native session for this same editor,
+                        // after its first text is committed. No extra character
+                        // or synthetic key is sent to the application or IME.
+                        ime.restartInput(web);
+                    }
+                }
+            });
+        };
+        handler.post(probe);handler.postDelayed(probe,80);
+    }
+    private boolean canRestoreCandidates(int sequence,long interaction,long editor){
+        return active&&sequence==candidatesSequence&&interaction==interactionRevision&&editor==editorRevision
+            &&pendingInput==0&&heldKeys.isEmpty()&&nativeVisibilityControl()&&suppress(mode,physicalInput)
+            &&!KeyboardAccessService.virtualKeysEnabled(this)&&activity.hasWindowFocus()&&web.hasFocus();
     }
     // Called on an actual DOM editor change, not on input/composition updates.
     // A title, table or dialog must honor Solo físico too, without losing focus.
@@ -263,7 +300,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         // A previously queued show request can arrive after hide. Verify this
         // explicit transition for a bounded interval, without repeatedly hiding
         // a compact candidates/tools bar or interrupting a held physical key.
-        for(int delay:new int[]{120,320,600}){
+        for(int delay:nativeVisibilityControl()?new int[]{320,600}:new int[]{120,320,600}){
             if(SystemClock.uptimeMillis()+delay>until)continue;
             handler.postDelayed(()->{
             if(!active||request!=closeSequence||!suppress(mode,physicalInput)||pendingInput!=0||!heldKeys.isEmpty()
@@ -278,6 +315,13 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
             WindowInsets insets=web.getRootWindowInsets();
             if(insets!=null&&insets.isVisible(WindowInsets.Type.ime()))
                 bottom=Math.max(0,insets.getInsets(WindowInsets.Type.ime()).bottom-insets.getInsets(WindowInsets.Type.navigationBars()).bottom);
+            if(bottom==0){
+                // Some IMEs publish their visible frame before updating the IME
+                // inset. Window metrics remain independent of adjustResize.
+                android.graphics.Rect visible=new android.graphics.Rect();web.getWindowVisibleDisplayFrame(visible);
+                int nav=insets==null?0:insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
+                bottom=Math.max(0,activity.getWindowManager().getCurrentWindowMetrics().getBounds().bottom-visible.bottom-nav);
+            }
         }else{
             android.graphics.Rect visible=new android.graphics.Rect();web.getWindowVisibleDisplayFrame(visible);
             bottom=Math.max(0,web.getRootView().getHeight()-visible.bottom);

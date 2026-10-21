@@ -67,8 +67,11 @@ public final class HarnessIme extends InputMethodService {
             HarnessIme ime=instance;Bundle state=new Bundle();state.putBoolean("connected",ime!=null);
             if(ime!=null){
                 if("late".equals(intent.getStringExtra("command")))ime.handler.postDelayed(()->{ime.lateKeys=true;ime.requestShowSelf(0);},75);
-                state.putBoolean("keys",ime.keyView!=null&&ime.keyView.isShown());
-                state.putBoolean("candidates",ime.candidatesView!=null&&ime.candidatesView.isShown());
+                boolean visible=ime.isInputViewShown();
+                state.putBoolean("window",visible);
+                state.putBoolean("keys",visible&&ime.keyView!=null&&ime.keyView.isShown());
+                state.putBoolean("candidates",visible&&ime.candidatesView!=null&&ime.candidatesView.isShown());
+                state.putInt("paneHeight",ime.keyView==null?0:ime.keyView.getHeight());
                 state.putBoolean("input",ime.getCurrentInputConnection()!=null);
                 state.putInt("inputType",ime.inputType);
                 state.putInt("typed",ime.typed);state.putInt("dropped",ime.dropped);state.putInt("selections",ime.selections);

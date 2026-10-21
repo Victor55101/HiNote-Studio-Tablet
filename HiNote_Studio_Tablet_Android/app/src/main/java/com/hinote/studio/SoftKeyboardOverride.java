@@ -53,6 +53,7 @@ final class SoftKeyboardOverride {
     }
     boolean ownsMode(){return ownedMode!=AUTO;}
     boolean hidesKeys(){return ownedMode==HIDE_KEYS;}
+    boolean permitsKeys(){return ownedMode==ALLOW_WITH_HARD_KEYBOARD;}
     boolean wasRefused(){return refused;}
     boolean anotherPolicy(){return ownedMode==AUTO&&backend.getMode()!=AUTO;}
 }
