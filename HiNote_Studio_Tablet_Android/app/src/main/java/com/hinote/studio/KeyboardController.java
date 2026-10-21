@@ -83,6 +83,12 @@ final class KeyboardController implements InputManager.InputDeviceListener,Keybo
         web.requestLayout();web.invalidate();
         if(BuildConfig.KEYBOARD_TRIAL&&"virtual".equals(mode))showForModeSelection();
     }
+    void windowBlurred(){
+        if(!BuildConfig.KEYBOARD_TRIAL)return;
+        // Multi-window activities may stay resumed while another app has focus.
+        // Release the global override there too, not just during onPause.
+        cancelTouch();KeyboardAccessService.releaseKeys(this);
+    }
     void observe(KeyEvent event){if(physicalKey(event)){keyObserved=true;hardware=true;usePhysicalInput();}}
     void observe(MotionEvent event){
         if(physicalPointer(event)){usePhysicalInput();return;}

@@ -105,6 +105,14 @@ public class KeyboardTrialTest {
             assertFalse(shadowOf(s.ime).isSoftInputVisible());assertEquals(0,s.service.get().backend.mode);
         }
     }
+    @Test public void losingWindowFocusReleasesModeEvenWhileActivityRemainsResumed(){
+        try(Session s=new Session()){
+            s.keyboard.setMode("virtual");assertEquals(2,s.service.get().backend.mode);
+            s.keyboard.windowBlurred();assertEquals(0,s.service.get().backend.mode);
+            s.ime.hideSoftInputFromWindow(s.web.getWindowToken(),0);s.idle();
+            assertFalse(shadowOf(s.ime).isSoftInputVisible());assertEquals(0,s.service.get().backend.mode);
+        }
+    }
     @Test public void rejectedOverrideIsReportedWithoutRepeatedGlobalRequests()throws Exception{
         try(Session s=new Session()){
             s.service.get().backend.accepts=false;s.keyboard.setMode("virtual");s.idle();

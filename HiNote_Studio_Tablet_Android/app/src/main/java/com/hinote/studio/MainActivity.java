@@ -576,7 +576,7 @@ public class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){handleEditorBack();}
     @Override protected void onResume(){super.onResume();if(keyboardController!=null)keyboardController.start();}
-    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.windowFocused();}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(keyboardController!=null){if(focus)keyboardController.windowFocused();else keyboardController.windowBlurred();}}
     @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){boolean handled=super.dispatchKeyEvent(event);if(keyboardController!=null)keyboardController.observe(event);return handled;}
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchTouchEvent(event);}
