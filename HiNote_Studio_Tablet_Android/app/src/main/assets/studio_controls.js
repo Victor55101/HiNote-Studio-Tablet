@@ -11,7 +11,7 @@
   }
   function fieldContext(){
     const field=writable(document.activeElement);if(!field)return null;
-    if(field===editor)return {field,mark:bookmark()};
+    if(field===editor)return {field,mark:bookmark(),revision,typing:typingState?structuredClone(typingState):null,markers:markerSelection?structuredClone(markerSelection):null};
     if(typeof field.selectionStart==='number')return {field,start:field.selectionStart,end:field.selectionEnd,direction:field.selectionDirection};
     const s=getSelection();if(!s?.rangeCount||!field.contains(s.focusNode))return {field};
     const r=s.getRangeAt(0),length=(node,offset)=>{const p=document.createRange();p.setStart(field,0);p.setEnd(node,offset);return p.toString().length;};
@@ -19,7 +19,7 @@
   }
   function resumeField(context){
     if(!context)return false;let field=context.field;
-    if(field===editor)return resumeEditor(context.mark);
+    if(field===editor){if(context.revision===revision){typingState=context.typing;markerSelection=context.markers;}return resumeEditor(context.mark);}
     if(!field.isConnected&&field.classList.contains('cellEditor'))field=[...document.querySelectorAll('.cellEditor')].find(n=>n.dataset.row===field.dataset.row&&n.dataset.col===field.dataset.col);
     if(!field?.isConnected&&context.field.classList.contains('mathSlot'))field=[...document.querySelectorAll('.mathSlot')].find(n=>n.dataset.path===context.field.dataset.path);
     if(!field?.isConnected||field.disabled||field.readOnly||field.closest('[inert]'))return false;
@@ -52,7 +52,9 @@
     if(focus&&!resumeField(context)&&c.button.isConnected)c.button.focus({preventScroll:true});return true;
   }
   function choose(select,value){
-    const context=selectContext;closeSelect(false);select.value=value;
+    const context=selectContext;closeSelect(false);
+    if(textSelects.has(select.id))resumeField(context);
+    select.value=value;
     select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));sync();
     if(textSelects.has(select.id))resumeEditor();else resumeField(context);
   }
@@ -72,7 +74,7 @@
   function openSelect(select){
     if(select.disabled)return;if(opened===select){closeSelect();return;}closeSelect(false);captureSelection();
     const c=controls.get(select);selectContext=fieldContext();
-    if(textSelects.has(select.id)&&resumeEditor())selectContext={field:editor,mark:bookmark()};
+    if(textSelects.has(select.id)&&resumeEditor())selectContext=fieldContext();
     opened=select;popup=document.createElement('div');popup.className='selectMenu';popup.id=select.id+'-options';popup.setAttribute('role','listbox');popup.setAttribute('aria-label',label(select));
     shield=document.createElement('div');shield.className='selectShield';shield.setAttribute('aria-hidden','true');
     shield.onpointerdown=e=>e.stopPropagation();
@@ -190,10 +192,40 @@
   };
   // Buttons issue commands to the active editor; they must not become a new
   // physical-keyboard destination merely because they were tapped/clicked.
+  let commandGesture=null;
+  const commandButton=target=>target.closest?.('button');
+  const preserveFocus=button=>{
+    const field=writable(document.activeElement);
+    return field&&(button?.matches('.selectButton,.colorButton')||field===editor&&button?.closest('.toolbar,.topbar,.previewFooter'));
+  };
   document.addEventListener('pointerdown',e=>{
-    const field=writable(document.activeElement),button=e.target.closest?.('button');
-    if(field&&(button?.matches('.selectButton,.colorButton')||field===editor&&button?.closest('.toolbar,.topbar,.previewFooter')))e.preventDefault();
+    releaseToolbarSelection();commandGesture=null;
+    const button=commandButton(e.target),field=writable(document.activeElement);
+    if(button&&!button.disabled&&e.button===0&&e.isPrimary!==false&&button.closest('.toolbar,.topbar,.previewFooter')&&(field===editor||button.closest('#panelText,#panelLists'))){
+      if(holdToolbarSelection())commandGesture={button,id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};
+    }
+    if(preserveFocus(button))e.preventDefault();
   },true);
+  // Some WebViews still send compatibility mouse focus after a cancelled
+  // pointerdown. Protect both event paths, including mouse/stylus input.
+  document.addEventListener('mousedown',e=>{if(preserveFocus(commandButton(e.target)))e.preventDefault();},true);
+  document.addEventListener('pointermove',e=>{if(commandGesture?.id===e.pointerId&&Math.hypot(e.clientX-commandGesture.x,e.clientY-commandGesture.y)>=10)commandGesture.moved=true;},true);
+  document.addEventListener('pointerup',e=>{
+    const gesture=commandGesture;if(!gesture||gesture.id!==e.pointerId)return;
+    commandGesture=null;releaseToolbarSelection(true);
+    if(e.pointerType==='mouse')return;
+    if(gesture.moved||Math.hypot(e.clientX-gesture.x,e.clientY-gesture.y)>=10){e.preventDefault();absorbTap(e);return;}
+    if(gesture.button.matches('.selectButton'))return; // Its menu owns this tap.
+    if(gesture.button.closest('.toolbar')){
+      e.preventDefault();e.stopPropagation();absorbTap(e);
+      // Run once on release. The delayed compatibility click is absorbed above.
+      if(!gesture.button.disabled)gesture.button.click();
+    }
+  },true);
+  document.addEventListener('click',()=>{commandGesture=null;releaseToolbarSelection(true);},true);
+  document.addEventListener('pointercancel',()=>{commandGesture=null;releaseToolbarSelection(true);},true);
+  document.addEventListener('keydown',()=>{commandGesture=null;releaseToolbarSelection(true);},true);
+  window.addEventListener('blur',()=>{commandGesture=null;releaseToolbarSelection();});
   for(const input of document.querySelectorAll('.toolbar input:not([type=color]):not([type=checkbox])'))input.addEventListener('keydown',e=>{
     if((e.key==='Enter'||e.key==='Escape')&&!e.isComposing){e.preventDefault();e.stopPropagation();input.dispatchEvent(new Event('change',{bubbles:true}));resumeEditor();}
   });

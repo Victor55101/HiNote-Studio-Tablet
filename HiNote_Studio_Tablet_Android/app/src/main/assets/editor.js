@@ -4,7 +4,7 @@ const editor = $('editor');
 const DEFAULT_STYLE = {scale: 1, color: '#000000', opacity: 100, thickness: 0};
 const MAX_CHARS = 200000, DRAFT_KEY = 'hinote-draft-v23';
 const listRegex = /^([ \t]*)(•|\*|-|\d+[.)]|[A-Za-z]+[.)])([ \t]+|$)(.*)$/;
-let savedSelection = null, ime = false, refreshTimer, draftTimer, historyTimer, toastTimer;
+let savedSelection = null, toolbarSelection = null, ime = false, refreshTimer, draftTimer, historyTimer, toastTimer;
 let revision = 0, previewRevision = -1, pageRequest = 0;
 let composition = null, composing = false, exporting = false, currentPage = 0, zoom = 1;
 let qualityTimer, requestedPreview=null, shownPreview=null;
@@ -129,7 +129,7 @@ function modelPoint(node, offset) {
   const range = document.createRange(); range.setStart(root, 0); range.setEnd(node, offset);
   return {line, offset: range.toString().length};
 }
-function bookmark() {
+function liveBookmark() {
   const sel = getSelection();
   if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
     const r = sel.getRangeAt(0);
@@ -137,10 +137,18 @@ function bookmark() {
     const backward=anchor.line>focus.line||anchor.line===focus.line&&anchor.offset>focus.offset;
     return {start: modelPoint(r.startContainer, r.startOffset), end: modelPoint(r.endContainer, r.endOffset),...(backward?{backward:true}:{})};
   }
-  return savedSelection ? JSON.parse(JSON.stringify(savedSelection)) : null;
+  return null;
+}
+function bookmark() {
+  // A control's default focus can leave a collapsed range at editor offset 0.
+  // Only the focused document owns live changes; commands retain its last range.
+  const held=toolbarSelection?.revision===revision?toolbarSelection.mark:null;
+  const mark=held||(document.activeElement===editor?liveBookmark():null)||savedSelection;
+  return mark?JSON.parse(JSON.stringify(mark)):null;
 }
 function captureSelection() {
-  if(editorGesture?.preserve)return;
+  if(toolbarSelection&&toolbarSelection.revision!==revision)toolbarSelection=null;
+  if(editorGesture?.preserve||toolbarSelection||document.activeElement!==editor)return;
   const sel = getSelection();
   if (sel && sel.rangeCount && rangeInside(sel.getRangeAt(0))) {
     savedSelection = bookmark();
@@ -178,6 +186,9 @@ function syncTextControls() {
   for(const [id,value] of [['subscriptBtn','sub'],['superscriptBtn','sup']]){const active=!!styles.length&&styles.every(s=>s.script===value),mixed=!active&&styles.some(s=>s.script===value);$(id).setAttribute('aria-pressed',mixed?'mixed':String(active));$(id).classList.toggle('active',active);}
   $('caseSel').value='';$('caseSel').disabled=!!markerSelection||!bookmark()||collapsed(bookmark());
   for(const key of ['bold','italic','underline']){const active=!!styles.length&&styles.every(s=>s[key]),mixed=!active&&styles.some(s=>s[key]);$(key+'Btn').setAttribute('aria-pressed',mixed?'mixed':String(active));$(key+'Btn').classList.toggle('active',active);}
+  // The selection need not change when a pending insertion format changes.
+  // Update every visible proxy in the same command, without waiting for typing.
+  window.StudioUI?.syncColors?.();window.StudioUI?.syncSelects?.();
 }
 function syncListControls(){
   if(document.activeElement===$('listIndent'))return;
@@ -201,10 +212,15 @@ function domPoint(point) {
 }
 function restoreSelection(mark, focus=true) {
   if (!mark) return;
-  const range = document.createRange(); range.setStart(...domPoint(mark.start)); range.setEnd(...domPoint(mark.end));
-  if(focus)editor.focus({preventScroll: true}); const sel = getSelection(); sel.removeAllRanges();
-  if(mark.backward)sel.setBaseAndExtent(...domPoint(mark.end),...domPoint(mark.start));else sel.addRange(range);
-  savedSelection = bookmark();
+  if(focus&&document.activeElement!==editor)editor.focus({preventScroll:true});
+  const sel=getSelection(),current=liveBookmark();
+  // Keep the native caret/affinity when it is already at the requested range.
+  // Replacing it after each toolbar tap can restart WebView's input connection.
+  if(!current||sel.focusNode===editor||!pointEqual(current.start,mark.start)||!pointEqual(current.end,mark.end)||!!current.backward!==!!mark.backward){
+    const range=document.createRange();range.setStart(...domPoint(mark.start));range.setEnd(...domPoint(mark.end));sel.removeAllRanges();
+    if(mark.backward)sel.setBaseAndExtent(...domPoint(mark.end),...domPoint(mark.start));else sel.addRange(range);
+  }
+  savedSelection = liveBookmark();
   if(!editorGesture?.preserve&&markerSelection&&(!collapsed(savedSelection)||!pointEqual(savedSelection.start,markerSelection.anchor)))clearMarkerSelection();
   if(focus){syncTextControls();syncListControls();}
   else TypingCaret.update();
@@ -212,6 +228,15 @@ function restoreSelection(mark, focus=true) {
 function resumeEditor(mark=bookmark()) {
   if(!mark||!editor.isContentEditable||editor.closest('[inert]'))return false;
   restoreSelection(mark);return true;
+}
+function holdToolbarSelection(){
+  captureSelection();const mark=bookmark();if(!mark)return false;
+  toolbarSelection={mark,revision,typing:typingState?structuredClone(typingState):null,markers:markerSelection?structuredClone(markerSelection):null};return true;
+}
+function releaseToolbarSelection(restore=false){
+  const held=toolbarSelection;toolbarSelection=null;
+  if(!restore||!held||held.revision!==revision||!editor.isContentEditable||editor.closest('[inert]'))return false;
+  typingState=held.typing;markerSelection=held.markers;restoreSelection(held.mark,false);return true;
 }
 function collapsed(mark) { return mark.start.line === mark.end.line && mark.start.offset === mark.end.offset; }
 function normalizeRoots() {
@@ -306,6 +331,7 @@ function applyStyle(patch) {
   if(collapsed(mark)){
     if(isBlockLine(readLines()[mark.start.line]))return;
     setTypingStyle({...insertionStyle(mark),...patch},mark.start);
+    if(ime&&nativeEdit)nativeEdit.pendingStyle={...typingState.style};
     const node=editor.children[mark.start.line],line=readLines()[mark.start.line];
     if(!lineText(line)){
       const meta={...paragraphOf(line),format:typingState.style};

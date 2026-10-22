@@ -224,6 +224,7 @@ function changeLists(action){
 function pointEqual(a,b){return a?.line===b?.line&&a?.offset===b?.offset;}
 function insertionStyle(mark=bookmark(),lines=readLines()){
   if(!mark)return cleanStyle();
+  if(collapsed(mark)&&ime&&nativeEdit?.pendingStyle)return {...nativeEdit.pendingStyle};
   if(collapsed(mark)&&pointEqual(typingState?.point,mark.start))return {...typingState.style};
   const line=lines[mark.start.line]||[];
   const selection=getSelection();
@@ -271,7 +272,7 @@ function startNativeEdit(){
 }
 function finishNativeEdit(){
   const before=nativeEdit;nativeEdit=null;if(!before)return;
-  const mark=bookmark();if(!mark)return;const lines=readLines();
+  const mark=liveBookmark()||bookmark();if(!mark)return;const lines=readLines();
   // Only decorate the text the native input connection actually committed.
   // Never cancel/reconstruct composing events or implement dead-key mapping.
   const sameParagraph=lines.length===before.lines.length&&mark.start.line===before.mark.start.line;
@@ -312,7 +313,7 @@ function finishNativeEdit(){
       restoreSelection(mark,false);
     }
   }
-  if(collapsed(mark))setTypingStyle(before.style,mark.start);
+  if(collapsed(mark))setTypingStyle(before.pendingStyle||before.style,mark.start);
 }
 function copyEditorSelection(event,cut=false){
   const mark=bookmark();if(!mark||collapsed(mark)||!event.clipboardData)return;

@@ -11,8 +11,8 @@ android {
         applicationId 'com.hinote.studio'
         minSdk 24
         targetSdk 35
-        versionCode 62
-        versionName '5.4.2-tablet'
+        versionCode 63
+        versionName '5.4.3-tablet'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {
@@ -40,7 +40,7 @@ android {
             // Delivered maintenance APKs are re-signed with a private, retained key.
             applicationIdSuffix '.v54maintenance'
             buildConfigField 'boolean', 'NOTES_PROBE', 'false'
-            manifestPlaceholders = [appLabel: 'HiNote Studio V54.2']
+            manifestPlaceholders = [appLabel: 'HiNote Studio V54.3']
         }
         probe {
             dimension 'edition'
