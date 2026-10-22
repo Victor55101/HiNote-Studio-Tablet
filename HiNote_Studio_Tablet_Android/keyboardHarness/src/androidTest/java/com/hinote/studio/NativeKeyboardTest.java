@@ -226,6 +226,7 @@ public class NativeKeyboardTest {
         await("The original first letter is retained",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
         await("Native candidates return without another key",()->visibleIme()[1]&&!visibleIme()[0]);
         assertEquals(0,ime("state").getInt("dropped"));
+        mode("virtual");await("Full keys are visible again after completing the handoff",()->visibleIme()[0]);
     }
     @Test public void visualCloseSettingOff()throws Exception{visualClose();}
     @Test public void visualCloseSettingOn()throws Exception{visualClose();}
