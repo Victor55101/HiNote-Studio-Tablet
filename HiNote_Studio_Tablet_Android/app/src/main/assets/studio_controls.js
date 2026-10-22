@@ -196,7 +196,10 @@
   const commandButton=target=>target.closest?.('button');
   const preserveFocus=button=>{
     const field=writable(document.activeElement);
-    return field&&(button?.matches('.selectButton,.colorButton')||field===editor&&button?.closest('.toolbar,.topbar,.previewFooter'));
+    return field&&(button?.matches('.selectButton,.colorButton')||field===editor&&button?.closest('.toolbar,.topbar,.previewFooter')||
+      // Categories replace only the palette. Keep the formula input and its
+      // native caret/selection focused without restarting the input connection.
+      field.classList.contains('mathSlot')&&button?.closest('#mathCategories'));
   };
   document.addEventListener('pointerdown',e=>{
     releaseToolbarSelection();commandGesture=null;

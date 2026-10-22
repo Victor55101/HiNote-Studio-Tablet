@@ -1262,6 +1262,7 @@ require('./v53.spec.cjs')({test,setup,select,lines,assert,openMath,graphPane});
 require('./clipboard.spec.cjs')({test,setup,select,lines,assert});
 require('./v54_1.spec.cjs')({test,setup,select,lines,paste,assert,openMath,openTable,importImage});
 require('./v54_3.spec.cjs')({test,setup,select,lines,assert});
+require('./v54_4.spec.cjs')({test,setup,assert,openMath});
 require('./v54.spec.cjs')({test,setup,assert,openMath,openTable,importImage});
 
 (async () => {
