@@ -535,7 +535,7 @@ function drawCurrent() {
   const previousShown=shownPreview;
   clearTimeout(qualityTimer);requestedPreview=null;shownPreview=null;
   if(keep)shownPreview=previousShown;
-  ImageEditor.finishGesture(false);ImageEditor.render();
+  ImageEditor.pageChanged();ImageEditor.render();
   TableEditor.render();
   MathGraphEditor.render();
   $('pageBadge').textContent = `Página ${currentPage + 1}/${ImageEditor.count()}`;
@@ -658,7 +658,7 @@ NotebookUI.init();
 // Physical keys continue reaching the editable fields; only their soft-keyboard
 // hint changes. Preserve decimal/text hints when returning to virtual input.
 (()=>{
-  const originalModes=new WeakMap();let suppress=false,nativeGate=false,mode='auto',touch=null,touchRevision=0;
+  const originalModes=new WeakMap();let suppress=false,nativeGate=false,mode='auto',touch=null,touchRevision=0,keyboardVisible=false;
   const fieldSelector='textarea,[contenteditable],input:not([type]),input[type=text],input[type=number],input[type=search],input[type=email],input[type=password],input[type=url],input[type=tel]';
   function typingField(target){
     const node=target instanceof Element?target.closest(fieldSelector):null;
@@ -673,13 +673,17 @@ NotebookUI.init();
   }
   window.onKeyboardState=raw=>{try{
     const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;mode=data.mode||'auto';$('keyboardMode').value=mode;
-    if(suppress){touch=null;touchRevision++;}updateFields();window.StudioUI?.syncSelects?.();
+    if(suppress){touch=null;touchRevision++;}if(typeof data.imeVisible==='boolean')keyboardVisible=data.imeVisible;
+    updateFields();tableKeyboardLayout();window.StudioUI?.syncSelects?.();
   }catch(_){}};
+  function tableKeyboardLayout(){$('tableDialog').classList.toggle('tableTyping',keyboardVisible&&mode!=='physical');}
+  window.onKeyboardVisibility=visible=>{keyboardVisible=visible===true;tableKeyboardLayout();};
   window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);
   document.addEventListener('pointerdown',event=>{
     touch=null;touchRevision++;
     if((event.pointerType!=='touch'&&event.pointerType!=='pen')||!event.isPrimary||mode==='physical')return;
-    const node=typingField(event.target);if(!node)return;
+    const node=typingField(event.target);
+    if(!node){window.AndroidBridge?.cancelTouchKeyboard?.(!!event.target.closest('#previewWrap'));return;}
     touch={id:event.pointerId,node,x:event.clientX,y:event.clientY,moved:false};
     // Restore the field's original hint before its default focus/selection.
     // A mouse click never enters this path, even when it focuses the same field.

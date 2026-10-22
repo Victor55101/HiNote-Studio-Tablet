@@ -115,6 +115,20 @@ public class KeyboardControllerTest {
             s.keyboard.beginTouchInput();assertTrue(s.state().getBoolean("suppress"));
         }
     }
+    @Test @Config(sdk={28,31}) public void commandTouchesCannotReopenImeButWritableTouchStillCan()throws Exception{
+        try(Session s=new Session()){
+            s.event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);s.keyboard.cancelTouchInput(false);
+            assertTrue(s.state().getBoolean("suppress"));assertFalse(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.keyboard.beginTouchInput();s.keyboard.requestTouchKeyboard();assertTrue(s.state().getBoolean("suppress"));
+            s.finger();assertFalse(s.state().getBoolean("suppress"));assertTrue(WindowManager.LayoutParams.mayUseInputMethod(s.flags()));
+            s.event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);s.keyboard.cancelTouchInput(true);
+            assertTrue(s.state().getBoolean("suppress"));s.finger();assertFalse(s.state().getBoolean("suppress"));
+            s.keyboard.setMode("virtual");s.event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);s.keyboard.cancelTouchInput(false);
+            assertFalse(s.state().getBoolean("suppress"));
+            s.keyboard.setMode("physical");s.event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);s.keyboard.cancelTouchInput(true);s.finger();
+            assertTrue(s.state().getBoolean("suppress"));
+        }
+    }
     @Test public void trackpadFingerSourceCountsAsPhysicalButScreenTouchAndHoverEntryDoNot(){
         for(int source:new int[]{InputDevice.SOURCE_MOUSE,InputDevice.SOURCE_TOUCHPAD,InputDevice.SOURCE_MOUSE_RELATIVE}){
             MotionEvent e=motion(MotionEvent.ACTION_HOVER_MOVE,source);assertTrue(KeyboardController.physicalPointer(e));e.recycle();

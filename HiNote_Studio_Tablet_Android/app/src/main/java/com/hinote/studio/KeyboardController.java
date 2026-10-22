@@ -3,6 +3,7 @@ package com.hinote.studio;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.Rect;
 import android.hardware.input.InputManager;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,6 +13,7 @@ import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.WindowManager;
+import android.view.ViewTreeObserver;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.WebView;
 import org.json.JSONObject;
@@ -21,7 +23,9 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     private final Activity activity;private final WebView web;private final InputManager inputs;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private volatile String mode;private volatile boolean hardware,physicalInput;
-    private boolean active,keyObserved,touchPending,restartForTouch;
+    private boolean active,keyObserved,touchPending,restartForTouch,nonEditingTouch;
+    private volatile boolean imeVisible;
+    private final ViewTreeObserver.OnGlobalLayoutListener layoutListener=this::checkImeVisibility;
     private long touchStarted,interactionRevision;
     KeyboardController(Activity activity,WebView web){
         this.activity=activity;this.web=web;inputs=(InputManager)activity.getSystemService(Context.INPUT_SERVICE);
@@ -47,8 +51,15 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         return event.isFromSource(InputDevice.SOURCE_MOUSE)||event.isFromSource(InputDevice.SOURCE_TOUCHPAD)
             ||event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE);
     }
-    void start(){if(active)return;active=true;if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
-    void stop(){active=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
+    void start(){if(active)return;active=true;if(inputs!=null)inputs.registerInputDeviceListener(this,handler);activity.getWindow().getDecorView().getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);checkImeVisibility();refresh();}
+    void stop(){active=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);activity.getWindow().getDecorView().getViewTreeObserver().removeOnGlobalLayoutListener(layoutListener);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
+    private void checkImeVisibility(){
+        boolean visible;
+        android.view.View decor=activity.getWindow().getDecorView();
+        if(android.os.Build.VERSION.SDK_INT>=30){android.view.WindowInsets insets=decor.getRootWindowInsets();visible=insets!=null&&insets.isVisible(android.view.WindowInsets.Type.ime());}
+        else{Rect frame=new Rect();decor.getWindowVisibleDisplayFrame(frame);visible=decor.getRootView().getHeight()-frame.bottom>160*activity.getResources().getDisplayMetrics().density;}
+        if(visible!=imeVisible){imeVisible=visible;if(active)web.evaluateJavascript("window.onKeyboardVisibility && window.onKeyboardVisibility("+visible+");",null);}
+    }
     void refresh(){
         boolean found=false;if(inputs!=null)for(int id:inputs.getInputDeviceIds()){
             InputDevice device=inputs.getInputDevice(id);
@@ -88,7 +99,14 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     // inputmode precedes its default focus action; nothing consumes the touch.
     void beginTouchInput(){
         if(!touchAllowed())return;
-        restartForTouch|=suppress(mode,physicalInput);physicalInput=false;publish();
+        restartForTouch|=suppress(mode,physicalInput)||nonEditingTouch;nonEditingTouch=false;physicalInput=false;publish();
+    }
+    // A command may restore the caret without being a request to type. Keep
+    // an already visible IME for formatting, but never reopen a dismissed one.
+    void cancelTouchInput(boolean previewNavigation){
+        if(!active||!touchPending)return;
+        cancelTouch();checkImeVisibility();
+        if("auto".equals(mode)&&(previewNavigation||!imeVisible)){nonEditingTouch=true;publish();}
     }
     void requestTouchKeyboard(){
         if(!touchAllowed()||suppress(mode,physicalInput))return;
@@ -110,14 +128,14 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     }
     void setMode(String value){
         if(!validMode(value))return;
-        boolean wasSuppressed=suppress(mode,physicalInput);cancelTouch();mode=value;
+        boolean wasSuppressed=suppress(mode,physicalInput)||nonEditingTouch;cancelTouch();mode=value;nonEditingTouch=false;
         restartForTouch|=wasSuppressed&&!suppress(mode,physicalInput);
         activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode",mode).apply();publish();
     }
-    String state(){return "{\"nativeGate\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)+"}";}
+    String state(){return "{\"nativeGate\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+(suppress(mode,physicalInput)||nonEditingTouch)+",\"imeVisible\":"+imeVisible+"}";}
     void publish(){
         if(!active)return;
-        applyWindowPolicy(suppress(mode,physicalInput));
+        applyWindowPolicy(suppress(mode,physicalInput)||nonEditingTouch);
         web.evaluateJavascript("window.onKeyboardState && window.onKeyboardState("+JSONObject.quote(state())+");",null);
     }
     private void applyWindowPolicy(boolean blocked){

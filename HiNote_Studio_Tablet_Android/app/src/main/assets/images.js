@@ -198,8 +198,8 @@ const ImageEditor = (() => {
     const im=active?(handle?selected():hit(p)):null;
     const mathObject=math?.closest('.objectHit,.tableHit')?.dataset.id;
     if(im&&im.id===selectedId){
-      select(im.id);checkpoint();gesture={type:handle==='rotate'?'rotate':handle&&handle!=='move'?'resize':'move',image:true,handle,base:clone(im),original:state(),start:point(e),startClient:pointerData(e),moved:false,mathObject,angle:Math.atan2(p.y-im.y-im.height/2,p.x-im.x-im.width/2)*180/Math.PI};
-    }else gesture={type:'pan',image:false,imageTap:im?.id||null,start:pointerData(e),scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop,mathObject,tableTap:!!math?.classList.contains('tableSelect'),mathTap:!im&&!!math,moved:false};
+      select(im.id);checkpoint();gesture={page:currentPage,type:handle==='rotate'?'rotate':handle&&handle!=='move'?'resize':'move',image:true,handle,base:clone(im),original:state(),start:point(e),startClient:pointerData(e),moved:false,mathObject,angle:Math.atan2(p.y-im.y-im.height/2,p.x-im.x-im.width/2)*180/Math.PI};
+    }else gesture={page:currentPage,type:'pan',image:false,imageTap:im?.id||null,start:pointerData(e),scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop,mathObject,tableTap:!!math?.classList.contains('tableSelect'),mathTap:!im&&!!math,moved:false};
   }
   function pointerMove(e){
     if(!pointers.has(e.pointerId)||!gesture)return;e.preventDefault();pointers.set(e.pointerId,pointerData(e));
@@ -237,14 +237,14 @@ const ImageEditor = (() => {
   function pointerUp(e){
     if(!pointers.has(e.pointerId))return;pointers.delete(e.pointerId);
     if(e.type!=='pointerup'){finishGesture(true);return;}
-    if(pointers.size===0&&gesture?.image)window.StudioUI?.absorbTap?.(e);
+    if(pointers.size===0&&(gesture?.image||gesture?.mathObject))window.StudioUI?.absorbTap?.(e);
     if(pointers.size===0&&gesture?.type==='rotate'&&!gesture.moved){const im=selected();if(im)im.angle=normalizeAngle(gesture.base.angle+90);}
     if(pointers.size===0){const g=gesture,math=g?.mathTap?g.mathObject:null,table=g?.tableTap,im=g?.imageTap&&!g?.moved?g.imageTap:null;if(g?.image||g?.mathObject||g?.moved||im)suppressMathClickUntil=Date.now()+500;finishGesture(false);if(im)select(im);else if(math){if(table)TableEditor.selectPreview(math);else MathGraphEditor.selectPreview(math);}else if(g?.type==='pan'&&!g.moved)select(null);return;}
     if(pointers.size>=2){startPair();return;}
     // After multitouch, the remaining finger pans/moves from its new position.
     const a=[...pointers.values()][0],im=selected();
     if(gesture?.image&&im)gesture={...gesture,type:'move',base:clone(im),start:point(a)};
-    else gesture={type:'pan',image:false,moved:true,start:a,scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
+    else gesture={page:currentPage,type:'pan',image:false,moved:true,start:a,scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function updateCrop(){
     if(!crop)return;
@@ -289,7 +289,7 @@ const ImageEditor = (() => {
     if(previewTouches.size>2){pointers.set(e.pointerId,pointerData(e));el('previewWrap').setPointerCapture(e.pointerId);return;}
     if(gesture?.image){pointerDown(e);return;}
     MathGraphEditor.cancelPreviewDrag();TableEditor.cancelPreviewDrag();finishGesture(true);
-    pointers=new Map(previewTouches);gesture={type:'pan',image:false,moved:true};startPair();
+    pointers=new Map(previewTouches);gesture={page:currentPage,type:'pan',image:false,moved:true};startPair();
     for(const id of pointers.keys())el('previewWrap').setPointerCapture(id);
   },true);
   el('previewWrap').addEventListener('pointermove',e=>{if(previewTouches.has(e.pointerId))previewTouches.set(e.pointerId,pointerData(e));},true);
@@ -311,6 +311,6 @@ const ImageEditor = (() => {
     }
     if(e.key==='Escape'&&active){finishGesture(true);select(null);}
   });
-  return {state,restore,count,render,updateControls,mode,finishGesture,sanitize,selected,select,normalizeAngle,splicePages,
+  return {state,restore,count,render,updateControls,mode,finishGesture,pageChanged:()=>{if(gesture&&gesture.page!==currentPage)finishGesture(true);},sanitize,selected,select,normalizeAngle,splicePages,
     hitAt:e=>active?(cornerAt(e)?selected():hit(point(e))):null,isBusy:()=>busy||folderBusy,exportJSON:()=>JSON.stringify(images),selection,modified};
 })();

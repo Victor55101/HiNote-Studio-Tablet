@@ -106,8 +106,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 </div>
 <div class="workspace">
 <section class="card editorCard">
-<div class="cardhead"><h2>Documento</h2><span class="badge" id="charCount">0 caracteres</span></div>
-<input aria-label="Título de la nota" class="noteTitle" id="noteTitle" maxlength="128" placeholder="Título de la nota" value="Nueva nota"/>
+<div class="cardhead documentHead"><h2>Documento</h2><input aria-label="Título de la nota" class="noteTitle" id="noteTitle" maxlength="128" placeholder="Título de la nota" value="Nueva nota"/><span class="badge" id="charCount">0 caracteres</span></div>
 <div class="editorScroll"><div aria-label="Texto de la nota" class="editor" contenteditable="true" data-placeholder="Escribe o pega tu texto aquí…" id="editor" spellcheck="true"></div></div>
 <div class="draftFooter"><span id="draftStatus" role="status">Borrador guardado</span><span id="editorHint">Enter continúa listas · Ctrl+Z deshace</span></div>
 </section>
@@ -212,6 +211,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <script src="math_graph.js"></script>
 <script src="notebooks.js"></script>
 <script src="pdfs.js"></script>
+<script src="clipboard.js"></script>
 <script src="text_model.js"></script>
 <script src="editor.js"></script>
 <script src="notes_probe.js"></script>

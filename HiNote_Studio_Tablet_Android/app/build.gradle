@@ -11,8 +11,8 @@ android {
         applicationId 'com.hinote.studio'
         minSdk 24
         targetSdk 35
-        versionCode 54
-        versionName '5.4-tablet'
+        versionCode 61
+        versionName '5.4.1-tablet'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {
@@ -34,6 +34,14 @@ android {
             buildConfigField 'boolean', 'NOTES_PROBE', 'false'
             manifestPlaceholders = [appLabel: 'HiNote Studio']
         }
+        review {
+            dimension 'edition'
+            // Preserve the working V54 installation and its drafts/calibrations.
+            // The old CI signing key is unavailable, so this review installs alongside it.
+            applicationIdSuffix '.v54fixes'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'false'
+            manifestPlaceholders = [appLabel: 'HiNote Studio V54.1']
+        }
         probe {
             dimension 'edition'
             // V34 CI builds used an ephemeral signing key. Install alongside
@@ -53,7 +61,7 @@ android {
     }
 
     // Old generated calibration banks must never be bundled with the new one.
-    androidResources { ignoreAssetsPattern 'glyphs_v11.json:glyphs_v22.json:glyphs_v23.json' }
+    androidResources { ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:CVS:thumbs.db:picasa.ini:*~:glyphs_v11.json:glyphs_v22.json:glyphs_v23.json' }
     testOptions { unitTests.includeAndroidResources = true }
 }
 

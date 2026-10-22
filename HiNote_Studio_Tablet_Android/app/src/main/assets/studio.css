@@ -126,3 +126,22 @@ select.nativeSelect{position:absolute!important;left:0!important;top:0!important
 .caretMeasure{position:absolute;left:-10000px;top:0;visibility:hidden;white-space:pre;pointer-events:none}
 @keyframes typingCaretBlink{0%,100%{opacity:1}50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.typingCaret{animation:none}}
+/* V54 remains the layout baseline; the title now shares the document header. */
+.documentHead{gap:12px;min-width:0}.documentHead h2,.documentHead .badge{flex-shrink:0}.documentHead .noteTitle{flex:1 1 0;width:0;min-width:0;margin:0;height:36px;min-height:36px;padding:6px 10px;border-radius:9px}.documentHead .noteTitle:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media(max-width:520px){.documentHead{gap:8px}.documentHead .badge{font-size:10px;padding:6px}.documentHead .noteTitle{font-size:14px}}
+/* Give alignment names room; dimensions need only a short numeric field. */
+.tableCellTools{grid-template-columns:repeat(12,minmax(0,1fr));align-items:end}
+.tableCellTools>strong{grid-column:1/-1}
+.tableCellTools>label:nth-child(n){grid-column:span 3}
+.tableCellTools>label:has(#tableCellSize){grid-column:span 5}
+.tableCellTools>label:has(#tableInkColor){grid-column:span 3}
+.tableCellTools>label:has(#tableInkWidth){grid-column:span 4}
+.tableCellTools label:has(#tableColWidth) input,.tableCellTools label:has(#tableRowHeight) input{max-width:108px}
+.tableCellTools .selectButton{padding-inline:12px;gap:8px}
+/* Only the table dialog drops its lower controls while the IME is visible. */
+.tableDialog.tableTyping .tableCellTools,.tableDialog.tableTyping .tableActions{display:none}
+.tableDialog.tableTyping .tableMain{min-height:0}
+.tableDialog.tableTyping .tableCanvas{min-height:0}
+.tableDialog.tableTyping #tableGridWrap{min-height:60px}
+@media(max-width:1100px){.tableCellTools>label:nth-child(n){grid-column:span 6}.tableCellTools>label:has(#tableCellSize){grid-column:span 6}}
+@media(max-width:760px){.tableCellTools{display:grid}.tableCellTools>label{min-width:0}}
