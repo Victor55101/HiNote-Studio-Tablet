@@ -11,8 +11,8 @@ android {
         applicationId 'com.hinote.studio'
         minSdk 24
         targetSdk 35
-        versionCode 61
-        versionName '5.4.1-tablet'
+        versionCode 62
+        versionName '5.4.2-tablet'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {
@@ -36,11 +36,11 @@ android {
         }
         review {
             dimension 'edition'
-            // Preserve the working V54 installation and its drafts/calibrations.
-            // The old CI signing key is unavailable, so this review installs alongside it.
-            applicationIdSuffix '.v54fixes'
+            // Preserve V54 and V54.1 installations signed with unavailable CI keys.
+            // Delivered maintenance APKs are re-signed with a private, retained key.
+            applicationIdSuffix '.v54maintenance'
             buildConfigField 'boolean', 'NOTES_PROBE', 'false'
-            manifestPlaceholders = [appLabel: 'HiNote Studio V54.1']
+            manifestPlaceholders = [appLabel: 'HiNote Studio V54.2']
         }
         probe {
             dimension 'edition'

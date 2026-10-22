@@ -1,6 +1,8 @@
-# HiNote Studio Tablet — V54.1 (base funcional V54)
+# HiNote Studio Tablet — V54.2 (base funcional V54)
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
+
+V54.2 corrige dos detalles visuales de V54.1: devuelve Borrador guardado y la ayuda de deshacer al pie del documento y muestra una sola unidad % dentro de cada selector de porcentaje. Conserva los valores numéricos, el formato y las funciones de V54.1.
 
 La última base confirmada por el usuario es **V54** (árbol `ef1cc4097b9ebdb34c9feafbee3805c2c7efba88`). Las pruebas V55–V60 quedan descartadas como base funcional. V54.1 parte de V54 y agrega pegado con estilos, título junto a Documento, selectores de porcentajes, ajustes del modal de tablas y correcciones de selección/teclado al tocar controles. No incluye el servicio de Accesibilidad ni el permiso ADB de las versiones experimentales. Detalles: [docs/V54.1.md](docs/V54.1.md).
 

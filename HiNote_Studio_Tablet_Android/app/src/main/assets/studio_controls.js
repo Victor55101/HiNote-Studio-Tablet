@@ -4,6 +4,11 @@
   const $=id=>document.getElementById(id), controls=new Map();
   let opened=null, popup=null, shield=null, activeIndex=-1, typeAhead='', typedAt=0, completedTap=null, selectContext=null;
   const textSelects=new Set(['sizeSel','thicknessSel','caseSel','listType','opacity']);
+  const percentSelects=new Set(['sizeSel','opacity','mathSize','colorSaturation','colorValue']);
+  function optionLabel(select,option){
+    const value=option?.label||'Elegir';
+    return percentSelects.has(select.id)&&option?.value!==''&&Number.isFinite(Number(option?.value))?value.replace(/\s*%+\s*$/,'')+' %':value;
+  }
   function fieldContext(){
     const field=writable(document.activeElement);if(!field)return null;
     if(field===editor)return {field,mark:bookmark()};
@@ -75,7 +80,7 @@
     shield.onclick=e=>{e.preventDefault();e.stopPropagation();closeSelect();};
     popup.onpointerdown=e=>e.stopPropagation();popup.onpointerup=e=>e.stopPropagation();popup.onclick=e=>e.stopPropagation();
     for(const [i,o] of options(select).entries()){
-      const b=document.createElement('button');b.type='button';b.tabIndex=-1;b.id=select.id+'-option-'+i;b.setAttribute('role','option');b.setAttribute('aria-selected',String(o.selected));b.disabled=o.disabled||o.parentElement.disabled===true;b.textContent=o.label;b.dataset.value=o.value;
+      const b=document.createElement('button');b.type='button';b.tabIndex=-1;b.id=select.id+'-option-'+i;b.setAttribute('role','option');b.setAttribute('aria-selected',String(o.selected));b.disabled=o.disabled||o.parentElement.disabled===true;b.textContent=optionLabel(select,o);b.dataset.value=o.value;
       let tap=null;
       b.onpointerdown=e=>{e.preventDefault();if(e.pointerType!=='mouse'){tap={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};b.setPointerCapture(e.pointerId);}};
       b.onpointermove=e=>{if(tap?.id===e.pointerId&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>=10)tap.moved=true;};
@@ -121,13 +126,13 @@
   }
   function sync(){
     for(const [select,c] of controls){
-      const text=select.selectedOptions[0]?.label||'Elegir';if(c.text.textContent!==text)c.text.textContent=text;
+      const text=optionLabel(select,select.selectedOptions[0]);if(c.text.textContent!==text)c.text.textContent=text;
       if(c.button.disabled!==select.disabled)c.button.disabled=select.disabled;
       const name=label(select)+': '+text;if(c.button.getAttribute('aria-label')!==name)c.button.setAttribute('aria-label',name);
       if(c.list){
         const signature=JSON.stringify(options(select).map(o=>[o.label,o.value,o.selected,o.disabled,select.disabled]));
         if(c.signature!==signature){c.signature=signature;c.list.replaceChildren();for(const o of options(select)){
-          const b=document.createElement('button');b.type='button';b.textContent=o.label;b.dataset.value=o.value;b.setAttribute('role','option');b.setAttribute('aria-selected',String(o.selected));b.disabled=select.disabled||o.disabled;b.onclick=()=>choose(select,o.value);c.list.append(b);
+          const b=document.createElement('button');b.type='button';b.textContent=optionLabel(select,o);b.dataset.value=o.value;b.setAttribute('role','option');b.setAttribute('aria-selected',String(o.selected));b.disabled=select.disabled||o.disabled;b.onclick=()=>choose(select,o.value);c.list.append(b);
         }}
       }
     }

@@ -1,4 +1,4 @@
-name: Build HiNote Studio V54.1 from V54
+name: Build HiNote Studio V54.2 from V54
 on:
   workflow_dispatch:
   push:
@@ -57,7 +57,7 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Tablet-APK-V54-1
+          name: HiNote-Studio-Tablet-APK-V54-2
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/review/debug/app-review-debug.apk
       - name: Package local signing tool
         run: |
