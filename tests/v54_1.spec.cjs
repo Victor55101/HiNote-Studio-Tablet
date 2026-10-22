@@ -13,6 +13,21 @@ module.exports=({test,setup,select,lines,assert,openMath,openTable,importImage})
     assert.equal(await page.inputValue('#mathSize'),'73.1','Existing custom percentages remain selectable');
     assert.equal(await page.locator('#cropLeft').getAttribute('type'),'range');
   });
+  test('V54.1 color percentages select values and retain the range picker',async page=>{
+    await setup(page,'Color');await page.locator('[data-color-for=colorPick]').tap();
+    for(const id of ['colorSaturation','colorValue']){
+      assert.equal(await page.locator('#'+id).evaluate(n=>n.tagName),'SELECT');
+      assert.equal(await page.locator('#'+id+' option').count(),101);
+    }
+    await page.fill('#colorHex','#FF0000');
+    for(const [id,value] of [['colorSaturation','50'],['colorValue','80']]){
+      await page.locator('[data-select-for='+id+']').tap();await page.locator('.selectMenu [data-value="'+value+'"]').tap();
+    }
+    assert.equal((await page.inputValue('#colorHex')).toUpperCase(),'#CC6666');
+    assert.equal(await page.locator('[data-select-for=colorValue] .selectValue').textContent(),'80 %');
+    assert.equal(await page.locator('#colorHue').getAttribute('type'),'range');
+    await page.click('#colorDone');
+  });
   test('V54.1 table alignment names fit and dimension fields stay compact',async page=>{
     for(const width of [1536,1280,1000]){
       await page.setViewportSize({width,height:1000});await setup(page);await openTable(page);
@@ -61,6 +76,16 @@ module.exports=({test,setup,select,lines,assert,openMath,openTable,importImage})
     const calls=await page.evaluate(()=>bridgeCalls);assert.equal(calls.filter(c=>['begin-touch','show-touch'].includes(c[0])).length,0);
     assert.ok(calls.some(c=>c[0]==='cancel-touch'&&c[1]===true));
     await page.locator('#noteTitle').tap();await page.waitForTimeout(30);assert.ok(await page.evaluate(()=>bridgeCalls.some(c=>c[0]==='show-touch')));
+  });
+  test('V54.1 table paste without formatting bypasses native HTML once',async page=>{
+    await setup(page);await openTable(page);await page.locator('.cellEditor').first().focus();
+    await page.evaluate(()=>{
+      AndroidBridge.readRichClipboard=()=>JSON.stringify({plain:'H2O',html:'H<sub>2</sub>O'});
+      const cell=document.activeElement;cell.dispatchEvent(new KeyboardEvent('keydown',{key:'V',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true}));
+      for(let i=0;i<2;i++){const data=new DataTransfer();data.setData('text/plain','H2O');cell.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));}
+    });
+    await page.click('#tableDone');const runs=await page.evaluate(()=>serializeDocument().paragraphs.find(p=>p.table).table.rows[0].cells[0].segments);
+    assert.equal(runs.map(s=>s.text).join(''),'H2OH2O');assert.equal(runs.filter(s=>s.script==='sub').length,1);
   });
   for(const kind of ['image','table','formula','graph'])test(`V54.1 ${kind}: stale preview and arriving layout cannot swallow a selection tap`,async page=>{
     await page.setViewportSize({width:1536,height:1000});await setup(page,'Texto');

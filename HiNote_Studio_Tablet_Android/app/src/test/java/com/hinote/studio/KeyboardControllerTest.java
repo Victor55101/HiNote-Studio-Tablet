@@ -115,6 +115,15 @@ public class KeyboardControllerTest {
             s.keyboard.beginTouchInput();assertTrue(s.state().getBoolean("suppress"));
         }
     }
+    @Test @Config(sdk=31) public void floatingImeVisibilityDoesNotRequireResizingTheTable()throws Exception{
+        try(Session s=new Session()){
+            int type=android.view.WindowInsets.Type.ime();
+            s.web.dispatchApplyWindowInsets(new android.view.WindowInsets.Builder().setVisible(type,true).build());
+            assertTrue(s.state().getBoolean("imeVisible"));
+            s.web.dispatchApplyWindowInsets(new android.view.WindowInsets.Builder().setVisible(type,false).build());
+            assertFalse(s.state().getBoolean("imeVisible"));
+        }
+    }
     @Test @Config(sdk={28,31}) public void commandTouchesCannotReopenImeButWritableTouchStillCan()throws Exception{
         try(Session s=new Session()){
             s.event(MotionEvent.ACTION_DOWN,InputDevice.SOURCE_TOUCHSCREEN);s.keyboard.cancelTouchInput(false);

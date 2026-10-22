@@ -4,7 +4,7 @@ const TableEditor = (() => {
   const snap=n=>Math.round(n*2)/2, clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
   let tables={}, working=null, originalId=null, insertion=null, selectedRow=0, selectedCol=0, cellSelection=null, active=false, drag=null, resume=null;
   let selecting=false, selectedCells=new Set(['0:0']), selectionAnchor=[0,0], toolsFrame=null;
-  let selectedId=null;
+  let selectedId=null,cellPlainPasteUntil=0;
   const cellKey=(r,c)=>`${r}:${c}`;
   const currentCell=()=>working?.rows[selectedRow]?.cells[selectedCol];
   const chosenCells=()=>[...selectedCells].map(key=>{const [r,c]=key.split(':').map(Number);return working?.rows[r]?.cells[c];}).filter(Boolean);
@@ -68,7 +68,7 @@ const TableEditor = (() => {
       const span=document.createElement('span'),style=cleanStyle(s);Object.assign(span.dataset,style);span.dataset.hinoteStyle=JSON.stringify(style);
       span.style.color=rgba(style.color,style.opacity);span.style.fontWeight=String(Math.min(900,(style.bold?700:400)+style.thickness*25));
       span.style.fontStyle=style.italic?'italic':'normal';span.style.textDecoration=style.underline?'underline':'none';
-      span.style.fontSize=style.scale*(style.script?.65:1)*100+'%';span.style.verticalAlign=style.script==='sup'?'super':style.script==='sub'?'sub':'baseline';
+      span.style.fontSize=style.scale*(style.script ? .65 : 1)*100+'%';span.style.verticalAlign=style.script==='sup'?'super':style.script==='sub'?'sub':'baseline';
       span.textContent=s.text;node.append(span);
     }
   }
@@ -186,7 +186,8 @@ const TableEditor = (() => {
   function paste(event){
     const node=event.target.closest('.cellEditor');if(!node)return;event.preventDefault();if(selecting)return show('Termina la selección para escribir o pegar en una celda.');
     const text=event.clipboardData.getData('text/plain').replace(/\r\n?/g,'\n');
-    if(!text.includes('\t'))try{
+    const plainOnly=performance.now()<cellPlainPasteUntil;cellPlainPasteUntil=0;
+    if(!plainOnly&&!text.includes('\t'))try{
       const lines=richClipboardLines(event.clipboardData);
       if(lines?.length){
         const segments=[];lines.forEach((line,i)=>{if(i)segments.push({text:'\n',...DEFAULT_STYLE});segments.push(...line.filter(s=>s.text));});
@@ -316,6 +317,10 @@ const TableEditor = (() => {
     grid.addEventListener('pointerdown',e=>{if(e.target.closest('.cellEditor')&&(e.shiftKey||e.ctrlKey||e.metaKey)){flush();selecting=true;cellSelection=null;sync();}});
     grid.addEventListener('click',e=>{const n=e.target.closest('.cellEditor');if(n&&selecting)selectCell(+n.dataset.row,+n.dataset.col,e.shiftKey);});
     grid.addEventListener('input',()=>{flush();queueDraft();});grid.addEventListener('paste',paste);grid.addEventListener('drop',e=>e.preventDefault());
+    grid.addEventListener('keydown',e=>{
+      if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v')cellPlainPasteUntil=e.shiftKey?performance.now()+1000:0;
+      else if(!['Control','Meta','Shift'].includes(e.key))cellPlainPasteUntil=0;
+    },true);
     grid.addEventListener('beforeinput',e=>{if(selecting){e.preventDefault();return;}if(['insertParagraph','insertLineBreak'].includes(e.inputType)&&!e.isComposing){e.preventDefault();insertCellText('\n');}});
     grid.addEventListener('keydown',e=>{if(e.isComposing)return;if(selecting){const n=e.target.closest('.cellEditor');if(n&&[' ','Enter'].includes(e.key)){e.preventDefault();selectCell(+n.dataset.row,+n.dataset.col,e.shiftKey);}return;}if(e.key==='Enter'){e.preventDefault();insertCellText('\n');}if(e.key==='Tab'){e.preventDefault();const n=el('tableGrid').querySelectorAll('.cellEditor'),index=selectedRow*working.widths.length+selectedCol+(e.shiftKey?-1:1);n[clamp(index,0,n.length-1)].focus();}});
     document.addEventListener('selectionchange',capture);

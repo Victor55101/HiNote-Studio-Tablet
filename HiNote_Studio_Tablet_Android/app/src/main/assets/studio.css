@@ -138,6 +138,8 @@ select.nativeSelect{position:absolute!important;left:0!important;top:0!important
 .tableCellTools>label:has(#tableInkWidth){grid-column:span 4}
 .tableCellTools label:has(#tableColWidth) input,.tableCellTools label:has(#tableRowHeight) input{max-width:108px}
 .tableCellTools .selectButton{padding-inline:12px;gap:8px}
+.colorNumberFields .selectControl{display:block;width:100%;margin-top:4px}
+.colorNumberFields .selectButton{width:100%}
 /* Only the table dialog drops its lower controls while the IME is visible. */
 .tableDialog.tableTyping .tableCellTools,.tableDialog.tableTyping .tableActions{display:none}
 .tableDialog.tableTyping .tableMain{min-height:0}
