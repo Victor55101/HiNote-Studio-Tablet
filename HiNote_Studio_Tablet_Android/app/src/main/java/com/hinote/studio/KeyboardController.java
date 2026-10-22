@@ -165,7 +165,10 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         handler.post(()->{
             if(!active||request!=pendingInput||!inputApplied||!heldKeys.isEmpty())return;
             long verification=pendingVerifyUntil;
-            cancelPendingInput();publish();transition.committed();
+            // Return the IME surface before its native configuration changes.
+            // Otherwise the disappearing input frame can revoke its leash
+            // while it is transparent, hiding the following candidate window.
+            cancelPendingInput();transition.committed();publish();
             if(verification>SystemClock.uptimeMillis())verifyPhysicalClose(verification);
         });
     }
