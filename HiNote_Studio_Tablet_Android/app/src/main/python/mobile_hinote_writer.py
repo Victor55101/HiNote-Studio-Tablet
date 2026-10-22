@@ -53,14 +53,17 @@ def _load_template(template_hinote: Path):
     return entries, roots[0], _gunzip_json(entries[roots[0]]), pages[0], _gunzip_json(entries[pages[0]])
 
 
-def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title="Nueva nota", thumbnails=None, check_cancelled=None):
+def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title="Nueva nota", thumbnails=None, images=None, pdf_pages=None, check_cancelled=None):
     check = check_cancelled or (lambda: None)
     template_hinote = Path(template_hinote)
     output_hinote = Path(output_hinote)
-    generated_bins = [Path(p) for p in generated_bins]
+    generated_bins = [Path(p) if p is not None else None for p in generated_bins]
     thumbnails = [Path(p) for p in (thumbnails or [])]
+    images = images or [[] for _ in generated_bins]
     if not generated_bins or len(generated_bins) != len(thumbnails):
         raise ValueError("Se requiere un thumbnail JPEG por página")
+    if len(images) != len(generated_bins):
+        raise ValueError("Las imágenes deben corresponder a las páginas")
 
     entries, _old_root, root_obj, _old_page, template_page_obj = _load_template(template_hinote)
     note = root_obj["customNoteContent"]
@@ -90,6 +93,20 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
         if name.startswith("files/") and name not in old_page_files:
             files[name] = data
 
+    pdf_pages=pdf_pages or [None]*len(generated_bins)
+    if len(pdf_pages)!=len(generated_bins): raise ValueError("Las páginas de PDF deben corresponder a las páginas de la nota")
+    pdf_attachments={};pdf_hashes={}
+    for ref in pdf_pages:
+        if not ref: continue
+        check();source=Path(ref["path"])
+        if source not in pdf_hashes: pdf_hashes[source]=_sha(source)
+        digest=pdf_hashes[source]
+        if digest not in pdf_attachments:
+            name=digest+"_pdf.pdf";attachment_id=uuid.uuid4().hex
+            files["files/"+name]=source;pdf_attachments[digest]=(attachment_id,name)
+            note.setdefault("attachment",[]).append({"attachType":3,"cloudSyncState":1,"createTime":now_ms,"data1":'{"synDataTpye":"memonote"}',
+                "filePath":"/data/data/com.huawei.hinote/files/importfiles/"+name,"id":attachment_id,"isDelete":0,"modifiedTime":now_ms,"notesId":note_id,"playbackProgress":0})
+            root_obj.setdefault("fileList",[]).append({"hash":digest,"name":name})
     page_records = []
     for idx, (bin_path, thumb_path) in enumerate(zip(generated_bins, thumbnails), start=1):
         check()
@@ -99,7 +116,8 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
         page_jh = f"pages/{page_id}.jhinote"
         bin_name = f"files/{page_id}.bin"
         thumb_name = f"files/{page_id}.jpg"
-        files[bin_name] = bin_path
+        if bin_path is not None:
+            files[bin_name] = bin_path
         files[thumb_name] = thumb_path
 
         page["id"] = page_id
@@ -129,10 +147,34 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
             att.setdefault("playbackProgress", 0)
 
         page["thumbnail"] = f"/data/data/com.huawei.hinote/files/thumbnail/{page_id}.jpg"
-        page_obj["fileList"] = [
-            {"hash": _sha(thumb_path), "name": Path(thumb_name).name},
-            {"hash": _sha(bin_path), "name": Path(bin_name).name},
-        ]
+        page_obj["fileList"] = [{"hash": _sha(thumb_path), "name": Path(thumb_name).name}]
+        if bin_path is None:
+            page["attachment"] = []
+        else:
+            page_obj["fileList"].append({"hash": _sha(bin_path), "name": Path(bin_name).name})
+        page.pop("bkgAttachmentId",None);page.pop("bkgAttachmentIndex",None)
+        if pdf_pages[idx-1]:
+            ref=pdf_pages[idx-1];attachment_id,_=pdf_attachments[pdf_hashes[Path(ref["path"])]]
+            page["bkgAttachmentId"]=attachment_id;page["bkgAttachmentIndex"]=int(ref["index"])
+        page["pageElement"] = []
+        for layer, image in enumerate(images[idx - 1]):
+            check()
+            source = Path(image["path"])
+            digest = _sha(source)
+            image_name = digest + source.suffix.lower()
+            files["files/" + image_name] = source
+            if not any(item["name"] == image_name for item in page_obj["fileList"]):
+                page_obj["fileList"].append({"hash": digest, "name": image_name})
+            page["pageElement"].append({
+                "id": str(uuid.uuid4()), "notePageId": page_id, "elementType": 1,
+                "filePath": f"/data/data/com.huawei.hinote/files/image/{image_name}",
+                "positionX": image["x"] / 1000.0, "positionY": image["y"] / 1600.0,
+                "width": image["width"] / 1000.0, "height": image["height"] / 1600.0,
+                "angle": image["angle"], "positionZ": layer, "scale": 1.0,
+                "data1": '{"sourceDpi":"0","type":"0","stretchSplits":"null"}',
+                "isDelete": 0, "cloudSyncState": 0, "playbackProgress": 0,
+                "createTime": now_ms + idx, "modifiedTime": now_ms + idx,
+            })
         page_records.append((page_jh, _gzip_json(page_obj), thumb_name, bin_name))
 
     root_obj["fileList"] = [
@@ -161,6 +203,7 @@ def build_hinote_multi(template_hinote, generated_bins, output_hinote, *, title=
                 _write_entry(out, name, files[name], check)
         for _, _, thumb_name, bin_name in page_records:
             _write_entry(out, thumb_name, files[thumb_name], check)
-            _write_entry(out, bin_name, files[bin_name], check)
+            if bin_name in files:
+                _write_entry(out, bin_name, files[bin_name], check)
         out.writestr("custom_md.jhinote", _gzip_json(md))
     return output_hinote

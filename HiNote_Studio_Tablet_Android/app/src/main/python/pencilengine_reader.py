@@ -73,6 +73,27 @@ def _u32(data: bytes, offset: int) -> int:
     return struct.unpack_from(">I", data, offset)[0]
 
 
+def validate_footer(footer, stroke_ids):
+    """Known native rectangle extension; unknown footer kinds stay rejected."""
+    footer = bytes(footer)
+    if len(footer) < FOOTER_SIZE or _u32(footer, 0) != FOOTER_SIZE:
+        raise ValueError("Footer PENCILENGINE inválido")
+    extra, count = _u32(footer, 12), _u32(footer, 36)
+    if len(footer) == FOOTER_SIZE and not extra and not count:
+        return
+    if extra != 56 * count or len(footer) != FOOTER_SIZE + extra or count > 2000:
+        raise ValueError("Extensión de formas PENCILENGINE inválida")
+    seen = set()
+    for offset in range(FOOTER_SIZE, len(footer), 56):
+        block = footer[offset:offset+56]
+        identity = block[16:32]
+        if (struct.unpack_from(">IIII", block) != (2,20,0,0) or _u32(block,32) != 1
+                or _u32(block,52) != 0 or block[36:52] != identity
+                or identity not in stroke_ids or identity in seen):
+            raise ValueError("Referencia de rectángulo PENCILENGINE inválida")
+        seen.add(identity)
+
+
 def validate_pencilengine(path, check_cancelled=None):
     """Verify binary framing without allocating every point in the page."""
     check = check_cancelled or (lambda: None)
@@ -81,9 +102,10 @@ def validate_pencilengine(path, check_cancelled=None):
         header = stream.read(GLOBAL_HEADER_SIZE)
         if len(header) != GLOBAL_HEADER_SIZE or not header.startswith(MAGIC):
             raise ValueError("Cabecera PENCILENGINE inválida")
-        if _u32(header, 88) != size - 124 or _u32(header, 116) != size - 164:
+        if _u32(header, 88) != size - 124:
             raise ValueError("Tamaños globales PENCILENGINE inconsistentes")
         count, points = _u32(header, 112), 0
+        stroke_ids = set()
         for _ in range(count):
             check()
             head = stream.read(STROKE_HEADER_SIZE)
@@ -91,6 +113,7 @@ def validate_pencilengine(path, check_cancelled=None):
             block = stream.read(POINT_BLOCK_HEADER_SIZE)
             if len(head) != STROKE_HEADER_SIZE or len(meta) != STROKE_METADATA_SIZE or len(block) != POINT_BLOCK_HEADER_SIZE:
                 raise ValueError("Stroke truncado")
+            stroke_ids.add(head[16:32])
             n, point_size = _u32(block, 4), _u32(block, 8)
             block_size = POINT_BLOCK_HEADER_SIZE + n * POINT_SIZE
             if (_u32(head, 0) != STROKE_HEADER_SIZE or point_size != POINT_SIZE
@@ -101,8 +124,9 @@ def validate_pencilengine(path, check_cancelled=None):
                 raise ValueError("Puntos truncados")
             stream.seek(n * POINT_SIZE, 1)
             points += n
-        if len(stream.read(FOOTER_SIZE + 1)) != FOOTER_SIZE:
-            raise ValueError("Footer PENCILENGINE inválido")
+        if _u32(header, 116) != stream.tell() - 124:
+            raise ValueError("Tamaño del bloque de trazos PENCILENGINE inconsistente")
+        validate_footer(stream.read(FOOTER_SIZE + 56 * 2000 + 1), stroke_ids)
     return count, points
 
 
@@ -197,10 +221,8 @@ def read_pencilengine(path: str | Path, strict: bool = True) -> PencilEngineDocu
         )
 
     footer = data[offset:]
-    if strict and len(footer) != FOOTER_SIZE:
-        raise ValueError(
-            f"Trailing/footer inesperado: {len(footer)} bytes, esperado {FOOTER_SIZE}."
-        )
+    if strict:
+        validate_footer(footer, {bytes.fromhex(s.header_hex)[16:32] for s in strokes})
 
     return PencilEngineDocument(
         path=str(path),

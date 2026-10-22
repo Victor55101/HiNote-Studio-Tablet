@@ -1,0 +1,19 @@
+#panelCalibration{flex-shrink:0}#panelCalibration .btn{flex-shrink:0}
+.calibrationDialog{position:fixed;inset:0;z-index:45;background:#0f172aaa;display:flex;align-items:center;justify-content:center;padding:14px}
+.calibrationCard{background:#fff;border-radius:18px;width:min(1100px,100%);height:min(860px,96vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 45px #0014}
+.calibrationHeader{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #dce4ef;gap:14px}.calibrationHeader h2{margin:0;font-size:21px}.calibrationHeader p{margin:5px 0 0;font-size:13px;color:#53637b}
+#calibrationStatus{padding:10px 20px;background:#eef3ff;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:100px;overflow:auto}
+.calibrationLayout{display:grid;grid-template-columns:270px minmax(0,1fr);min-height:0;flex:1}
+.profileSidebar,.profileContent{overflow:auto;overscroll-behavior:contain;padding:16px 20px}.profileSidebar{background:#f8faff;border-right:1px solid #dce4ef;display:flex;flex-direction:column;gap:9px}
+.calibrationCard input:not([type=checkbox]),.calibrationCard select,.calibrationCard textarea{border:1px solid #ccd7e7;border-radius:9px;padding:10px;font:inherit;width:100%;box-sizing:border-box;background:#fff;color:#17263f}
+.calibrationCard label{font-size:13px}.calibrationCard button{min-height:44px}.calibrationCard input[type=checkbox]{width:22px;height:22px;vertical-align:middle;accent-color:#5667ed}
+#profileList{min-height:150px;flex-shrink:0}#profileList option{padding:8px}.profileSidebar small,.profileContent small,.calibrationFooter small{font-size:12px;color:#53637b;line-height:1.5}
+.profileSidebar>.btn{flex-shrink:0}
+.profileActions{display:flex;gap:8px;flex-wrap:wrap}.profileActions button{flex:1}.profileContent h3{margin:0 0 7px;font-size:20px}.profileContent p{font-size:13px;line-height:1.5}.characterTabs{display:flex;gap:9px;flex-wrap:wrap}
+.characterGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:7px;margin:12px 0;max-height:260px;overflow:auto;padding:2px}
+.characterChip{display:flex;align-items:center;flex-direction:column;border:1px solid #dce4ef;border-radius:10px;background:#fafcff;padding:8px 3px;min-height:73px}.characterChip strong{font-size:23px;font-weight:500}.characterChip small{font-size:10px}.characterChip.missing{background:#fff6e8;border-color:#eddbb4}.characterChip.fallback{background:#eef5ff;border-color:#c5d9f6}
+.characterSearch{display:flex;align-items:center;gap:12px}.characterSearch input{max-width:180px}.notice{background:#fff7e5;border:1px solid #ebd6a8;border-radius:10px;padding:12px;margin:10px 0}.notice button{margin:5px}
+.profileContent details{border-top:1px solid #dce4ef;margin-top:15px;padding-top:14px}.profileContent summary{cursor:pointer;font-weight:650;min-height:34px}.templateGroups{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+#profilePreview{display:block;width:100%;max-width:675px;background:white;border:1px solid #dde5ef;margin-top:12px}#profilePreviewOptions button{margin-top:10px}
+.calibrationFooter{padding:10px 20px;border-top:1px solid #dce4ef;display:flex;align-items:center;justify-content:space-between;gap:16px}.calibrationCard button:focus-visible{outline:3px solid #899bff}.calibrationCard button:disabled{opacity:.45}
+@media(max-width:720px){.calibrationDialog{padding:6px}.calibrationCard{height:98vh}.calibrationLayout{grid-template-columns:1fr;overflow:auto;display:block}.profileSidebar,.profileContent{overflow:visible}.profileSidebar{border-right:0;border-bottom:1px solid #dce4ef}#profileList{min-height:110px}.calibrationFooter{padding:8px 12px}.templateGroups{grid-template-columns:1fr}}
