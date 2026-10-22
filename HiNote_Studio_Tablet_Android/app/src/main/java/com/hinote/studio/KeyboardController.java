@@ -24,6 +24,8 @@ import java.util.Set;
 /** Keyboard policy; only the opt-in trial may acquire the temporary accessibility override. */
 class KeyboardController implements InputManager.InputDeviceListener,KeyboardAccessService.Client {
     private final Activity activity;private final WebView web;private final InputManager inputs;
+    private final KeyboardTransition transition;
+    private final KeyboardPreferenceLease preference;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private volatile String mode;private volatile boolean hardware,physicalInput,candidateWindowAllowed;
     private boolean active,editing,keyObserved,touchPending,visibilityApplied,softKeyboardSuppressed;
@@ -35,7 +37,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     private boolean inputApplied,pendingNeedsText,pendingDeadKey;
     private long closeSequence,verifyCloseUntil,pendingVerifyUntil;
     KeyboardController(Activity activity,WebView web){
-        this.activity=activity;this.web=web;inputs=(InputManager)activity.getSystemService(Context.INPUT_SERVICE);
+        this.activity=activity;this.web=web;transition=new KeyboardTransition(web);preference=new KeyboardPreferenceLease(activity);inputs=(InputManager)activity.getSystemService(Context.INPUT_SERVICE);
         mode=activity.getPreferences(Context.MODE_PRIVATE).getString("keyboard-mode","auto");
         if(!validMode(mode))mode="auto";
     }
@@ -60,7 +62,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
             ||event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE);
     }
     void start(){if(active)return;active=true;KeyboardAccessService.watch(this);if(inputs!=null)inputs.registerInputDeviceListener(this,handler);refresh();}
-    void stop(){active=false;visibilityApplied=false;candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();KeyboardAccessService.unwatch(this);if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
+    void stop(){transition.cancel();active=false;visibilityApplied=false;candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();boolean foreign=foreignPreferenceDecision();KeyboardAccessService.unwatch(this);if(foreign)preference.abandon();else preference.stop();if(inputs!=null)inputs.unregisterInputDeviceListener(this);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
     @Override public void keyboardAccessChanged(){
         if(!active)return;
         if(!nativeVisibilityControl()){candidateWindowAllowed=false;cancelPendingInput();heldKeys.clear();}
@@ -106,7 +108,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         if(!BuildConfig.KEYBOARD_TRIAL)return;
         // Multi-window activities may stay resumed while another app has focus.
         // Release the global override there too, not just during onPause.
-        candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();KeyboardAccessService.releaseKeys(this);
+        transition.cancel();candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();heldKeys.clear();boolean foreign=foreignPreferenceDecision();KeyboardAccessService.releaseKeys(this);if(foreign)preference.abandon();else preference.stop();
     }
     void observe(KeyEvent event){
         if(!active||!hardwareKey(event))return;
@@ -118,6 +120,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
             boolean first=heldKeys.add(identity);
             keyObserved=true;hardware=true;
             if(first){
+                if(!physicalInput&&suppress(mode,true))transition.begin();
                 long previousVerification=verifyCloseUntil;
                 boolean defer=nativeVisibilityControl()&&suppress(mode,true)
                     &&(!physicalInput||previousVerification>SystemClock.uptimeMillis());
@@ -162,7 +165,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
         handler.post(()->{
             if(!active||request!=pendingInput||!inputApplied||!heldKeys.isEmpty())return;
             long verification=pendingVerifyUntil;
-            cancelPendingInput();publish();
+            cancelPendingInput();publish();transition.committed();
             if(verification>SystemClock.uptimeMillis())verifyPhysicalClose(verification);
         });
     }
@@ -172,7 +175,7 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     // inputmode precedes its default focus action; nothing consumes the touch.
     void beginTouchInput(){
         if(!touchAllowed())return;
-        candidateWindowAllowed=false;cancelPendingInput();cancelCloseVerification();physicalInput=false;publish();
+        transition.cancel();candidateWindowAllowed=false;cancelPendingInput();cancelCloseVerification();physicalInput=false;publish();
     }
     void requestTouchKeyboard(){
         if(!touchAllowed()||suppress(mode,physicalInput))return;
@@ -192,18 +195,33 @@ class KeyboardController implements InputManager.InputDeviceListener,KeyboardAcc
     }
     void setMode(String value){
         if(!validMode(value))return;
-        candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();mode=value;
+        transition.cancel();candidateWindowAllowed=false;cancelTouch();cancelPendingInput();cancelCloseVerification();mode=value;
         // Reselecting Solo físico is also an explicit close request.
         if("physical".equals(mode)&&nativeVisibilityControl())visibilityApplied=false;
         activity.getPreferences(Context.MODE_PRIVATE).edit().putString("keyboard-mode",mode).apply();publish();
         if("virtual".equals(mode))showForModeSelection();
     }
     String state(){return "{\"nativeGate\":"+(nativeVisibilityControl()&&!candidateWindowAllowed)+",\"pendingPhysicalInput\":"+pendingInput+",\"imeConnected\":true,\"mode\":"+JSONObject.quote(mode)+",\"hardware\":"+hardware+",\"interaction\":"+JSONObject.quote(physicalInput?"physical":"touch")+",\"suppress\":"+suppress(mode,physicalInput)
-        +",\"keyboardTrial\":"+BuildConfig.KEYBOARD_TRIAL+",\"keyboardAssist\":"+JSONObject.quote(BuildConfig.KEYBOARD_TRIAL?KeyboardAccessService.status():"off")+"}";}
+        +",\"keyboardTrial\":"+BuildConfig.KEYBOARD_TRIAL+",\"keyboardAssist\":"+JSONObject.quote(BuildConfig.KEYBOARD_TRIAL?assistStatus():"off")+"}";}
     void publish(){
         if(!active)return;
+        if(hardware&&pendingInput==0&&heldKeys.isEmpty()&&activity.hasWindowFocus()
+            &&KeyboardAccessService.candidateSessionAllowed(this))preference.start();
         applyWindowPolicy();
         web.evaluateJavascript("window.onKeyboardState && window.onKeyboardState("+JSONObject.quote(state())+");",null);
+    }
+    private boolean foreignPreferenceDecision(){
+        // Defer restoration while another policy owns the keyboard. A revoked
+        // override back in AUTO can instead be the user's explicit decision.
+        return "refused".equals(KeyboardAccessService.status())
+            &&(android.provider.Settings.Secure.getInt(activity.getContentResolver(),"accessibility_soft_keyboard_mode",0)&3)==0;
+    }
+    private String assistStatus(){
+        String status=KeyboardAccessService.status();
+        if(hardware&&KeyboardAccessService.virtualKeysEnabled(this)
+            &&!(KeyboardPreferenceLease.enabledFor(activity)&&KeyboardPreferenceLease.authorizedFor(activity))
+            &&("ready".equals(status)||"physical".equals(status)))return "needs_control";
+        return status;
     }
     private void applyWindowPolicy(){
         // inputmode=none prevents WebView's automatic opening while preserving

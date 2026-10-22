@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -37,16 +38,25 @@ public final class HarnessIme extends InputMethodService {
     }
     @Override public View onCreateInputView(){return keyView=panel("TEST KEYS",240);}
     @Override public View onCreateCandidatesView(){return candidatesView=panel("uno ¹    dos ²    tres ³",48);}
-    @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);inputType=info.inputType;android.util.Log.i("HarnessIme","start input type="+inputType+" restart="+restarting);setCandidatesViewShown(true);}
+    private boolean hardwareCandidates(){return inputType!=0&&Settings.Secure.getInt(getContentResolver(),KeyboardPreferenceLease.SETTING,0)==0;}
+    private void candidates(){
+        setCandidatesViewShown(true);
+        // Android 12's insets surface must be requested too. A provider which
+        // offers a hardware candidates bar accepts this implicit request while
+        // onEvaluateInputViewShown still keeps its keys closed. It reads the
+        // actual OS setting, not the app's mode or its JavaScript state.
+        if(hardwareCandidates())handler.post(()->{if(hardwareCandidates())requestShowSelf(android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});
+    }
+    @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);inputType=info.inputType;android.util.Log.i("HarnessIme","start input type="+inputType+" restart="+restarting);if(inputType!=0)candidates();}
     @Override public boolean onEvaluateInputViewShown(){return lateKeys||super.onEvaluateInputViewShown();}
-    @Override public boolean onShowInputRequested(int flags,boolean changed){boolean show=lateKeys||super.onShowInputRequested(flags,changed);android.util.Log.i("HarnessIme","show flags="+flags+" changed="+changed+" allowed="+show);return show;}
+    @Override public boolean onShowInputRequested(int flags,boolean changed){boolean show=lateKeys||hardwareCandidates()&&(flags&android.view.inputmethod.InputMethod.SHOW_EXPLICIT)==0||super.onShowInputRequested(flags,changed);android.util.Log.i("HarnessIme","show flags="+flags+" changed="+changed+" allowed="+show);return show;}
     @Override public void onFinishInputView(boolean finishing){inputViewGeneration++;lateKeys=false;super.onFinishInputView(finishing);}
     @Override public boolean onKeyDown(int code,KeyEvent event){
         android.util.Log.i("HarnessIme","key down="+code+" meta="+event.getMetaState()+" device="+event.getDeviceId());
         if(KeyEvent.isModifierKey(code))return true;
         if(event.isCtrlPressed()&&code>=KeyEvent.KEYCODE_1&&code<=KeyEvent.KEYCODE_3){
             InputConnection target=getCurrentInputConnection();
-            if(target!=null){target.commitText(new String[]{"uno","dos","tres"}[code-KeyEvent.KEYCODE_1],1);selections++;setCandidatesViewShown(true);}
+            if(target!=null){target.commitText(new String[]{"uno","dos","tres"}[code-KeyEvent.KEYCODE_1],1);selections++;candidates();}
             return true;
         }
         int unicode=event.getUnicodeChar();
@@ -58,7 +68,7 @@ public final class HarnessIme extends InputMethodService {
             // in the editor cannot satisfy the native typed counter assertion.
             if(inputViewGeneration!=generation){dropped++;return;}
             InputConnection target=getCurrentInputConnection();
-            if(target!=null){target.commitText(new String(Character.toChars(unicode)),1);typed++;setCandidatesViewShown(true);}
+            if(target!=null){target.commitText(new String(Character.toChars(unicode)),1);typed++;candidates();}
         },60);
         return true;
     }

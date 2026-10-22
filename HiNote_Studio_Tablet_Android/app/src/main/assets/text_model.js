@@ -3,6 +3,7 @@
 // Array, this survives JSON history/drafts and leaves every text offset intact.
 const LIST_TYPES = new Set(['bullet','dash','asterisk','num_dot','num_paren','alpha_lower_dot','alpha_lower_paren','alpha_upper_dot','alpha_upper_paren','roman_lower_dot','roman_upper_dot','multi_decimal']);
 let typingState = null, nativeEdit = null, markerSelection = null, editorGesture = null;
+let plainPasteUntil = 0;
 function selectedMarkerIndexes(lines=readLines()){
   return markerSelection?lines.flatMap((line,i)=>{const l=paragraphOf(line).list;return l?.id===markerSelection.id&&l.level===markerSelection.level?[i]:[];}):[];
 }
@@ -66,6 +67,8 @@ function initMarkerSelection(){
   });
   editor.addEventListener('mousedown',event=>{if(markerAtPointer(event)>=0)event.preventDefault();});
   editor.addEventListener('keydown',event=>{
+    if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='v')plainPasteUntil=event.shiftKey?performance.now()+1000:0;
+    else if(!['Control','Meta','Shift'].includes(event.key))plainPasteUntil=0;
     if(event.isComposing||ime)return;
     const plain=!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&!event.altKey;
     const mark=bookmark(),lines=readLines();
@@ -313,21 +316,27 @@ function finishNativeEdit(){
 }
 function copyEditorSelection(event,cut=false){
   const mark=bookmark();if(!mark||collapsed(mark)||!event.clipboardData)return;
-  const lines=readLines(),markers=listMarkers(lines),copy=[];
+  const lines=readLines(),markers=listMarkers(lines),copy=[],copiedMarkers=[];
   for(let i=mark.start.line;i<=mark.end.line;i++){
     if(isBlockLine(lines[i]))continue;
     const a=i===mark.start.line?mark.start.offset:0,b=i===mark.end.line?mark.end.offset:Infinity;
     copy.push(withParagraph(sliceSegments(lines[i],a,b),a===0?paragraphOf(lines[i]):{}));
+    copiedMarkers.push(markers[i]);
   }
   if(!copy.length)return;
-  const plain=copy.map((line,i)=>(paragraphOf(line).list?markers[mark.start.line+i]+' ':'')+lineText(line)).join('\n');
+  const plain=copy.map((line,i)=>(paragraphOf(line).list?copiedMarkers[i]+' ':'')+lineText(line)).join('\n');
   event.preventDefault();event.clipboardData.setData('text/plain',plain);
-  event.clipboardData.setData('application/x-hinote-paragraphs+json',JSON.stringify({version:46,lines:copy}));
+  event.clipboardData.setData('text/html',clipboardHTML(copy,copiedMarkers));
+  try{event.clipboardData.setData('application/x-hinote-paragraphs+json',JSON.stringify({version:46,lines:copy}));}catch(_){}
   if(cut)edit((ls,m)=>replaceText(ls,m,''));
 }
 function pasteEditorSelection(event){
   clearMarkerSelection();
   event.preventDefault();const data=event.clipboardData||window.clipboardData;
+  // An explicit paste-without-formatting must also bypass Android's HTML
+  // fallback. Consume the shortcut intent once, including native stripping.
+  const plainOnly=performance.now()<plainPasteUntil;plainPasteUntil=0;
+  if(plainOnly){insertText(data.getData('text/plain'));return;}
   try{
     const raw=data.getData('application/x-hinote-paragraphs+json');
     if(raw && raw.length<8*1024*1024){
@@ -341,6 +350,22 @@ function pasteEditorSelection(event){
         });
         edit((ls,mark)=>replaceText(ls,mark,'',false,lines));return;
       }
+    }
+  }catch(_){}
+  try{
+    let html=data.getData('text/html');
+    // Some Android WebViews expose only plain text on ClipboardEvent even
+    // though the native clipboard still has HTML/Spanned text. Consult it only
+    // for this paste and only use it when its text matches this exact payload.
+    if(!html&&window.AndroidBridge?.readRichClipboard){
+      const native=JSON.parse(AndroidBridge.readRichClipboard()||'null');
+      if(native&&native.plain?.replace(/\r\n?/g,'\n')===data.getData('text/plain').replace(/\r\n?/g,'\n'))html=native.html;
+    }
+    const lines=parseClipboardHTML(html);
+    if(lines?.length){
+      const ids=new Map(),destination=paragraphOf(readLines()[bookmark()?.start.line]).list;
+      const pasted=lines.map(line=>{const meta={...paragraphOf(line)};if(meta.list){const l=meta.list;if(!ids.has(l.id))ids.set(l.id,destination?.type===l.type?destination.id:newListId());meta.list={...l,id:ids.get(l.id),start:destination?.type===l.type?destination.start:l.start};}return withParagraph(line,meta);});
+      edit((ls,mark)=>replaceText(ls,mark,'',false,pasted));return;
     }
   }catch(_){}
   insertText(data.getData('text/plain'));

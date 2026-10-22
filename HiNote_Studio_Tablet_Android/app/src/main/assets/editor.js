@@ -687,7 +687,7 @@ NotebookUI.init();
     const data=JSON.parse(raw);suppress=data.suppress===true;nativeGate=data.nativeGate===true;pendingPhysicalInput=Number(data.pendingPhysicalInput)||0;physicalInput=data.interaction==='physical';mode=data.mode||'auto';$('keyboardMode').value=mode;
     const trial=data.keyboardTrial===true,assist=data.keyboardAssist;
     $('keyboardTrialSettings').classList.toggle('hidden',!trial);$('keyboardTrialState').classList.toggle('hidden',!trial);
-    $('keyboardTrialState').textContent=({ready:'Control preparado',active:'Teclas virtuales permitidas',physical:'Entrada física activa',permission:'Activa el control en Accesibilidad',refused:'El sistema no permitió el control',busy:'Otro servicio controla el teclado',unsupported:'Requiere Android 10 o posterior',unknown:'Comprueba los ajustes del teclado'})[assist]||'';
+    $('keyboardTrialState').textContent=({ready:'Control preparado',active:'Teclas virtuales permitidas',physical:'Entrada física activa',needs_control:'Activa el control ampliado',permission:'Activa el control en Accesibilidad',refused:'El sistema no permitió el control',busy:'Otro servicio controla el teclado',unsupported:'Requiere Android 10 o posterior',unknown:'Comprueba los ajustes del teclado'})[assist]||'';
     if(suppress){touch=null;touchRevision++;}updateFields();window.StudioUI?.syncSelects?.();
   }catch(_){}};
   window.hinoteKeyboardCanShow=()=>!suppress&&mode!=='physical'&&!!typingField(document.activeElement);

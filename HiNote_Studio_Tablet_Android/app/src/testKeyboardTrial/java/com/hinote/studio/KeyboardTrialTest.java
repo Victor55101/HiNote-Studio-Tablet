@@ -82,7 +82,7 @@ public class KeyboardTrialTest {
     }
     @Test public void manifestRegistersOnlyMinimalOptionalKeyboardService()throws Exception{
         Context app=RuntimeEnvironment.getApplication();
-        assertEquals("com.hinote.studio.keyboardtrial59",app.getPackageName());
+        assertEquals("com.hinote.studio.keyboardtrial60",app.getPackageName());
         ServiceInfo info=app.getPackageManager().getServiceInfo(new ComponentName(app,KeyboardAccessService.class),PackageManager.GET_META_DATA);
         assertTrue(info.exported);assertEquals("android.permission.BIND_ACCESSIBILITY_SERVICE",info.permission);
         try(XmlResourceParser xml=app.getResources().getXml(info.metaData.getInt("android.accessibilityservice"))){
@@ -217,7 +217,7 @@ public class KeyboardTrialTest {
             s.keyboard.observe(key());assertEquals(0,s.service.get().backend.mode);
             s.apply();assertEquals(1,s.service.get().backend.mode);
             assertEquals("physical",new JSONObject(s.keyboard.state()).getString("interaction"));
-            assertEquals("physical",new JSONObject(s.keyboard.state()).getString("keyboardAssist"));
+            assertEquals("needs_control",new JSONObject(s.keyboard.state()).getString("keyboardAssist"));
             s.finger();assertEquals(0,s.service.get().backend.mode);
             assertEquals(1,Settings.Secure.getInt(s.activity.get().getContentResolver(),"show_ime_with_hard_keyboard",0));
             s.keyboard.setMode("physical");assertEquals(1,s.service.get().backend.mode);

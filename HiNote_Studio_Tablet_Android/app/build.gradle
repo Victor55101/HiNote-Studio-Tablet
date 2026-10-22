@@ -48,12 +48,12 @@ android {
         }
         keyboardTrial {
             dimension 'edition'
-            applicationIdSuffix '.keyboardtrial59'
-            versionCode 59
-            versionName '5.9-teclado-prueba'
+            applicationIdSuffix '.keyboardtrial60'
+            versionCode 60
+            versionName '6.0-teclado-prueba'
             buildConfigField 'boolean', 'NOTES_PROBE', 'false'
             buildConfigField 'boolean', 'KEYBOARD_TRIAL', 'true'
-            manifestPlaceholders = [appLabel: 'HiNote Studio · Teclado V59']
+            manifestPlaceholders = [appLabel: 'HiNote Studio · Teclado V60']
         }
     }
 

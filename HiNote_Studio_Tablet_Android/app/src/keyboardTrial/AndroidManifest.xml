@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Optional development grant via adb; installation never grants it. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <application>
         <service android:name=".KeyboardAccessService"
             android:label="@string/keyboard_control_label"

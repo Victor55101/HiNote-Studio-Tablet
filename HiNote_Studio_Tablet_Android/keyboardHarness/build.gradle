@@ -25,7 +25,8 @@ tasks.register('copyKeyboardSources', Copy) {
     from('../app/src/main/java') {
         include 'com/hinote/studio/KeyboardController.java', 'com/hinote/studio/KeyboardAccessService.java',
             'com/hinote/studio/SoftKeyboardOverride.java', 'com/hinote/studio/EditorWebView.java',
-            'com/hinote/studio/EditorInputLayout.java'
+            'com/hinote/studio/EditorInputLayout.java', 'com/hinote/studio/KeyboardTransition.java',
+            'com/hinote/studio/KeyboardPreferenceLease.java'
     }
     into layout.buildDirectory.dir('generated/sharedKeyboardJava')
 }

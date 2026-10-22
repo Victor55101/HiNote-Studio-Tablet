@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="keyboard_control_label">HiNote · Control del teclado V59</string>
+    <string name="keyboard_control_label">HiNote · Control del teclado V60</string>
     <string name="keyboard_control_description">Control temporal de las teclas virtuales mientras usas HiNote. Admite «Mostrar teclado virtual» activado o desactivado en el sistema; las sugerencias y herramientas las proporciona tu teclado. Libera el control al salir de la app. No lee el contenido de pantalla, no registra pulsaciones y no realiza gestos.</string>
 </resources>

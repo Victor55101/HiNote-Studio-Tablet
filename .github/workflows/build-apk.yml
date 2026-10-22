@@ -1,4 +1,4 @@
-name: Build HiNote Studio Keyboard Trial V59
+name: Build HiNote Studio Keyboard Trial V60
 on:
   workflow_dispatch:
   push:
@@ -96,11 +96,11 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Teclado-Prueba-V59
-          path: dist/HiNote-Studio-Teclado-Prueba-V59.apk
+          name: HiNote-Studio-Teclado-Prueba-V60
+          path: dist/HiNote-Studio-Teclado-Prueba-V60.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-V59-verification
+          name: HiNote-V60-verification
           path: |
             dist/apk-verification.json
             dist/apk-signature.txt

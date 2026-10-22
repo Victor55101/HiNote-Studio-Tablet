@@ -37,7 +37,7 @@ public class MainActivity extends Activity {
     private PyObject backend;
     private File sessionDir;
     private ThreadPoolExecutor worker;
-    private volatile boolean destroyed;
+    private volatile boolean destroyed,clipboardFocused;
     private volatile String startupError,latestSnapshot;
     private volatile int preferredPage;
     private final AtomicInteger revision=new AtomicInteger(),pageRevision=new AtomicInteger();
@@ -326,6 +326,7 @@ public class MainActivity extends Activity {
             }
         });}
         @JavascriptInterface public String getKeyboardState(){return keyboardController==null?"{}":keyboardController.state();}
+        @JavascriptInterface public String readRichClipboard(){return !destroyed&&clipboardFocused?RichClipboard.read(MainActivity.this):"";}
         @JavascriptInterface public void setKeyboardMode(String mode){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.setMode(mode);});}
         @JavascriptInterface public void beginTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.beginTouchInput();});}
         @JavascriptInterface public void requestTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.requestTouchKeyboard();});}
@@ -578,12 +579,12 @@ public class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){handleEditorBack();}
     @Override protected void onResume(){super.onResume();if(keyboardController!=null)keyboardController.start();}
-    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(keyboardController!=null){if(focus)keyboardController.windowFocused();else keyboardController.windowBlurred();}}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);clipboardFocused=focus;if(keyboardController!=null){if(focus)keyboardController.windowFocused();else keyboardController.windowBlurred();}}
     @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){boolean handled=super.dispatchKeyEvent(event);if(keyboardController!=null)keyboardController.observe(event);return handled;}
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchTouchEvent(event);}
     @Override public boolean dispatchGenericMotionEvent(android.view.MotionEvent event){if(keyboardController!=null)keyboardController.observe(event);return super.dispatchGenericMotionEvent(event);}
-    @Override protected void onPause(){if(webView instanceof EditorWebView)((EditorWebView)webView).releaseHardwareKeys();if(keyboardController!=null)keyboardController.stop();if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
+    @Override protected void onPause(){clipboardFocused=false;if(webView instanceof EditorWebView)((EditorWebView)webView).releaseHardwareKeys();if(keyboardController!=null)keyboardController.stop();if(webView!=null)webView.evaluateJavascript("window.saveDraft && window.saveDraft();",null);super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(notesProbe!=null){notesProbe.receive(intent);send("onNotesProbeShared","");}}
     @Override protected void onDestroy(){destroyed=true;if(keyboardController!=null)keyboardController.stop();if(notesProbe!=null)notesProbe.close();if(worker!=null)worker.shutdownNow();if(webView!=null){disposeWebView(webView);webView=null;}super.onDestroy();}
 }

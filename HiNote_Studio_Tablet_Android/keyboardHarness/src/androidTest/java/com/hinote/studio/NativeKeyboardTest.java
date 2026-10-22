@@ -98,6 +98,12 @@ public class NativeKeyboardTest {
         oldServices=Settings.Secure.getString(context.getContentResolver(),Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         oldAccessibility=Settings.Secure.getString(context.getContentResolver(),Settings.Secure.ACCESSIBILITY_ENABLED);
         oldShow=Settings.Secure.getString(context.getContentResolver(),"show_ime_with_hard_keyboard");
+        boolean advanced=!testName.getMethodName().startsWith("standard");
+        if(advanced){
+            assertTrue("Explicit development grant for the opt-in control",shell("pm grant "+context.getPackageName()+" android.permission.WRITE_SECURE_SETTINGS").trim().isEmpty());
+            assertEquals("Package has the actual grant, independent of instrumentation identity",android.content.pm.PackageManager.PERMISSION_GRANTED,context.getPackageManager().checkPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS,context.getPackageName()));
+        }
+        context.getSharedPreferences(KeyboardPreferenceLease.PREFERENCES,Context.MODE_PRIVATE).edit().putBoolean(KeyboardPreferenceLease.ENABLED,advanced).commit();
         String targetIme=new ComponentName(context,HarnessIme.class).flattenToShortString();
         Settings.Secure.putInt(context.getContentResolver(),"show_ime_with_hard_keyboard",testName.getMethodName().endsWith("SettingOn")?1:0);
         Settings.Secure.putString(context.getContentResolver(),Settings.Secure.ENABLED_INPUT_METHODS,targetIme);
@@ -142,6 +148,7 @@ public class NativeKeyboardTest {
     @After public void stop()throws Exception{
         if(activity!=null)test.runOnMainSync(()->{activity.keyboard.stop();activity.finish();});
         if(context!=null&&automation!=null){
+            context.getSharedPreferences(KeyboardPreferenceLease.PREFERENCES,Context.MODE_PRIVATE).edit().putBoolean(KeyboardPreferenceLease.ENABLED,false).commit();
             Settings.Secure.putString(context.getContentResolver(),Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,oldServices);
             Settings.Secure.putString(context.getContentResolver(),Settings.Secure.ACCESSIBILITY_ENABLED,oldAccessibility);
             await("Optional service released",()->!KeyboardAccessService.available());
@@ -210,4 +217,30 @@ public class NativeKeyboardTest {
     @Test public void lateShowSettingOn()throws Exception{lateShow();}
     @Test public void candidatesSettingOff()throws Exception{candidates();}
     @Test public void candidatesSettingOn()throws Exception{candidates();}
+    private void visualClose()throws Exception{
+        mode("virtual");await("Virtual keys shown before visual handoff",()->visibleIme()[0]);mode("auto");
+        event(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_H,0);
+        await("Keys disappear while the first physical key is still held",()->!visibleIme()[0]);
+        assertTrue("Native session remains unchanged until text/UP",KeyboardAccessService.ownsVirtualOverride(activity.keyboard));
+        event(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_H,0);
+        await("The original first letter is retained",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
+        await("Native candidates return without another key",()->visibleIme()[1]&&!visibleIme()[0]);
+        assertEquals(0,ime("state").getInt("dropped"));
+    }
+    @Test public void visualCloseSettingOff()throws Exception{visualClose();}
+    @Test public void visualCloseSettingOn()throws Exception{visualClose();}
+    @Test public void originalPreferenceRestoredOnPauseSettingOn()throws Exception{
+        mode("physical");await("Physical preference applied only for this session",()->Settings.Secure.getInt(context.getContentResolver(),KeyboardPreferenceLease.SETTING,1)==0);
+        test.runOnMainSync(()->activity.keyboard.stop());
+        assertEquals(1,Settings.Secure.getInt(context.getContentResolver(),KeyboardPreferenceLease.SETTING,0));
+        test.runOnMainSync(()->activity.keyboard.start());mode("physical");
+        await("Advanced control resumes",()->Settings.Secure.getInt(context.getContentResolver(),KeyboardPreferenceLease.SETTING,1)==0);
+    }
+    @Test public void standardControlSettingOff()throws Exception{firstLetter();}
+    @Test public void standardControlLeavesOnPreferenceUnchangedSettingOn()throws Exception{
+        mode("virtual");await("Standard virtual keys shown",()->visibleIme()[0]);mode("auto");press(KeyEvent.KEYCODE_H);
+        await("Standard control keeps the original letter",()->"\"h\"".equals(js("document.getElementById('editor').textContent")));
+        assertEquals("No normalization without the user's opt-in",1,Settings.Secure.getInt(context.getContentResolver(),KeyboardPreferenceLease.SETTING,0));
+        assertTrue(js("AndroidBridge.getKeyboardState()").contains("needs_control"));
+    }
 }
