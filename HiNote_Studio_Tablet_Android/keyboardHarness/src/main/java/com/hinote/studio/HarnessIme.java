@@ -42,14 +42,20 @@ public final class HarnessIme extends InputMethodService {
     private void candidates(){
         setCandidatesViewShown(true);
         // Android 12's insets surface must be requested too. A provider which
-        // offers a hardware candidates bar accepts this implicit request while
+        // offers a hardware candidates bar accepts a visibility request while
         // onEvaluateInputViewShown still keeps its keys closed. It reads the
         // actual OS setting, not the app's mode or its JavaScript state.
         if(hardwareCandidates())handler.post(()->{if(hardwareCandidates())requestShowSelf(android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});
     }
     @Override public void onStartInput(EditorInfo info,boolean restarting){super.onStartInput(info,restarting);inputType=info.inputType;android.util.Log.i("HarnessIme","start input type="+inputType+" restart="+restarting);if(inputType!=0)candidates();}
     @Override public boolean onEvaluateInputViewShown(){return lateKeys||super.onEvaluateInputViewShown();}
-    @Override public boolean onShowInputRequested(int flags,boolean changed){boolean show=lateKeys||hardwareCandidates()&&(flags&android.view.inputmethod.InputMethod.SHOW_EXPLICIT)==0||super.onShowInputRequested(flags,changed);android.util.Log.i("HarnessIme","show flags="+flags+" changed="+changed+" allowed="+show);return show;}
+    @Override public boolean onShowInputRequested(int flags,boolean changed){
+        // Android retains SHOW_EXPLICIT after an earlier full-keyboard show,
+        // even for a later requestShowSelf(SHOW_IMPLICIT). A compact provider
+        // accepts the request; onEvaluateInputViewShown still excludes its keys.
+        boolean show=lateKeys||hardwareCandidates()||super.onShowInputRequested(flags,changed);
+        android.util.Log.i("HarnessIme","show flags="+flags+" changed="+changed+" allowed="+show);return show;
+    }
     @Override public void onFinishInputView(boolean finishing){inputViewGeneration++;lateKeys=false;super.onFinishInputView(finishing);}
     @Override public boolean onKeyDown(int code,KeyEvent event){
         android.util.Log.i("HarnessIme","key down="+code+" meta="+event.getMetaState()+" device="+event.getDeviceId());
