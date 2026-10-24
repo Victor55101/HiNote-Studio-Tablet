@@ -105,6 +105,6 @@ def main():
     report={'ready_for_store':not missing,'policy_version':config['policy_version'],'missing_fields':missing}
     (ROOT/'distribution/publication-status.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))
-    if args.require_ready and missing:raise SystemExit('Store submission blocked: publisher/contact/policy URL approval is incomplete.')
+    if args.require_ready and missing:raise SystemExit('Store submission blocked: publisher/contact/policy URL information is incomplete.')
 
 if __name__=='__main__':main()
