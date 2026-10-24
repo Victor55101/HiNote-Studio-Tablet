@@ -5,11 +5,15 @@ Avisos locales: **Archivo → Privacidad y datos → Licencias**. Se generan des
 
 | Componente | Referencia | Licencia / procedencia del aviso |
 | --- | --- | --- |
-| Chaquopy | 17.0.0 | MIT; `chaquo/chaquopy`, etiqueta 17.0.0 |
-| CPython | 3.11.14 en el SDK de referencia | PSF e historial; `python/cpython`, etiqueta v3.11.14 |
-| Módulos de CPython | Componentes opcionales documentados por Python | `Doc/license.rst` de v3.11.14, completo; algunos no se compilan para Android |
-| OpenSSL | 3.0.18 en el runtime de referencia | Apache 2.0; `openssl/openssl`, etiqueta openssl-3.0.18 |
-| SQLite | Runtime de CPython | Dominio público; https://sqlite.org/copyright.html |
+| Chaquopy | 17.1.0 | MIT; `chaquo/chaquopy`, etiqueta 17.1.0 |
+| CPython | 3.11.17 | PSF e historial; `python/cpython`, etiqueta v3.11.17 |
+| Módulos de CPython | Componentes opcionales documentados por Python | `Doc/license.rst` de v3.11.17, completo; algunos no se compilan para Android |
+| OpenSSL | 3.5.9 | Apache 2.0; `openssl/openssl`, etiqueta openssl-3.5.9 |
+| SQLite | 3.53.4 | Dominio público; https://sqlite.org/copyright.html |
+| bzip2 | 1.0.8 | Aviso original de la versión bzip2-1.0.8 |
+| libffi | 3.4.4 | MIT, aviso original de libffi v3.4.4 |
+| XZ / liblzma | 5.4.6 | Declaración original COPYING de v5.4.6 |
+| Certifi | Bundle CA 2026.7.22 del SDK | Aviso original y Mozilla Public License 2.0 completa |
 | Setuptools | 68.2.2 en el bootstrap de referencia | MIT, conservado del bootstrap distribuido |
 | pyelftools | 0.26, uso interno del SDK | Dominio público / BSD según el aviso original |
 | Manrope | Tipografía del proyecto | SIL Open Font License 1.1 |

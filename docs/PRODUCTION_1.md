@@ -29,6 +29,8 @@ automática de datos excluidos para Android antiguo y moderno. Cuadrícula propi
 y plantilla sin imágenes de la nota fuente. Verificación del APK final.
 
 Los modos de teclado, edición, tamaño y zoom siguen la base V54.4.
+El runtime de Android se actualiza a Chaquopy 17.1.0 con Python 3.11.17 y
+OpenSSL 3.5.9; incluye sus avisos y dependencias. No cambia la lógica de edición.
 
 ## Datos pendientes para publicar
 

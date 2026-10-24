@@ -79,10 +79,15 @@ def verify(apk):
                     assert not any(k in obj for k in ('userId','deviceId','accountId'))
         abis=sorted({n.split('/')[1] for n in archive.namelist() if n.startswith('lib/')})
         assert abis==['arm64-v8a'],abis
+        runtime=archive.read('lib/arm64-v8a/libpython3.11.so')
+        crypto=archive.read('lib/arm64-v8a/libcrypto_python.so')
+        assert b'3.11.17\x00' in runtime,'Unexpected Python runtime version'
+        assert b'OpenSSL 3.5.9 ' in crypto,'Unexpected OpenSSL runtime version'
     return {'package':package['package'],'version_code':package['versionCode'],
         'version_name':package['versionName'],'label':app['label'],'debuggable':False,
         'allow_backup':False,'permissions':permissions,'services':services,
         'abis':abis,'bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
+        'python_version':'3.11.17','openssl_version':'3.5.9',
         'policy_is_draft':'Aviso para revisión' in policy,'signature_verified':False}
 
 def main():
