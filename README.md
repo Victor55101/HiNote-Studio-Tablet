@@ -1,4 +1,10 @@
-# HiNote Studio Tablet — V54.4 (base funcional V54)
+# HiNote Studio — primera compilación de producción sobre V54.4
+
+Código 65 · `5.4.5-production1` · [Cambios y estado de publicación](docs/PRODUCTION_1.md).
+Incluye política local, control de eliminación de datos, restricciones de
+distribución y avisos de componentes. El aviso final requiere completar los
+datos reales del responsable y habilitar sus canales de contacto y consulta.
+La compilación no implica publicación ni aprobación de tienda.
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
 

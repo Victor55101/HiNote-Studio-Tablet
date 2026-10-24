@@ -44,7 +44,7 @@ public class PdfStoreTest {
             Bitmap b=BitmapFactory.decodeFile(preview.getPath());assertEquals(675*resolution,b.getWidth());assertEquals(1080*resolution,b.getHeight());
             assertEquals(Color.BLUE,b.getPixel(300*resolution,600*resolution));assertTrue(Color.blue(b.getPixel(300*resolution,540*resolution))<80);b.recycle();
         }
-        File output=new File(directory,"native.jpg");PageRenderer.renderForExport(ink,output,new JSONArray(),null,background,()->{});
+        File output=new File(directory,"native.jpg");PageRenderer.renderForExport(ink,output,new JSONArray(),background,()->{});
         Bitmap b=BitmapFactory.decodeFile(output.getPath());assertTrue(Color.blue(b.getPixel(300,540))<80);assertTrue(Color.blue(b.getPixel(300,600))>180);b.recycle();
     }
 }

@@ -11,8 +11,8 @@ android {
         applicationId 'com.hinote.studio'
         minSdk 24
         targetSdk 35
-        versionCode 64
-        versionName '5.4.4-tablet'
+        versionCode 65
+        versionName '5.4.5-production1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {
@@ -22,6 +22,8 @@ android {
 
     buildTypes {
         release {
+            debuggable false
+            jniDebuggable false
             minifyEnabled false
         }
     }
@@ -29,6 +31,13 @@ android {
     buildFeatures { buildConfig true }
     flavorDimensions 'edition'
     productFlavors {
+        production {
+            dimension 'edition'
+            // Update the user's accepted V54.2-V54.4 installation in place.
+            applicationIdSuffix '.v54maintenance'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'false'
+            manifestPlaceholders = [appLabel: 'HiNote Studio']
+        }
         stable {
             dimension 'edition'
             buildConfigField 'boolean', 'NOTES_PROBE', 'false'
@@ -63,6 +72,13 @@ android {
     // Old generated calibration banks must never be bundled with the new one.
     androidResources { ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:CVS:thumbs.db:picasa.ini:*~:glyphs_v11.json:glyphs_v22.json:glyphs_v23.json' }
     testOptions { unitTests.includeAndroidResources = true }
+}
+
+// Building a local production-mode candidate is allowed before the publisher
+// identity is complete. Store packaging is a separate, fail-closed operation.
+tasks.register('verifyStoreSubmission', Exec) {
+    workingDir rootProject.projectDir.parentFile
+    commandLine 'python3', '.github/scripts/prepare_legal.py', '--require-ready'
 }
 
 dependencies {
