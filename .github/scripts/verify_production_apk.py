@@ -11,25 +11,33 @@ import struct
 import subprocess
 import zipfile
 
-def binary_xml(data):
-    strings=[];elements=[];position=8
+def string_pool(data, position):
+    """Decode a ResStringPool shared by compiled XML and resources.arsc."""
     u16=lambda p:struct.unpack_from('<H',data,p)[0]
     u32=lambda p:struct.unpack_from('<I',data,p)[0]
     def length8(p):
         n=data[p];return (((n&127)<<8)|data[p+1],p+2) if n&128 else (n,p+1)
     def length16(p):
         n=u16(p);return (((n&32767)<<16)|u16(p+2),p+4) if n&32768 else (n,p+2)
+    header=u16(position+2)
+    count,_,flags,start,_=struct.unpack_from('<IIIII',data,position+8)
+    strings=[]
+    for i in range(count):
+        p=position+start+u32(position+header+4*i)
+        if flags&256:
+            _,p=length8(p);length,p=length8(p);strings.append(data[p:p+length].decode('utf-8'))
+        else:
+            length,p=length16(p);strings.append(data[p:p+length*2].decode('utf-16le'))
+    return strings
+
+def binary_xml(data):
+    strings=[];elements=[];position=8
+    u32=lambda p:struct.unpack_from('<I',data,p)[0]
     while position<len(data):
         kind,header,size=struct.unpack_from('<HHI',data,position)
         if size<8 or position+size>len(data):raise ValueError('Invalid binary XML chunk')
         if kind==1:
-            count,_,flags,start,_=struct.unpack_from('<IIIII',data,position+8)
-            for i in range(count):
-                p=position+start+u32(position+header+4*i)
-                if flags&256:
-                    _,p=length8(p);length,p=length8(p);strings.append(data[p:p+length].decode('utf-8'))
-                else:
-                    length,p=length16(p);strings.append(data[p:p+length*2].decode('utf-16le'))
+            strings=string_pool(data,position)
         elif kind==0x102:
             tag=strings[u32(position+20)];start,stride,count=struct.unpack_from('<HHH',data,position+24);attrs={}
             for i in range(count):
@@ -39,6 +47,53 @@ def binary_xml(data):
             elements.append((tag,attrs))
         position+=size
     return elements
+
+def resource_file_paths(data):
+    """Resolve resource IDs to APK paths, including AAPT's shortened filenames."""
+    strings=[];paths={}
+    u16=lambda p:struct.unpack_from('<H',data,p)[0]
+    u32=lambda p:struct.unpack_from('<I',data,p)[0]
+    def chunks(start,end):
+        while start<end:
+            kind,header,size=struct.unpack_from('<HHI',data,start)
+            if header<8 or size<header or start+size>end:
+                raise ValueError('Invalid resource table chunk')
+            yield start,kind,header,size
+            start+=size
+    for pos,kind,header,size in chunks(u16(2),len(data)):
+        if kind==1:
+            strings=string_pool(data,pos)
+        elif kind==0x200:
+            package_id=u32(pos+8)
+            type_offset=u32(pos+284) if header>=288 else 0
+            for at,child,child_header,child_size in chunks(pos+header,pos+size):
+                if child!=0x201:continue
+                type_id,flags=struct.unpack_from('<BB',data,at+8)
+                count,entries_start=struct.unpack_from('<II',data,at+12)
+                offsets=at+child_header
+                for index in range(count):
+                    if flags&1:  # Sparse: entry index and offset in four-byte units.
+                        entry_index,offset=struct.unpack_from('<HH',data,offsets+index*4)
+                        offset*=4
+                    elif flags&2:  # Compact 16-bit offsets.
+                        entry_index=index;offset=u16(offsets+index*2)
+                        if offset==0xffff:continue
+                        offset*=4
+                    else:
+                        entry_index=index;offset=u32(offsets+index*4)
+                        if offset==0xffffffff:continue
+                    entry=at+entries_start+offset
+                    if entry+8>at+child_size:raise ValueError('Invalid resource entry')
+                    entry_size,entry_flags=struct.unpack_from('<HH',data,entry)
+                    if entry_flags&1:continue  # Complex/bag resources are not files.
+                    value_at=entry+entry_size
+                    if entry_size<8 or value_at+8>at+child_size:
+                        raise ValueError('Invalid resource value')
+                    _,_,value_type,value=struct.unpack_from('<HBBI',data,value_at)
+                    if value_type==3:
+                        resource_id=(package_id<<24)|((type_id+type_offset)<<16)|entry_index
+                        paths.setdefault(resource_id,set()).add(strings[value])
+    return paths
 
 def verify(apk):
     with zipfile.ZipFile(apk) as archive:
@@ -57,12 +112,22 @@ def verify(apk):
         assert not legal.get('exported',0),legal
         providers=[a for t,a in manifest if t=='provider']
         assert len(providers)==1 and not providers[0].get('exported',0),providers
-        for name in ('backup_rules','data_extraction_rules'):
-            nodes=binary_xml(archive.read('res/xml/'+name+'.xml'))
-            exclusions=[a for t,a in nodes if t=='exclude']
-            for domain in ('root','file','database','sharedpref','external'):
-                expected=2 if name=='data_extraction_rules' else 1
-                assert sum(a.get('domain')==domain and a.get('path')=='.' for a in exclusions)==expected,(name,domain)
+        resource_paths=resource_file_paths(archive.read('resources.arsc'))
+        backup_resources={}
+        for attribute in ('fullBackupContent','dataExtractionRules'):
+            paths=resource_paths.get(app[attribute],set())
+            assert paths,(attribute,app[attribute])
+            backup_resources[attribute]=sorted(paths)
+            for path in paths:
+                nodes=binary_xml(archive.read(path))
+                expected_root='data-extraction-rules' if attribute=='dataExtractionRules' else 'full-backup-content'
+                assert nodes[0][0]==expected_root,(attribute,path,nodes)
+                exclusions=[a for t,a in nodes if t=='exclude']
+                domains=['root','file','database','sharedpref','external']
+                domains+=['device_root','device_file','device_database','device_sharedpref']
+                for domain in domains:
+                    expected=2 if attribute=='dataExtractionRules' else 1
+                    assert sum(a.get('domain')==domain and a.get('path')=='.' for a in exclusions)==expected,(attribute,path,domain)
         assert 'assets/privacy.js' in archive.namelist()
         policy=archive.read('assets/legal/privacy.html').decode()
         assert 'Política de privacidad' in policy and "default-src 'none'" in policy
@@ -88,6 +153,7 @@ def verify(apk):
         'allow_backup':False,'permissions':permissions,'services':services,
         'abis':abis,'bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
         'python_version':'3.11.17','openssl_version':'3.5.9',
+        'backup_resources':backup_resources,
         'policy_is_draft':'Aviso para revisión' in policy,'signature_verified':False}
 
 def main():
