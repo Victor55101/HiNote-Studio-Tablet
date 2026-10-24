@@ -46,7 +46,7 @@ public class PdfStoreDeviceTest {
         Bitmap b=BitmapFactory.decodeFile(preview.getPath());assertEquals(675,b.getWidth());assertEquals(1080,b.getHeight());
         assertEquals(Color.WHITE,b.getPixel(300,20));assertEquals(Color.BLUE,b.getPixel(300,540));b.recycle();
         File output=new File(directory,"native.jpg");
-        PageRenderer.renderForExport("{\"strokes\":[[\"#000000\",100,[[150,800,8],[700,800,8]]]]}",output,new JSONArray(),null,preview,()->{});
+        PageRenderer.renderForExport("{\"strokes\":[[\"#000000\",100,[[150,800,8],[700,800,8]]]]}",output,new JSONArray(),preview,()->{});
         b=BitmapFactory.decodeFile(output.getPath());assertTrue(Color.blue(b.getPixel(300,540))<80);assertTrue(Color.blue(b.getPixel(300,600))>180);b.recycle();
         assertEquals(1,new File(directory,"pdf-previews-v50").listFiles().length);
     }

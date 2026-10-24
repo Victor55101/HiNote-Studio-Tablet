@@ -81,7 +81,7 @@ def verify(apk):
         assert abis==['arm64-v8a'],abis
         runtime=archive.read('lib/arm64-v8a/libpython3.11.so')
         crypto=archive.read('lib/arm64-v8a/libcrypto_python.so')
-        assert b'3.11.17\x00' in runtime,'Unexpected Python runtime version'
+        assert re.search(rb'3\.11\.17(?:\x00|\s)',runtime),'Unexpected Python runtime version'
         assert b'OpenSSL 3.5.9 ' in crypto,'Unexpected OpenSSL runtime version'
     return {'package':package['package'],'version_code':package['versionCode'],
         'version_name':package['versionName'],'label':app['label'],'debuggable':False,
