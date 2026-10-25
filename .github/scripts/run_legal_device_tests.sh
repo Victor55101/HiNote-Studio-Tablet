@@ -3,8 +3,16 @@ set -euo pipefail
 
 export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 export ANDROID_SERIAL=emulator-5554
+# Keep avdmanager and the emulator on the same explicit AVD directory.
+# Hosted runners may have SDK preference paths configured by separate tools.
+export ANDROID_USER_HOME="${RUNNER_TEMP:-/tmp}/hinote-legal-android"
+export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
+export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+mkdir -p "$ANDROID_AVD_HOME"
 sdkmanager 'system-images;android-35;google_apis;x86_64' 'emulator' 'platform-tools'
-avdmanager create avd --force --name hinote-legal --package 'system-images;android-35;google_apis;x86_64' --device pixel_c <<< 'no'
+avdmanager create avd --force --name hinote-legal --path "$ANDROID_AVD_HOME/hinote-legal.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_c <<< 'no'
+test -s "$ANDROID_AVD_HOME/hinote-legal.ini"
+emulator -list-avds
 mkdir -p test-results/legal-device
 emulator -avd hinote-legal -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 2048 -cores 2 > test-results/legal-device/emulator.log 2>&1 &
 hinote_emulator_pid=$!
