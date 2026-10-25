@@ -172,10 +172,21 @@ def main():
     parser.add_argument('--output',type=Path);parser.add_argument('--apksigner',type=Path)
     parser.add_argument('--expected-certificate');args=parser.parse_args();result=verify(args.apk)
     if args.apksigner:
-        signed=subprocess.check_output(['java','-jar',str(args.apksigner),'verify','--print-certs',str(args.apk)],text=True)
+        signed=subprocess.check_output(['java','-jar',str(args.apksigner),'verify','--verbose','--print-certs',str(args.apk)],text=True)
         certificates=set(re.findall(r'certificate SHA-256 digest: ([a-f0-9]{64})',signed))
         assert len(certificates)==1,certificates
         if args.expected_certificate:assert certificates=={args.expected_certificate},certificates
+        for scheme in ('v2','v3'):
+            assert re.search(r'Verified using '+scheme+r' scheme .*: true',signed),scheme+' signature missing'
+        # minSdk 24 verification legitimately skips JAR signing when v2/v3
+        # succeeds. Force an older verifier to validate the compatibility
+        # signature too; this does not change the APK's supported SDK range.
+        legacy=subprocess.check_output(['java','-jar',str(args.apksigner),'verify','--verbose','--print-certs',
+            '--min-sdk-version','23','--max-sdk-version','23',str(args.apk)],text=True,stderr=subprocess.STDOUT)
+        assert re.search(r'Verified using v1 scheme .*: true',legacy),'v1 compatibility signature missing'
+        legacy_certificates=set(re.findall(r'certificate SHA-256 digest: ([a-f0-9]{64})',legacy))
+        assert legacy_certificates==certificates,'Signature schemes use different certificates'
+        result['signature_schemes']={'v1':True,'v2':True,'v3':True}
         result['certificate_sha256']=next(iter(certificates));result['signature_verified']=True
     print(json.dumps(result,indent=2))
     if args.output:args.output.write_text(json.dumps(result,indent=2)+'\n')

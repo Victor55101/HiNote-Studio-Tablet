@@ -73,3 +73,36 @@ python3 .github/scripts/prepare_legal.py --require-ready
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 node tests/editor.spec.cjs
 ```
+
+## Firma de compatibilidad para la descarga
+
+La tablet rechazó la primera descarga con «El analizador no encontró certificados
+en el paquete de instalación». La copia recuperada del archivo entregado coincide
+en SHA-256 con el original firmado y supera la verificación v2/v3. La captura del
+instalador no permite determinar por sí sola el motivo exacto del rechazo.
+
+Se prepara otra copia con firmas **v1, v2 y v3**, usando el mismo certificado de
+mantenimiento. La app conserva el paquete, código 66, versión y contenido de la
+compilación ya validada; solo cambia el empaquetado de firma. No requiere borrar
+la instalación existente. La prueba de aceptación en HarmonyOS sigue pendiente
+hasta volver a instalar esta copia en la tablet.
+
+Al firmar localmente deben habilitarse expresamente los tres esquemas:
+
+```bash
+java -jar /ruta/apksigner.jar sign \
+  --ks /ruta/privada/hinote-maintenance.p12 \
+  --ks-type PKCS12 --ks-key-alias hinote-maintenance \
+  --ks-pass file:/ruta/privada/password.txt \
+  --v1-signer-name HINOTE \
+  --v1-signing-enabled true --v2-signing-enabled true \
+  --v3-signing-enabled true --v4-signing-enabled false \
+  --out HiNote-Studio-Produccion-1-Corregido.apk \
+  app-production-release-unsigned.apk
+```
+
+El verificador comprueba v2/v3 para los sistemas soportados y fuerza por separado
+el verificador de API 23 para comprobar v1 y la coincidencia del certificado.
+Esto no reduce el `minSdk` de la aplicación. Una candidata firmada únicamente
+con v2/v3 se rechaza en este control de distribución. La clave privada permanece
+fuera del repositorio. Referencia: [apksigner](https://developer.android.com/tools/apksigner).
