@@ -1,0 +1,71 @@
+name: Publicar APK firmado e instalable
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, v54-maintenance]
+    paths:
+      - .github/workflows/publish-signed-apk.yml
+      - distribution/releases/1.0.0.md
+permissions:
+  contents: read
+concurrency:
+  group: hinote-signed-release-1.0.0
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'Victor55101/HiNote-Studio-Tablet' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'production-v54-4'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Obtener la entrega ya firmada
+        run: |
+          mkdir -p signed-release
+          curl --fail --silent --show-error --location --retry 2 --proto '=https' --proto-redir '=https' \
+            'https://hinote-studio-privacidad.fond-clock-3967.chatgpt.site/assets/releases/HiNote-Studio-1.0.0.apk' \
+            --output signed-release/HiNote-Studio-1.0.0.apk
+          printf '%s  %s\n' '3513daa267dc5bbefa0036b81ea48307c73489cdeb22001ccd9ff7a0d47e88a0' 'HiNote-Studio-1.0.0.apk' > signed-release/SHA256SUMS.txt
+          cd signed-release
+          sha256sum --check SHA256SUMS.txt
+      - name: Verificar certificado, firmas y contenido del APK final
+        run: |
+          signer_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner.jar | sort -V | tail -n 1)"
+          test -n "$signer_path"
+          python3 .github/scripts/verify_production_apk.py signed-release/HiNote-Studio-1.0.0.apk \
+            --apksigner "$signer_path" \
+            --expected-certificate 544fb3ba1fc0b599dbe70c70db294621433559f4b4664585ead097a51ede0cfa \
+            --output signed-release/verification.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-Studio-1.0.0-FIRMADO-INSTALABLE
+          path: signed-release/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publicar descarga permanente en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view v1.0.0 --json tagName > /dev/null 2>&1; then
+            mkdir -p existing-release
+            gh release download v1.0.0 --pattern HiNote-Studio-1.0.0.apk --dir existing-release
+            cmp signed-release/HiNote-Studio-1.0.0.apk existing-release/HiNote-Studio-1.0.0.apk
+          else
+            gh release create v1.0.0 \
+              signed-release/HiNote-Studio-1.0.0.apk \
+              signed-release/SHA256SUMS.txt \
+              --target 239954c3118a42ef29488d0c4be2149934464d1b \
+              --title 'HiNote Studio 1.0.0' \
+              --notes-file distribution/releases/1.0.0.md \
+              --latest
+          fi
+          gh release view v1.0.0 --json url,assets
