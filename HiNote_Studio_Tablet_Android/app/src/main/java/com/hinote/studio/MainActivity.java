@@ -60,9 +60,11 @@ public class MainActivity extends Activity {
     private NotesProbe notesProbe;
     private final AtomicBoolean notebookBusy=new AtomicBoolean(),notebookCancelled=new AtomicBoolean();
     private volatile int notebookTicket;
+    private boolean legalActive, legalWelcomeOpened;
 
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
+        legalWelcomeOpened=state!=null&&state.getBoolean("legalWelcomeOpened",false);
         draftFile=new AtomicFile(new File(getFilesDir(),"draft-v23.json"));
         exportFolder=new ExportFolder(this);
         try {imageStore=new ImageStore(getFilesDir());pdfStore=new PdfStore(getFilesDir(),getCacheDir());} catch(IOException e){startupError=message(e);}
@@ -109,7 +111,13 @@ public class MainActivity extends Activity {
             android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::handleEditorBack);
         WebSecurity.configure(webView,true);ws.setBuiltInZoomControls(false);
         webView.setWebViewClient(new WebViewClient(){
-            @Override public void onPageFinished(WebView view,String url){if(keyboardController!=null)keyboardController.publish();}
+            @Override public void onPageFinished(WebView view,String url){
+                if(keyboardController!=null)keyboardController.publish();
+                if(WebSecurity.editorNavigation(url)&&!BuildConfig.NOTES_PROBE&&!legalWelcomeOpened&&LegalActivity.needsWelcome(MainActivity.this)){
+                    legalWelcomeOpened=true;
+                    view.post(()->openLegal(true));
+                }
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view,String url){return !WebSecurity.editorNavigation(url);}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();
@@ -327,7 +335,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void requestTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.requestTouchKeyboard();});}
         @JavascriptInterface public void cancelTouchKeyboard(boolean previewNavigation){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.cancelTouchInput(previewNavigation);});}
         @JavascriptInterface public String readRichClipboard(){return destroyed||!clipboardFocused?"":RichClipboard.read(MainActivity.this);}
-        @JavascriptInterface public void openPrivacy(){runOnUiThread(()->{if(!destroyed)startActivity(new Intent(MainActivity.this,LegalActivity.class));});}
+        @JavascriptInterface public void openAbout(){runOnUiThread(()->openLegal(false));}
         @JavascriptInterface public void requestOpenNotes(String snapshot,String title,boolean grid,String images,int pages){
             if(destroyed||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
             if(snapshot==null||!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de exportar");return;}
@@ -573,7 +581,13 @@ public class MainActivity extends Activity {
         });
     }
     @Override public void onBackPressed(){handleEditorBack();}
-    @Override protected void onResume(){super.onResume();if(keyboardController!=null)keyboardController.start();}
+    private void openLegal(boolean welcome){
+        if(destroyed||isFinishing()||legalActive)return;
+        legalActive=true;
+        startActivity(new Intent(this,LegalActivity.class).putExtra(LegalActivity.EXTRA_WELCOME,welcome));
+    }
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("legalWelcomeOpened",legalWelcomeOpened);super.onSaveInstanceState(state);}
+    @Override protected void onResume(){super.onResume();legalActive=false;if(keyboardController!=null)keyboardController.start();}
     @Override public void onWindowFocusChanged(boolean focus){clipboardFocused=focus;super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.windowFocused();}
     @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){boolean handled=super.dispatchKeyEvent(event);if(keyboardController!=null)keyboardController.observe(event);return handled;}

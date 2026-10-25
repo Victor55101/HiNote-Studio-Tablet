@@ -1,5 +1,8 @@
 # Primera compilación de producción basada en V54.4
 
+Documento histórico de la primera candidata. La versión actual, con el contacto
+confirmado y el visor nativo, se describe en [PRODUCTION_2.md](PRODUCTION_2.md).
+
 Base aceptada: commit remoto `90481eb9a043107ffbe363b6704427e66159fd66` de
 `v54-maintenance`. No incorpora las pruebas descartadas V55–V60.
 

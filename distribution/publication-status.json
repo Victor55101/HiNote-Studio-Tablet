@@ -1,12 +1,5 @@
 {
-  "ready_for_store": false,
+  "ready_for_store": true,
   "policy_version": "2026-10-24",
-  "missing_fields": [
-    "publisher_name",
-    "postal_address",
-    "privacy_email",
-    "policy_url",
-    "email_verified",
-    "policy_url_verified"
-  ]
+  "missing_fields": []
 }

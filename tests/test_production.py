@@ -69,4 +69,25 @@ class ProductionTests(unittest.TestCase):
         self.assertNotIn('<script',policy);self.assertNotIn('<iframe',policy);self.assertNotIn('<form',policy)
         self.assertIn("default-src 'none'",policy)
 
+    def test_native_policy_and_public_markdown_share_the_same_complete_notice(self):
+        config=json.loads((ROOT/'distribution/publisher.json').read_text())
+        notice,components=legal.native_documents(config)
+        markdown=legal.PolicyMarkdown();markdown.feed(notice['privacy_html']);public=markdown.result()
+        for value in (config['publisher_name'],config['postal_address'],config['privacy_email']):
+            self.assertTrue(value);self.assertIn(value,notice['privacy_html']);self.assertIn(value,public)
+        self.assertEqual(notice['contact_email'],'soporte.hinotestudio@gmail.com')
+        self.assertNotIn('mailto:hinotestudio@gmail.com',public)
+        self.assertIn('Acerca de',public);self.assertIn('veinte días hábiles',public)
+        self.assertEqual(public,(ROOT/'docs/PRIVACY.md').read_text())
+        self.assertGreater(len(notice['privacy_html']),3000)
+        self.assertEqual(len(components['components']),len(list((ROOT/'distribution/third_party').glob('*.txt'))))
+        for component in components['components']:
+            self.assertGreater(len(component['text']),100);self.assertTrue(component['name']);self.assertTrue(component['license'])
+
+    def test_public_markdown_keeps_publisher_markup_as_text(self):
+        config={'policy_version':'test','publisher_name':'<b>[persona]</b>'}
+        notice,_=legal.native_documents(config);markdown=legal.PolicyMarkdown();markdown.feed(notice['privacy_html'])
+        self.assertNotIn('<b>[persona]</b>',markdown.result())
+        self.assertIn('&lt;b&gt;\\[persona\\]&lt;/b&gt;',markdown.result())
+
 if __name__=='__main__':unittest.main()

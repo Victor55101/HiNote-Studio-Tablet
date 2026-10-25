@@ -1,7 +1,8 @@
 # Componentes de distribución
 
-Avisos locales: **Archivo → Privacidad y datos → Licencias**. Se generan desde
-`distribution/third_party/`, sin solicitar recursos remotos.
+Avisos locales: **Logo → Acerca de → Licencias**. Se generan desde
+`distribution/third_party/` y se presentan como texto nativo, sin WebView ni
+solicitudes de recursos remotos.
 
 | Componente | Referencia | Licencia / procedencia del aviso |
 | --- | --- | --- |

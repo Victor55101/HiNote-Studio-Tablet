@@ -1,5 +1,5 @@
 'use strict';
-document.getElementById('privacyBtn').addEventListener('click',()=>{
-  if(typeof window.AndroidBridge?.openPrivacy==='function')AndroidBridge.openPrivacy();
-  else toast('Privacidad y licencias están disponibles en la app Android.');
+document.getElementById('aboutBtn').addEventListener('click',()=>{
+  if(typeof window.AndroidBridge?.openAbout==='function')AndroidBridge.openAbout();
+  else toast('La versión, privacidad y licencias están disponibles en Acerca de en la app Android.');
 });

@@ -1,10 +1,10 @@
 {
-  "publisher_name": "",
-  "postal_address": "",
-  "privacy_email": "",
-  "email_verified": false,
-  "policy_url": "",
+  "publisher_name": "Hugo Zoé Islas Vázquez",
+  "postal_address": "Cda. de Totli 3, José María Morelos y Pavón, Iztapalapa, 09230 Ciudad de México, CDMX",
+  "privacy_email": "soporte.hinotestudio@gmail.com",
+  "email_verified": true,
+  "policy_url": "https://github.com/Victor55101/HiNote-Studio-Tablet/blob/production-v54-4/docs/PRIVACY.md",
   "policy_version": "2026-10-24",
-  "policy_url_verified": false,
-  "proposed_privacy_email": "hinotestudio@gmail.com"
+  "policy_url_verified": true,
+  "publisher_type": "independent_developer"
 }

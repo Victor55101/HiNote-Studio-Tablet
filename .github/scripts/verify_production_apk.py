@@ -100,7 +100,7 @@ def verify(apk):
         manifest=binary_xml(archive.read('AndroidManifest.xml'))
         package=next(a for t,a in manifest if t=='manifest');app=next(a for t,a in manifest if t=='application')
         assert package['package']=='com.hinote.studio.v54maintenance',package
-        assert package['versionCode']==65 and package['versionName']=='5.4.5-production1',package
+        assert package['versionCode']==66 and package['versionName']=='5.4.6-production2',package
         assert app['label']=='HiNote Studio',app
         assert not app.get('debuggable',0) and not app.get('testOnly',0),app
         assert not app.get('allowBackup',1) and not app.get('usesCleartextTraffic',1),app
@@ -129,10 +129,20 @@ def verify(apk):
                     expected=2 if attribute=='dataExtractionRules' else 1
                     assert sum(a.get('domain')==domain and a.get('path')=='.' for a in exclusions)==expected,(attribute,path,domain)
         assert 'assets/privacy.js' in archive.namelist()
+        editor_html=archive.read('assets/index.html').decode()
+        assert 'id="aboutBtn"' in editor_html and 'id="privacyBtn"' not in editor_html
         policy=archive.read('assets/legal/privacy.html').decode()
         assert 'Política de privacidad' in policy and "default-src 'none'" in policy
         assert '<script' not in policy and '<form' not in policy and '<iframe' not in policy
         assert 'CPython' in archive.read('assets/legal/licenses.html').decode()
+        notice=json.loads(archive.read('assets/legal/notice.json'))
+        components=json.loads(archive.read('assets/legal/licenses.json'))['components']
+        assert notice['contact_email']=='soporte.hinotestudio@gmail.com',notice['contact_email']
+        assert notice['policy_url_verified'] and notice['policy_url'].startswith('https://github.com/Victor55101/HiNote-Studio-Tablet/')
+        for value in ('Hugo Zoé Islas Vázquez','Cda. de Totli 3','soporte.hinotestudio@gmail.com'):
+            assert value in policy and value in notice['privacy_html'],value
+        assert len(components)>=13 and all(len(c['text'])>100 for c in components)
+        assert 'Aviso para revisión' not in policy and 'Pendiente de completar' not in policy
         assert 'assets/paper_base3_source.jpg' not in archive.namelist()
         with zipfile.ZipFile(io.BytesIO(archive.read('assets/template_1stroke.hinote'))) as template:
             assert not any(n.lower().endswith(('.jpg','.jpeg')) for n in template.namelist())
@@ -154,6 +164,7 @@ def verify(apk):
         'abis':abis,'bytes':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
         'python_version':'3.11.17','openssl_version':'3.5.9',
         'backup_resources':backup_resources,
+        'legal_viewer':'native','support_email':notice['contact_email'],'policy_url':notice['policy_url'],
         'policy_is_draft':'Aviso para revisión' in policy,'signature_verified':False}
 
 def main():

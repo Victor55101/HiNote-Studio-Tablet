@@ -5,6 +5,7 @@ import argparse
 import html
 import json
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -49,7 +50,7 @@ def privacy(config):
 <p class="muted">Versión del aviso: '''+esc('policy_version')+''' · Aplicación Android · México</p>'''+banner+'''
 <p>HiNote Studio convierte texto en trazos de escritura personal mediante calibraciones y crea archivos compatibles con Huawei Notes. Este aviso describe el funcionamiento de la aplicación y el tratamiento de información asociado a su uso.</p>
 <h2>1. Responsable y contacto</h2><dl>
-<dt>Nombre o razón social</dt><dd>'''+esc('publisher_name')+'''</dd>
+<dt>Responsable · desarrollador independiente</dt><dd>'''+esc('publisher_name')+'''</dd>
 <dt>Domicilio de contacto</dt><dd>'''+esc('postal_address')+'''</dd>
 <dt>Privacidad y derechos sobre tus datos</dt><dd>'''+contact+'''</dd></dl>
 <h2>2. Lo esencial</h2><ul>
@@ -58,7 +59,7 @@ def privacy(config):
 <li>Tú eliges los archivos que importas, la carpeta donde guardas y cuándo exportas un cuaderno a Huawei Notes.</li>
 <li>La aplicación no vende tus datos ni envía tus notas al desarrollador en segundo plano.</li></ul>
 <h2>3. Información que utiliza la aplicación</h2>
-<p>Para las funciones que solicites, la aplicación puede almacenar localmente el título y texto de la nota, sus estilos, listas, tablas, fórmulas y gráficas; muestras de escritura y nombres de perfiles; imágenes y documentos PDF importados; cuadernos .hinote seleccionados; y ajustes como tema, modo de teclado, vista y carpeta de guardado. El contenido puede incluir datos personales si tú los introduces en las notas o archivos.</p>
+<p>Para las funciones que solicites, la aplicación puede almacenar localmente el título y texto de la nota, sus estilos, listas, tablas, fórmulas y gráficas; muestras de escritura y nombres de perfiles; imágenes y documentos PDF importados; cuadernos .hinote seleccionados; y ajustes como tema, modo de teclado, vista, carpeta de guardado y si se mostró la bienvenida. El contenido puede incluir datos personales si tú los introduces en las notas o archivos. Estos datos locales no se envían al responsable por utilizar la app.</p>
 <p>Las calibraciones se utilizan para componer los trazos que solicites. Esta versión no realiza identificación biométrica de personas ni autenticación mediante escritura. Usa muestras propias o para las que tengas autorización.</p>
 <h2>4. Para qué se utiliza</h2>
 <p>La información se utiliza para editar y recuperar tu trabajo, mostrar la previsualización, aplicar tu escritura, distribuir contenido por páginas, gestionar archivos y crear los cuadernos que decidas guardar o abrir en Huawei Notes. No se utiliza para publicidad, entrenar modelos remotos o elaborar perfiles comerciales.</p>
@@ -70,17 +71,20 @@ def privacy(config):
 <p><strong>PDF:</strong> los cuadernos que contienen páginas PDF pueden adjuntar el archivo PDF original completo, aunque hayas eliminado algunas de sus páginas visibles de la nota. Revisa el contenido del PDF original antes de compartir el cuaderno.</p>
 <p>Si eliges una carpeta de un proveedor en la nube, el guardado o la sincronización de esa carpeta se rige por ese proveedor. Exportar un archivo no da acceso al desarrollador a su contenido.</p>
 <h2>7. Conservación, respaldos y eliminación</h2>
-<p>El borrador, los perfiles y los recursos importados se conservan localmente para recuperar tu trabajo hasta que los elimines o borres los datos de la aplicación. Algunos recursos internos pueden permanecer después de quitar un elemento del documento. Para eliminar todo el almacenamiento propio de HiNote Studio usa «Privacidad y datos → Borrar datos locales de HiNote Studio» o los controles de almacenamiento de Android.</p>
+<p>El borrador, los perfiles y los recursos importados se conservan localmente para recuperar tu trabajo hasta que los elimines o borres los datos de la aplicación. Algunos recursos internos pueden permanecer después de quitar un elemento del documento. Para eliminar todo el almacenamiento propio de HiNote Studio toca el logo y entra en «Acerca de → Datos locales → Borrar datos locales», o utiliza los controles de almacenamiento de Android.</p>
 <p>Los temporales de composición se limpian al finalizar sesiones y mediante limpieza posterior. Las copias de exportación compartidas pueden permanecer en caché: al preparar nuevas exportaciones, la app elimina las que superan siete días. El sistema puede eliminarlas antes. No se promete un borrado automático a una hora exacta.</p>
 <p>Esta versión configura exclusiones para el respaldo automático en nube y la transferencia automática de datos de la app entre dispositivos. Su aplicación depende del sistema y del fabricante. Los respaldos que exportes manualmente son archivos independientes bajo tu control.</p>
 <p>La eliminación de datos locales no elimina los archivos que guardaste fuera de la app ni las notas importadas en Huawei Notes. Antes de borrar o desinstalar, guarda tu trabajo y respalda los perfiles que quieras conservar.</p>
 <h2>8. Seguridad</h2>
-<p>Se utiliza el almacenamiento privado de la aplicación y el aislamiento que ofrece Android. El editor bloquea la navegación a sitios externos y el visor de este aviso no ejecuta JavaScript. La versión de distribución desactiva la depuración. No se añade una contraseña ni cifrado propio a los archivos .hinote o .hnprofile exportados: protege el dispositivo y comparte esos archivos solo con destinatarios de confianza.</p>
+<p>Se utiliza el almacenamiento privado de la aplicación y el aislamiento que ofrece Android. El editor bloquea la navegación a sitios externos y este aviso se presenta con controles nativos, sin ejecutar JavaScript. La versión de distribución desactiva la depuración. No se añade una contraseña ni cifrado propio a los archivos .hinote o .hnprofile exportados: protege el dispositivo y comparte esos archivos solo con destinatarios de confianza.</p>
 <h2>9. Solicitudes y comunicaciones voluntarias</h2>
 <p>Puedes acceder al contenido en la app, corregir tus notas, exportar tus perfiles y eliminar los datos locales mediante los controles indicados. Si solicitas soporte y envías voluntariamente un mensaje, se tratarán los datos de contacto y la información que incluyas para atender tu solicitud. No envíes notas completas, identificaciones o calibraciones si no son necesarias.</p>
+<p>El correo de soporte se administra mediante Gmail, un servicio de Google con sus propias condiciones y política de privacidad. Los mensajes se utilizan para atender y dar seguimiento a la consulta, sin finalidades publicitarias. Se conservan durante su atención y, después, únicamente mientras resulten necesarios para el seguimiento o para cumplir obligaciones legales y atender posibles responsabilidades. Las solicitudes de eliminación se revisan según esas obligaciones. La app no obtiene acceso a tu cuenta de correo.</p>
 <p>Para solicitudes de acceso, rectificación, cancelación, oposición o revocación del consentimiento respecto de información que efectivamente obre en poder del responsable, utiliza el contacto indicado en el apartado 1, describe la solicitud y proporciona solo los datos necesarios para tramitarla. El desarrollador no puede recuperar a distancia las notas almacenadas únicamente en tu dispositivo.</p>
+<p>La solicitud debe identificar a la persona titular, un medio para responder, los datos relacionados y el derecho o petición que se desea ejercer. Se podrá solicitar la información proporcional necesaria para acreditar la identidad o representación y localizar los datos; no se requiere enviar una identificación de forma preventiva para pedir soporte. Las solicitudes ARCO se atienden dentro de los plazos legales: hasta veinte días hábiles para comunicar la determinación y, si resulta procedente, hasta quince días hábiles adicionales para hacerla efectiva, con las ampliaciones que permita la ley. La revocación o limitación se puede solicitar por el mismo correo y se informará de las consecuencias o impedimentos legales aplicables.</p>
 <h2>10. Cambios y alcance</h2>
-<p>La versión del aviso aparece al inicio. Los cambios se informarán dentro de la aplicación y en la página pública del aviso cuando esté habilitada. Un futuro servicio en línea, publicidad o tratamiento adicional deberá informarse antes de activarse y contar con la base jurídica que corresponda.</p>
+<p>La versión del aviso aparece al inicio. El texto completo permanece accesible tocando el logo de la app y entrando en «Acerca de → Privacidad». Los cambios se informarán dentro de la aplicación y en la página pública del aviso. La bienvenida es informativa; el botón Continuar no es una autorización general para tratamientos nuevos. Un futuro servicio en línea, publicidad o tratamiento adicional deberá informarse antes de activarse y contar con la base jurídica que corresponda.</p>
+<p>El aviso público se ofrece en un repositorio público de GitHub. Si decides abrir su versión web, se utilizará tu navegador y será aplicable también la política del proveedor de ese sitio. Consultar la versión local no necesita conexión.</p>
 <p>HiNote Studio es un proyecto independiente. Huawei y Huawei Notes son denominaciones de sus respectivos titulares. Este aviso se refiere a HiNote Studio; consulta las condiciones de las otras aplicaciones y proveedores que decidas utilizar.</p>
 <p><a href="licenses.html">Consultar componentes y licencias</a></p>'''
     return page('Política de privacidad',body)
@@ -92,6 +96,58 @@ def licenses():
     body+='<p><a href="privacy.html">Volver a la política de privacidad</a></p>'
     return page('Componentes y licencias',body)
 
+LICENSE_LABELS={
+    'Bzip2_License':('bzip2 1.0.8','Licencia bzip2'),
+    'CPython_3_11_17_Additional_Notices':('Avisos adicionales de Python','Avisos originales de componentes documentados por Python'),
+    'CPython_PSF':('Python 3.11.17','Python Software Foundation e historial'),
+    'Certifi_Mozilla_Public_License_2':('Certifi','Mozilla Public License 2.0'),
+    'Chaquopy_MIT':('Chaquopy 17.1.0','MIT'),
+    'Libffi_MIT':('libffi 3.4.4','MIT'),
+    'Manrope_OFL_1_1':('Manrope','SIL Open Font License 1.1'),
+    'Mozilla_Public_License_2_Full':('Texto completo MPL 2.0','Mozilla Public License 2.0'),
+    'OpenSSL_Apache_2':('OpenSSL 3.5.9','Apache License 2.0'),
+    'Pyelftools_Public_Domain_BSD':('pyelftools 0.26','Dominio público y BSD'),
+    'SQLite_Public_Domain':('SQLite 3.53.4','Dominio público'),
+    'Setuptools_MIT':('Setuptools 68.2.2','MIT'),
+    'XZ_Liblzma_Copyright':('XZ / liblzma 5.4.6','Avisos y licencias originales'),
+}
+
+def native_documents(config):
+    policy=privacy(config)
+    body=policy.split('<body>',1)[1].rsplit('</body>',1)[0]
+    notice={'schema':1,'policy_version':config['policy_version'],
+        'contact_email':config.get('privacy_email','') if config.get('email_verified') else '',
+        'policy_url':config.get('policy_url',''),'policy_url_verified':config.get('policy_url_verified') is True,
+        'welcome_summary':'HiNote Studio convierte texto en trazos con tu escritura. Tus notas, calibraciones y archivos se guardan y procesan en este dispositivo. Esta versión no requiere una cuenta de HiNote ni envía ese contenido al desarrollador. Tú eliges qué importar, guardar o exportar a Huawei Notes.',
+        'privacy_html':body}
+    components=[]
+    for path in sorted((ROOT/'distribution/third_party').glob('*.txt')):
+        name,license=LICENSE_LABELS[path.stem]
+        components.append({'id':path.stem,'name':name,'license':license,'text':path.read_text()})
+    return notice,{'components':components}
+
+class PolicyMarkdown(HTMLParser):
+    """A public, readable policy rendered by GitHub from the same legal text."""
+    def __init__(self):super().__init__(convert_charrefs=True);self.parts=[];self.links=[]
+    def handle_starttag(self,tag,attrs):
+        if tag in ('h1','h2','h3'):self.parts.append('\n\n'+'#'*int(tag[1])+' ')
+        elif tag in ('p','dl','dd'):self.parts.append('\n\n')
+        elif tag=='li':self.parts.append('\n- ')
+        elif tag in ('strong','b','dt'):self.parts.append('**')
+        elif tag=='br':self.parts.append('  \n')
+        elif tag=='a':self.links.append(dict(attrs).get('href',''));self.parts.append('[')
+    def handle_endtag(self,tag):
+        if tag in ('h1','h2','h3','p','dl','dd'):self.parts.append('\n\n')
+        elif tag in ('strong','b'):self.parts.append('**')
+        elif tag=='dt':self.parts.append('**\n\n')
+        elif tag=='a':
+            url=self.links.pop().replace('licenses.html','../distribution/THIRD_PARTY.md');self.parts.append(']('+url+')')
+    def handle_data(self,data):
+        value=data.replace('\\','\\\\').replace('<','&lt;').replace('>','&gt;')
+        for char in ('[',']','*','_','`'):value=value.replace(char,'\\'+char)
+        self.parts.append(value)
+    def result(self):return re.sub(r'\n{3,}','\n\n',''.join(self.parts)).strip()+'\n'
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--require-ready',action='store_true');args=parser.parse_args()
     config=json.loads(PUBLISHER.read_text());missing=pending_fields(config)
@@ -99,9 +155,14 @@ def main():
     text=privacy(config)
     (ASSETS/'privacy.html').write_text(text)
     (ASSETS/'licenses.html').write_text(licenses())
+    notice,components=native_documents(config)
+    (ASSETS/'notice.json').write_text(json.dumps(notice,ensure_ascii=False,indent=2)+'\n')
+    (ASSETS/'licenses.json').write_text(json.dumps(components,ensure_ascii=False,indent=2)+'\n')
     public=ROOT/'docs/privacy';public.mkdir(parents=True,exist_ok=True)
     (public/'index.html').write_text(text)
     (public/'licenses.html').write_text(licenses().replace('href="privacy.html"','href="index.html"'))
+    markdown=PolicyMarkdown();markdown.feed(notice['privacy_html'])
+    (ROOT/'docs/PRIVACY.md').write_text(markdown.result())
     report={'ready_for_store':not missing,'policy_version':config['policy_version'],'missing_fields':missing}
     (ROOT/'distribution/publication-status.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))

@@ -1,10 +1,12 @@
-# HiNote Studio — primera compilación de producción sobre V54.4
+# HiNote Studio — producción sobre V54.4
 
-Código 65 · `5.4.5-production1` · [Cambios y estado de publicación](docs/PRODUCTION_1.md).
-Incluye política local, control de eliminación de datos, restricciones de
-distribución y avisos de componentes. El aviso final requiere completar los
-datos reales del responsable y habilitar sus canales de contacto y consulta.
-La compilación no implica publicación ni aprobación de tienda.
+Código 66 · `5.4.6-production2` · [Cambios y validación](docs/PRODUCTION_2.md).
+Tocar el logo abre **Acerca de**, con versión instalada, privacidad, licencias,
+contacto y datos locales. La bienvenida informativa aparece una sola vez. Los
+documentos se muestran con controles nativos, sin depender de un WebView.
+El [aviso público](docs/PRIVACY.md) y la copia local se generan de la misma fuente,
+con la identidad y el contacto confirmados por el titular del proyecto.
+La compilación no implica publicación ni aprobación de una tienda.
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
 
