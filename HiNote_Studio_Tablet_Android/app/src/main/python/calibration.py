@@ -106,7 +106,7 @@ def _cached(path, mtime, size):
 def load_profile(project, identity):
     if identity == "original":
         bank = original(project)
-        return {**bank, "format": FORMAT, "id": "original", "name": "Original", "revision": "v24",
+        return {**bank, "format": FORMAT, "id": "original", "name": "Original", "revision": bank.get("original_revision", "v24"),
                 "expected": chars(BASE), "diagnostics": []}
     path = profile_path(project, identity)
     if not path.is_file():

@@ -147,9 +147,9 @@ public class MainActivity extends Activity {
     }
     private void copyEngineAsset(String name)throws Exception{
         File out=new File(getFilesDir(),name);
-        // Refresh the format-only template on every launch, including upgrades
-        // from V54.4 which retained an original export thumbnail and cover.
-        if(!"template_1stroke.hinote".equals(name)&&out.isFile()&&out.length()>0)return;
+        // Refresh both bundled assets on upgrades too. Only the protected bank
+        // and format template are replaced; custom profiles and drafts are
+        // stored separately and must survive updates unchanged.
         File partial=new File(getFilesDir(),name+".part");
         try(InputStream in=getAssets().open(name);FileOutputStream stream=new FileOutputStream(partial)){
             byte[] buffer=new byte[16384];int n;while((n=in.read(buffer))!=-1)stream.write(buffer,0,n);stream.getFD().sync();

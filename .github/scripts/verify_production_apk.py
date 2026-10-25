@@ -100,7 +100,7 @@ def verify(apk):
         manifest=binary_xml(archive.read('AndroidManifest.xml'))
         package=next(a for t,a in manifest if t=='manifest');app=next(a for t,a in manifest if t=='application')
         assert package['package']=='com.hinote.studio.v54maintenance',package
-        assert package['versionCode']==66 and package['versionName']=='5.4.6-production2',package
+        assert package['versionCode']==67 and package['versionName']=='1.0.0',package
         assert app['label']=='HiNote Studio',app
         assert not app.get('debuggable',0) and not app.get('testOnly',0),app
         assert not app.get('allowBackup',1) and not app.get('usesCleartextTraffic',1),app
@@ -138,7 +138,15 @@ def verify(apk):
         notice=json.loads(archive.read('assets/legal/notice.json'))
         components=json.loads(archive.read('assets/legal/licenses.json'))['components']
         assert notice['contact_email']=='soporte.hinotestudio@gmail.com',notice['contact_email']
-        assert notice['policy_url_verified'] and notice['policy_url'].startswith('https://github.com/Victor55101/HiNote-Studio-Tablet/')
+        publisher=json.loads((Path(__file__).resolve().parents[2]/'distribution/publisher.json').read_text())
+        assert notice['policy_url_verified'] and notice['policy_url']==publisher['policy_url']
+        assert notice['policy_url'].startswith('https://') and 'github.com/' not in notice['policy_url']
+        assert 'Esta versión' not in notice['welcome_summary'] and 'Esta versión' not in policy
+        assert '10. Responsable y contacto' in policy and '8. Soporte y derechos sobre tus datos' in policy
+        bank=json.loads(archive.read('assets/glyphs_v24.json'))
+        original_complete=bank.get('original_revision')=='v25' and len(bank['glyphs'])==110
+        assert original_complete or (bank.get('original_revision')=='v24' and len(bank['glyphs'])==105)
+        if original_complete:assert all(len(bank['glyphs'][ch])==8 for ch in '!¡&$°')
         for value in ('Hugo Zoé Islas Vázquez','Cda. de Totli 3','soporte.hinotestudio@gmail.com'):
             assert value in policy and value in notice['privacy_html'],value
         assert len(components)>=13 and all(len(c['text'])>100 for c in components)
@@ -165,6 +173,7 @@ def verify(apk):
         'python_version':'3.11.17','openssl_version':'3.5.9',
         'backup_resources':backup_resources,
         'legal_viewer':'native','support_email':notice['contact_email'],'policy_url':notice['policy_url'],
+        'original_characters':len(bank['glyphs']),'original_complete':original_complete,
         'policy_is_draft':'Aviso para revisión' in policy,'signature_verified':False}
 
 def main():
@@ -172,6 +181,7 @@ def main():
     parser.add_argument('--output',type=Path);parser.add_argument('--apksigner',type=Path)
     parser.add_argument('--expected-certificate');args=parser.parse_args();result=verify(args.apk)
     if args.apksigner:
+        assert result['original_complete'], 'Private expanded Original must be packaged locally before final signing'
         signed=subprocess.check_output(['java','-jar',str(args.apksigner),'verify','--verbose','--print-certs',str(args.apk)],text=True)
         certificates=set(re.findall(r'certificate SHA-256 digest: ([a-f0-9]{64})',signed))
         assert len(certificates)==1,certificates

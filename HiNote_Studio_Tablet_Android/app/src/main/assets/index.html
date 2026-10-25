@@ -191,7 +191,7 @@ button,input,select{font:inherit}.app{height:100vh;display:grid;grid-template-ro
 <label class="characterSearch">Buscar carácter o código <input id="characterSearch" maxlength="20" placeholder="ñ o U+00F1"/></label>
 <div aria-label="Caracteres del perfil" class="characterGrid" id="characterGrid"></div>
 <p id="profileWarnings"></p>
-<div class="notice hidden" id="importReview"><strong>Revisa la calibración antes de guardarla</strong><p id="importReviewText"></p><button class="btn primary" id="commitProfile">Guardar perfil</button><button class="btn" id="discardProfile">Descartar</button></div>
+<div aria-labelledby="importReviewTitle" class="notice hidden" id="importReview" role="region"><div class="importReviewCopy"><strong id="importReviewTitle">Revisa la calibración antes de guardarla</strong><p id="importReviewText"></p></div><div class="importReviewActions"><button class="btn primary" id="commitProfile">Guardar perfil</button><button class="btn" id="discardProfile">Descartar</button></div></div>
 <details id="templateOptions"><summary>Crear plantilla · agregar o repetir caracteres</summary>
 <p>Conserva las páginas, su orden y las guías. Usa Rotulador y escribe cada variante dentro de su celda, apoyada en la línea azul. Las líneas rectas nativas también se admiten.</p>
 <div class="templateGroups"><label><input checked="" name="calibrationGroup" type="checkbox" value="base"/> Español y signos básicos</label><label><input name="calibrationGroup" type="checkbox" value="math"/> Matemáticas</label><label><input name="calibrationGroup" type="checkbox" value="code"/> Programación y redes</label><label><input name="calibrationGroup" type="checkbox" value="type"/> Monedas y tipografía</label></div>

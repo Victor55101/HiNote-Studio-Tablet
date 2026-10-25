@@ -1,5 +1,6 @@
 """Build the runtime calibration assets from the archived V11 source."""
 import gzip
+import argparse
 import hashlib
 import json
 import struct
@@ -13,6 +14,10 @@ from zipfile import ZipFile
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = 'HiNote_Studio_Tablet_Android/app/src/main/assets/'
 CORRECTIONS = ROOT / '.github/assets/glyph_corrections_v22.json.gz'
+parser = argparse.ArgumentParser()
+parser.add_argument('--original-profile', type=Path, help='Private expanded backup; never committed or uploaded to public CI')
+parser.add_argument('--output-directory', type=Path)
+args = parser.parse_args()
 with ZipFile(ROOT / 'HiNote_Studio_Tablet_Android_Source.zip') as archive:
     library = json.loads(archive.read(PREFIX + 'glyphs_v11.json'))
     with gzip.open(CORRECTIONS, 'rt', encoding='utf-8') as stream:
@@ -23,6 +28,21 @@ with ZipFile(ROOT / 'HiNote_Studio_Tablet_Android_Source.zip') as archive:
     library.setdefault('placement_y_offsets', {}).update(corrections['placement_y_offsets'])
     # V24: keep the calibrated underscore below the baseline of ordinary letters.
     library['placement_y_offsets']['_'] = 3.0
+    # The confirmed expanded backup preserves the existing 105 characters and
+    # supplies eight variants for each previously missing basic symbol.
+    library['original_revision'] = 'v24'
+    if args.original_profile:
+        sys.path.insert(0, str(ROOT / 'HiNote_Studio_Tablet_Android/app/src/main/python'))
+        from calibration import read_gzip, validate_profile
+        expanded = read_gzip(args.original_profile)
+        validate_profile(expanded)
+        added = set('!¡&$°')
+        assert set(expanded['glyphs']) == set(library['glyphs']) | added, 'Unexpected expanded character set'
+        assert all(expanded['glyphs'][ch] == variants for ch, variants in library['glyphs'].items()), 'Existing Original glyphs changed'
+        assert all(len(expanded['glyphs'][ch]) == 8 for ch in added), 'Expanded Original requires eight variants'
+        library['glyphs'].update({ch: expanded['glyphs'][ch] for ch in '!¡&$°'})
+        library['placement_y_offsets'].update({ch: expanded.get('placement_y_offsets', {}).get(ch, 0) for ch in '!¡&$°'})
+        library['original_revision'] = 'v25'
     library['corrections_applied'] = {
         'version': corrections['version'],
         'source_hinote': corrections['source_hinote'],
@@ -34,7 +54,7 @@ with ZipFile(ROOT / 'HiNote_Studio_Tablet_Android_Source.zip') as archive:
         if diagnostic.get('page') == corrections['source_page']:
             diagnostic['unassigned_strokes'] = []
 
-    assets = ROOT / PREFIX
+    assets = args.output_directory or ROOT / PREFIX
     assets.mkdir(parents=True, exist_ok=True)
     (assets / 'glyphs_v24.json').write_text(
         json.dumps(library, ensure_ascii=False, separators=(',', ':')),

@@ -59,7 +59,7 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: HiNote-Studio-Production-2-Unsigned-Candidate
+          name: Solo-CI-SIN-FIRMA-No-instalar-HiNote-Studio-1.0.0
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk
       - name: Verify production artifact and report store readiness
         run: python .github/scripts/verify_production_apk.py HiNote_Studio_Tablet_Android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk --output distribution/apk-verification.json
@@ -75,10 +75,16 @@ jobs:
           signer_path="$(find "$ANDROID_HOME/build-tools" -name apksigner.jar -type f | sort -V | tail -n 1)"
           test -n "$signer_path"
           cp "$signer_path" signing-tools/apksigner.jar
+          build_tools_dir="$(dirname "$(dirname "$signer_path")")"
+          cp "$build_tools_dir/zipalign" signing-tools/zipalign
+          mkdir -p signing-tools/lib64
+          if [ -d "$build_tools_dir/lib64" ]; then
+            find "$build_tools_dir/lib64" -maxdepth 1 -name '*.so*' -exec cp -L {} signing-tools/lib64/ \;
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: HiNote-signing-tool
-          path: signing-tools/apksigner.jar
+          path: signing-tools/
   legal-device:
     runs-on: ubuntu-latest
     timeout-minutes: 25

@@ -147,3 +147,10 @@ select.nativeSelect{position:absolute!important;left:0!important;top:0!important
 .tableDialog.tableTyping #tableGridWrap{min-height:60px}
 @media(max-width:1100px){.tableCellTools>label:nth-child(n){grid-column:span 6}.tableCellTools>label:has(#tableCellSize){grid-column:span 6}}
 @media(max-width:760px){.tableCellTools{display:grid}.tableCellTools>label{min-width:0}}
+
+/* Import confirmation remains visible while either profile column scrolls. */
+#importReview{flex-shrink:0;display:flex;align-items:center;gap:18px;margin:0 22px 14px;padding:14px 16px;border-radius:16px;max-height:30vh;overflow:auto}
+.importReviewCopy{flex:1;min-width:0}.importReviewCopy p{margin:5px 0 0;font-size:13px;line-height:1.5}
+.importReviewActions{display:flex;flex-wrap:wrap;gap:8px;flex-shrink:0}#importReview .btn{margin:0;min-height:44px}
+@media(max-width:760px){#importReview{flex-direction:column;align-items:stretch;gap:10px;margin:0 12px 10px;padding:12px;max-height:36vh}.importReviewActions .btn{flex:1}}
+@media(max-height:680px) and (min-width:761px){#importReview{margin-bottom:8px;padding:9px 12px;max-height:29vh}.importReviewCopy p{font-size:12px}}
