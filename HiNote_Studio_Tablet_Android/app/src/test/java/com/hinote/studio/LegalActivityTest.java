@@ -95,7 +95,8 @@ public class LegalActivityTest {
             assertNull(shadowOf(activity).getNextStartedActivity());
             click(activity,"legal-contact");assertEquals("soporte.hinotestudio@gmail.com",value(activity,"legal-contact-email"));
             click(activity,"legal-email");Intent intent=shadowOf(activity).getNextStartedActivity();
-            assertEquals(Intent.ACTION_SENDTO,intent.getAction());assertEquals("mailto:soporte.hinotestudio@gmail.com",intent.getDataString());
+            assertEquals(Intent.ACTION_SENDTO,intent.getAction());assertEquals("mailto",intent.getData().getScheme());
+            assertEquals("soporte.hinotestudio@gmail.com",intent.getData().getSchemeSpecificPart());
         }finally{close(host);}
     }
     @Test public void cancellingDataDeletionLeavesTheDraftIntact()throws Exception{
