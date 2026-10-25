@@ -17,7 +17,6 @@ mkdir -p test-results/legal-device
 emulator -avd hinote-legal -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 2048 -cores 2 > test-results/legal-device/emulator.log 2>&1 &
 hinote_emulator_pid=$!
 finish_legal_test() {
-    timeout 10 adb pull /sdcard/Android/data/com.hinote.studio/files/legal-test-screens test-results/legal-device/screens || true
     timeout 10 adb logcat -d > test-results/legal-device/logcat.log 2>&1 || true
     kill "$hinote_emulator_pid" 2>/dev/null || true
 }
@@ -34,3 +33,14 @@ adb shell wm size 1600x1000
 adb shell wm density 160
 adb shell input keyevent 82
 gradle --no-daemon -p HiNote_Studio_Tablet_Android connectedStableDebugAndroidTest -PhinoteTestAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.hinote.studio.LegalActivityDeviceTest
+python3 - <<'PY'
+from pathlib import Path
+root = Path('HiNote_Studio_Tablet_Android/app/build/outputs/connected_android_test_additional_output')
+expected = [f'{page}-{theme}.png' for theme in ('light', 'dark')
+            for page in ('about', 'privacy', 'licenses', 'license-detail')]
+expected += ['welcome-light.png', 'editor-before-about.png', 'editor-after-about.png']
+for name in expected:
+    matches = [p for p in root.rglob(name) if p.stat().st_size > 0]
+    assert len(matches) == 1, (name, matches)
+print(f'{len(expected)} native UI screenshots retained for visual review')
+PY

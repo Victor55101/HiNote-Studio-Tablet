@@ -45,7 +45,11 @@ public class LegalActivityDeviceTest {
     private void screenshot(String name)throws Exception{
         instrumentation.waitForIdleSync();Thread.sleep(150);
         Bitmap image=instrumentation.getUiAutomation().takeScreenshot();assertNotNull(image);
-        File directory=new File(context.getExternalFilesDir(null),"legal-test-screens");assertTrue(directory.isDirectory()||directory.mkdirs());
+        // AGP copies this output directory before uninstalling the test APKs.
+        // App-specific external files are removed by that uninstall.
+        String output=InstrumentationRegistry.getArguments().getString("additionalTestOutputDir");
+        File directory=output==null?new File(context.getExternalFilesDir(null),"legal-test-screens"):new File(output,"legal-test-screens");
+        assertTrue(directory.isDirectory()||directory.mkdirs());
         try(FileOutputStream out=new FileOutputStream(new File(directory,name+".png"))){assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,out));}finally{image.recycle();}
     }
     @Test public void actualPrivacyAndLicensesAreVisibleInBothThemesAndSystemBackReturns()throws Exception{
@@ -87,12 +91,14 @@ public class LegalActivityDeviceTest {
             WebView[] web=new WebView[1];instrumentation.runOnMainSync(()->web[0]=findWeb(editor.getWindow().getDecorView()));assertNotNull(web[0]);
             String prepare="document.getElementById('autoPreview').checked=false;renderLines(migrateTextLists([[{text:'Borrador de prueba',...DEFAULT_STYLE}]]));restoreSelection({start:{line:0,offset:4},end:{line:0,offset:8}});JSON.stringify({lines:readLines(),selection:bookmark()})";
             String before=javascript(web[0],prepare);
+            screenshot("editor-before-about");
             Instrumentation.ActivityMonitor next=instrumentation.addMonitor(LegalActivity.class.getName(),null,false);
             javascript(web[0],"document.getElementById('aboutBtn').click();true");
             Activity opened=next.waitForActivityWithTimeout(10000);instrumentation.removeMonitor(next);assertTrue(opened instanceof LegalActivity);
             LegalActivity about=(LegalActivity)opened;
             assertEquals("Acerca de HiNote Studio",text(about,"legal-heading"));click(about,"legal-privacy");click(about,"legal-back");click(about,"legal-back");
             assertEquals(before,javascript(web[0],"JSON.stringify({lines:readLines(),selection:bookmark()})"));
+            screenshot("editor-after-about");
             assertFalse(LegalActivity.needsWelcome(context));
         }finally{instrumentation.runOnMainSync(()->{if(!welcome.isFinishing())welcome.finish();editor.finish();});instrumentation.waitForIdleSync();}
     }
