@@ -78,7 +78,7 @@ jobs:
               signed-release/HiNote-Studio-1.0.1.apk \
               signed-release/SHA256SUMS.txt \
               signed-release/verification.json \
-              --target d27f84cf8bf7712d9e04ab69ab1b7eb435a4ea14 \
+              --target "${{ github.sha }}" \
               --title 'HiNote Studio 1.0.1' \
               --notes-file distribution/releases/1.0.1.md \
               --latest
