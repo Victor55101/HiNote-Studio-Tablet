@@ -81,7 +81,7 @@ const CalibrationUI = (() => {
       else if(data.saved||data.deleted){
         review=null;if(data.saved)selected=data.saved;
         if(data.deleted===activeProfile)activeProfile='original';
-        el('deleteProfileConfirm').classList.add('hidden');changed();begin('catalog');
+        el('deleteProfileConfirm').classList.add('hidden');window.ProEditor?.reload();changed();begin('catalog');
         toast(data.deleted?'Perfil eliminado; puedes recuperar la última eliminación.':'Perfil guardado');
       }else if(data.discarded){review=null;draw();status('Importación descartada; tus perfiles se conservaron.');}
       else if(data.fileSaved)status(completed==='template'?'Plantilla guardada. Ábrela en Huawei Notes, escribe y exporta el .hinote para importarlo aquí.':'Respaldo guardado.');

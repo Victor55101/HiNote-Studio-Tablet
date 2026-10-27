@@ -4,6 +4,7 @@
 window.ProEditor = (() => {
   const enabled=!!window.AndroidBridge?.isProEditor?.();
   let active=false,bank=null,engine=null,plan=null,profile=null,ticket=0,pending=false,frame=0,manualClassic=false,gesture=null;
+  const touches=new Map();let pair=null,lastCaretKey=null;
   const cache=new Map(),$p=id=>document.getElementById(id);
   let lastLayoutMs=0,lastPaintMs=0;
   function requestLibrary(){
@@ -100,6 +101,13 @@ window.ProEditor = (() => {
       const c=caretAt(mark.start);if(c){const caret=$p('proCaret');caret.hidden=false;caret.style.left=`${c.x*.675*zoom}px`;caret.style.top=`${(c.y-44)*.675*zoom}px`;caret.style.height=`${52*.675*zoom}px`;}
     }
     $p('proCopy').hidden=collapsed(mark);
+    const focus=mark.backward?mark.start:mark.end,focusCaret=caretAt(focus),focusKey=`${currentPage}:${focus.line}:${focus.offset}`;
+    if(focusCaret&&focusKey!==lastCaretKey&&document.activeElement===editor){
+      const wrap=$p('previewWrap'),bounds=wrap.getBoundingClientRect(),shell=$p('canvasShell').getBoundingClientRect();
+      const top=shell.top+(focusCaret.y-48)*.675*zoom,bottom=shell.top+(focusCaret.y+12)*.675*zoom;
+      if(bottom>bounds.bottom-24)wrap.scrollTop+=bottom-bounds.bottom+24;
+      else if(top<bounds.top+24)wrap.scrollTop+=top-bounds.top-24;
+    }lastCaretKey=focusKey;
     // Keep native input UI anchored near the visual caret, without moving its DOM.
     const c=caretAt(mark.backward?mark.start:mark.end);if(c){const box=$p('canvasShell').getBoundingClientRect();editor.style.setProperty('--pro-input-left',`${Math.max(0,box.left+c.x*.675*zoom)}px`);editor.style.setProperty('--pro-input-top',`${Math.max(0,box.top+(c.y-40)*.675*zoom)}px`);}
   }
@@ -111,8 +119,13 @@ window.ProEditor = (() => {
   function move(a,b=a){const cmp=a.line-b.line||a.offset-b.offset,backward=cmp>0;restoreSelection({start:backward?b:a,end:backward?a:b,backward});selection();}
   function pointerDown(e){
     if(!active||!editor.isContentEditable||e.button>0||e.target.closest('button')||ImageEditor.hitAt(e))return;
-    if(e.pointerType!=='touch'){e.preventDefault();e.stopImmediatePropagation();}
-    const point=hit(e);gesture={id:e.pointerId,x:e.clientX,y:e.clientY,start:point,moved:false,touch:e.pointerType==='touch',drag:e.pointerType!=='touch'};
+    e.preventDefault();e.stopImmediatePropagation();
+    if(e.pointerType==='touch'){
+      touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(touches.size===2){const [a,b]=[...touches.values()];if(gesture)clearTimeout(gesture.timer);gesture=null;pair={distance:Math.hypot(a.x-b.x,a.y-b.y),zoom};$p('previewWrap').setPointerCapture(e.pointerId);return;}
+    }
+    const point=hit(e);gesture={id:e.pointerId,x:e.clientX,y:e.clientY,start:point,moved:false,touch:e.pointerType==='touch',drag:e.pointerType!=='touch',scrollX:$p('previewWrap').scrollLeft,scrollY:$p('previewWrap').scrollTop};
+    $p('previewWrap').setPointerCapture(e.pointerId);
     if(gesture.drag){move(e.shiftKey?(bookmark()?.start||point):point,point);$p('previewWrap').setPointerCapture(e.pointerId);}
     else gesture.timer=setTimeout(()=>{if(!gesture||gesture.moved)return;const text=lineText(readLines()[point.line]),before=text.slice(0,point.offset).match(/[\p{L}\p{N}]+$/u)?.[0]?.length||0,after=text.slice(point.offset).match(/^[\p{L}\p{N}]+/u)?.[0]?.length||0;gesture.drag=true;gesture.start={line:point.line,offset:point.offset-before};move(gesture.start,{line:point.line,offset:point.offset+after});},450);
   }
@@ -127,8 +140,21 @@ window.ProEditor = (() => {
     const caret=document.createElement('div');caret.id='proCaret';caret.hidden=true;caret.setAttribute('aria-hidden','true');$p('canvasShell').append(caret);
     const heading=document.querySelector('.previewCard>.cardhead h2');heading.textContent='Documento';
     $p('previewWrap').addEventListener('pointerdown',pointerDown,true);
-    $p('previewWrap').addEventListener('pointermove',e=>{const g=gesture;if(!g||g.id!==e.pointerId)return;if(Math.hypot(e.clientX-g.x,e.clientY-g.y)>10){g.moved=true;clearTimeout(g.timer);}if(g.drag){e.preventDefault();e.stopImmediatePropagation();move(g.start,hit(e));}},true);
-    for(const type of ['pointerup','pointercancel','lostpointercapture'])$p('previewWrap').addEventListener(type,e=>{const g=gesture;if(!g||g.id!==e.pointerId)return;clearTimeout(g.timer);gesture=null;if(type==='pointerup'&&!g.moved&&!g.drag){e.preventDefault();AndroidBridge.beginTouchKeyboard?.();move(g.start);AndroidBridge.requestTouchKeyboard?.();}if(g.drag)e.stopImmediatePropagation();},true);
+    $p('previewWrap').addEventListener('pointermove',e=>{
+      if(touches.has(e.pointerId))touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(pair&&touches.size===2){const [a,b]=[...touches.values()];zoom=Math.max(.25,Math.min(2,pair.zoom*Math.hypot(a.x-b.x,a.y-b.y)/Math.max(1,pair.distance)));applyZoom();e.preventDefault();e.stopImmediatePropagation();return;}
+      const g=gesture;if(!g||g.id!==e.pointerId)return;
+      if(Math.hypot(e.clientX-g.x,e.clientY-g.y)>10){g.moved=true;clearTimeout(g.timer);}
+      if(g.drag){e.preventDefault();e.stopImmediatePropagation();move(g.start,hit(e));}
+      else if(g.touch&&g.moved){$p('previewWrap').scrollTop=g.scrollY+g.y-e.clientY;$p('previewWrap').scrollLeft=g.scrollX+g.x-e.clientX;}
+    },true);
+    for(const type of ['pointerup','pointercancel','lostpointercapture'])$p('previewWrap').addEventListener(type,e=>{
+      const wasPair=!!pair;touches.delete(e.pointerId);if(touches.size<2)pair=null;
+      if(wasPair){gesture=null;e.stopImmediatePropagation();return;}
+      const g=gesture;if(!g||g.id!==e.pointerId)return;clearTimeout(g.timer);gesture=null;
+      if(type==='pointerup'&&!g.moved&&!g.drag){e.preventDefault();AndroidBridge.beginTouchKeyboard?.();move(g.start);AndroidBridge.requestTouchKeyboard?.();}
+      e.stopImmediatePropagation();
+    },true);
     editor.addEventListener('input',e=>{if(active&&(ime||e.isComposing))changed();});
     document.addEventListener('selectionchange',()=>{if(!active)return;const previous=currentPage;followCaret();if(previous!==currentPage)showPage();else requestAnimationFrame(selection);});
     editor.addEventListener('keydown',e=>{
@@ -144,7 +170,7 @@ window.ProEditor = (() => {
     clearTimeout(refreshTimer);requestLibrary();
   }
   init();
-  return {get active(){return active;},get enabled(){return enabled;},changed,showPage,exportPlan,selection,
+  return {get active(){return active;},get enabled(){return enabled;},changed,showPage,exportPlan,selection,reload:()=>{if(enabled)requestLibrary();},
     metrics:()=>({layoutMs:lastLayoutMs,paintMs:lastPaintMs,cacheSize:cache.size,pages:plan?.pages.length||0}),
     testPlan:()=>plan};
 })();

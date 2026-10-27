@@ -38,7 +38,7 @@ def _settings(raw):
         "auto_line_spacing": bool(s.get("auto_line_spacing", True))}
 
 def _document(raw):
-    if len(raw) > 4_000_000:
+    if len(raw) > 16_000_000:
         raise ValueError("El documento tiene demasiado formato; divídelo en varias notas.")
     doc = json.loads(raw)
     paragraphs = doc.get("paragraphs", [])

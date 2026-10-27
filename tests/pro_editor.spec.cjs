@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('n
 const root=path.resolve(__dirname,'..'),assets=path.join(root,'HiNote_Studio_Tablet_Android/app/src/main/assets');
 const bank=JSON.parse(cp.execFileSync('python3',['tests/pro_fixture.py'],{cwd:root,maxBuffer:64*1024*1024}));
 (async()=>{
-  const server=http.createServer((req,res)=>{const name=req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0].slice(1),file=path.resolve(assets,name);if(!file.startsWith(assets+path.sep)||!fs.existsSync(file)){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8');res.end(fs.readFileSync(file));});
+  const server=http.createServer((req,res)=>{const name=req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0].slice(1),file=path.resolve(assets,name);if(!file.startsWith(assets+path.sep)||!fs.existsSync(file)){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.ttf')?'font/ttf':name.endsWith('.svg')?'image/svg+xml':'text/html; charset=utf-8');res.end(fs.readFileSync(file));});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true});
   try{
     const context=await browser.newContext({viewport:{width:1536,height:1000},hasTouch:true});
@@ -22,6 +22,7 @@ const bank=JSON.parse(cp.execFileSync('python3',['tests/pro_fixture.py'],{cwd:ro
     assert.equal(await page.evaluate(()=>readLines().map(lineText).join('\n')),'Hola Hugo. Tu escritura, cálculo y precisión.');
     assert.equal(await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').length),0,'Typing must not request native raster composition');
     assert.ok(await page.evaluate(()=>document.body.classList.contains('proUnified')));
+    await page.evaluate(()=>checkpoint());
     // Click a real displayed position, not the hidden input, then insert.
     const point=await page.evaluate(()=>{const c=ProEditor.testPlan().pages[0].rows[0].carets.find(c=>c.offset===5),b=$('canvasShell').getBoundingClientRect();return {x:b.left+c.x*.675*zoom,y:b.top+(c.y-20)*.675*zoom};});
     await page.mouse.click(point.x,point.y);await page.keyboard.type('PRO ');

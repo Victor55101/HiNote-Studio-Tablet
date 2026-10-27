@@ -27,6 +27,7 @@ window.StudioUI = (() => {
     el('noteSubtitle').textContent=(el('noteTitle').value||'Nueva nota')+' · '+el('draftStatus').textContent;
     const importingPdf=PdfEditor.isBusy(),current=!!composition&&previewRevision===revision&&!composing&&!importingPdf;
     el('viewState').textContent=importingPdf?PdfEditor.status():composing?renderProgressLabel():current?'Vista al día':'Vista pendiente';el('viewState').classList.toggle('current',current);
+    if(window.ProEditor?.active&&!exporting&&!saveRequested){el('viewState').textContent='Edición en vivo';el('viewState').classList.add('current');}
     el('viewState').title=el('status').textContent;
     if(current&&!exporting&&!saveRequested&&!folderBusy&&!CalibrationUI.isBusy()&&!NotebookUI.isBusy())el('refreshBtn').disabled=true;
   }

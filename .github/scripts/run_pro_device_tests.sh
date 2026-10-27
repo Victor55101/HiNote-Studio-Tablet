@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+export ANDROID_SERIAL=emulator-5554
+# Keep avdmanager and the emulator on the same explicit AVD directory.
+# Hosted runners may have SDK preference paths configured by separate tools.
+export ANDROID_USER_HOME="${RUNNER_TEMP:-/tmp}/hinote-pro-android"
+export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
+export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+mkdir -p "$ANDROID_AVD_HOME"
+sdkmanager 'system-images;android-35;google_apis;x86_64' 'emulator' 'platform-tools'
+avdmanager create avd --force --name hinote-pro --path "$ANDROID_AVD_HOME/hinote-pro.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_c <<< 'no'
+test -s "$ANDROID_AVD_HOME/hinote-pro.ini"
+emulator -list-avds
+mkdir -p test-results/pro-device
+emulator -avd hinote-pro -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -memory 2048 -cores 2 > test-results/pro-device/emulator.log 2>&1 &
+hinote_emulator_pid=$!
+finish_legal_test() {
+    timeout 10 adb logcat -d > test-results/pro-device/logcat.log 2>&1 || true
+    kill "$hinote_emulator_pid" 2>/dev/null || true
+}
+trap finish_legal_test EXIT
+if ! timeout 90 adb wait-for-device; then
+    cat test-results/pro-device/emulator.log
+    exit 1
+fi
+timeout 180 bash -c 'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == 1 ]]; do sleep 2; done'
+adb shell settings put global window_animation_scale 0
+adb shell settings put global transition_animation_scale 0
+adb shell settings put global animator_duration_scale 0
+adb shell wm size 1600x1000
+adb shell wm density 160
+adb shell input keyevent 82
+gradle --no-daemon -p HiNote_Studio_Tablet_Android connectedProDebugAndroidTest -PhinoteTestAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.hinote.studio.ProEditorDeviceTest
+python3 - <<'PY'
+from pathlib import Path
+root=Path('HiNote_Studio_Tablet_Android/app/build/outputs/connected_android_test_additional_output')
+assert any(p.stat().st_size>0 for p in root.rglob('pro-editor-android.png'))
+print('Real Android Pro input, glyph transport, live editor and native export passed')
+PY

@@ -3,7 +3,7 @@
 .proBar>div{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}.proBar strong{font-size:14px}.proBar span{font-size:11px;color:var(--muted);line-height:1.45}.proBar .btn{font-size:12px;white-space:nowrap}
 .proUnified .workspace{grid-template-columns:minmax(0,1fr)!important}.proUnified .editorCard{position:absolute!important;width:0!important;height:0!important;overflow:visible!important;visibility:hidden!important;border:0!important;padding:0!important}
 .proUnified #editor{visibility:visible!important;position:fixed!important;left:var(--pro-input-left,0px)!important;top:var(--pro-input-top,0px)!important;width:1px!important;height:1px!important;min-height:0!important;padding:0!important;opacity:0!important;overflow:hidden!important;pointer-events:none!important;white-space:pre!important}
-.proUnified #typingCaret{display:none!important}.proUnified .previewCard{height:100%;min-height:0}.proUnified .previewWrap{touch-action:pan-y pinch-zoom;background:var(--well);padding:24px;cursor:text}.proUnified .canvasShell{background:#fff;flex-shrink:0}
+.proUnified #typingCaret{display:none!important}.proUnified .previewCard{height:100%;min-height:0}.proUnified .previewWrap{touch-action:none;background:var(--well);padding:24px;cursor:text}.proUnified .canvasShell{background:#fff;flex-shrink:0}
 .proUnified .previewCard>.cardhead{display:none}.proUnified .proHidden{display:none!important}
 #proSelection{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
 #proCaret{position:absolute;width:2px;background:#087994;box-shadow:0 0 0 1px #fff9;z-index:3;pointer-events:none;animation:proBlink 1.1s step-end infinite}
@@ -12,3 +12,5 @@ body:not(.proUnified) #proSelection,body:not(.proUnified) #proCaret{display:none
 @keyframes proBlink{0%,100%{opacity:1}50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){#proCaret{animation:none}}
 @media(max-width:900px){.proUnified .app{height:100dvh;min-height:0}.proUnified .workspace{min-height:0}.proUnified .previewCard{height:100%;min-height:0}.proUnified .proBar{padding:8px;gap:6px}.proUnified .proBar span{font-size:10px}.proUnified .previewWrap{padding:12px}}
+
+.proBar .noteTitle{width:100%;max-width:100%;font-size:15px;padding:7px 12px;min-height:36px}.proBar strong{display:none}

@@ -1,0 +1,66 @@
+package com.hinote.studio;
+
+import android.app.Instrumentation;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.WebView;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import static org.junit.Assert.*;
+
+/** Real Android WebView, Python glyph transport, input connection and exporter. */
+@RunWith(AndroidJUnit4.class)
+public class ProEditorDeviceTest {
+    private final Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();
+    private WebView web;
+    private WebView find(View view){
+        if(view instanceof WebView)return (WebView)view;
+        if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){
+            WebView result=find(((ViewGroup)view).getChildAt(i));if(result!=null)return result;
+        }
+        return null;
+    }
+    private String js(String source)throws Exception{
+        AtomicReference<String> result=new AtomicReference<>();CountDownLatch latch=new CountDownLatch(1);
+        instrumentation.runOnMainSync(()->web.evaluateJavascript(source,value->{result.set(value);latch.countDown();}));
+        assertTrue(latch.await(15,TimeUnit.SECONDS));return result.get();
+    }
+    private void waitFor(String predicate)throws Exception{
+        long end=System.currentTimeMillis()+45000;
+        while(System.currentTimeMillis()<end){if("true".equals(js(predicate)))return;Thread.sleep(150);}
+        fail("Timed out: "+predicate+"; "+js("document.body.innerText.slice(0,1000)"));
+    }
+    @Test public void realWebViewTypesLiveAndExportsTheSameGeometry()throws Exception{
+        assertTrue(BuildConfig.PRO_EDITOR);
+        Context context=instrumentation.getTargetContext();
+        context.getSharedPreferences("hinote-legal",0).edit().putBoolean("welcome_seen_v1",true).commit();
+        MainActivity activity=(MainActivity)instrumentation.startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try{
+            instrumentation.runOnMainSync(()->web=find(activity.getWindow().getDecorView()));assertNotNull(web);
+            waitFor("!!window.ProEditor?.active");
+            js("renderLines([[{text:'Apuntes con mi escritura',...DEFAULT_STYLE}]]);restoreSelection({start:{line:0,offset:23},end:{line:0,offset:23}});changed();true");
+            instrumentation.sendStringSync(" Pro");
+            waitFor("lineText(readLines()[0]).includes(' Pro')");
+            assertEquals("true",js("document.body.classList.contains('proUnified') && ProEditor.testPlan().pages[0].items.length>10"));
+            js("$('noteTitle').value='Prueba del editor Pro';saveDraft();refreshPreview();true");
+            waitFor("!composing && composition?.layout?.engine==='hinote-live-v1'");
+            assertEquals("true",js("previewRevision===revision && composition.stroke_counts[0]>0"));
+            js("zoom=.8;applyZoom();true");Thread.sleep(250);
+            String output=InstrumentationRegistry.getArguments().getString("additionalTestOutputDir");
+            File directory=output==null?context.getExternalFilesDir(null):new File(output,"pro-test-screens");
+            assertTrue(directory.isDirectory()||directory.mkdirs());Bitmap screenshot=instrumentation.getUiAutomation().takeScreenshot();
+            try(FileOutputStream file=new FileOutputStream(new File(directory,"pro-editor-android.png"))){assertTrue(screenshot.compress(Bitmap.CompressFormat.PNG,100,file));}finally{screenshot.recycle();}
+            try(FileOutputStream file=new FileOutputStream(new File(directory,"pro-android-metrics.json"))){file.write(js("JSON.stringify(ProEditor.metrics())").getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+        }finally{instrumentation.runOnMainSync(activity::finish);}
+    }
+}
