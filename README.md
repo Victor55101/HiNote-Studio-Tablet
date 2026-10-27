@@ -1,6 +1,10 @@
-# HiNote Studio — producción sobre V54.4
+# HiNote Studio — 1.0.1, basada en V54.4
 
-Código 66 · `5.4.6-production2` · [Cambios y validación](docs/PRODUCTION_2.md).
+Código 68 · `1.0.1` · [Preparación para AppGallery](docs/APPGALLERY_PREPARATION.md).
+Incluye condiciones de uso consultables sin conexión y enlaces directos al
+aviso de privacidad y al acuerdo en GitHub Pages. Conserva el acceso gratuito
+sin añadir cobros ni bloqueos. El modelo comercial requiere resolver la
+aplicación de la cláusula 3.12 con Huawei antes de publicar.
 Tocar el logo abre **Acerca de**, con versión instalada, privacidad, licencias,
 contacto y datos locales. La bienvenida informativa aparece una sola vez. Los
 documentos se muestran con controles nativos, sin depender de un WebView.

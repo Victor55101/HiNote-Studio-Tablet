@@ -95,12 +95,16 @@ def resource_file_paths(data):
                         paths.setdefault(resource_id,set()).add(strings[value])
     return paths
 
-def verify(apk):
+def verify(apk, legacy_1_0_0=False):
+    # The previous signed download remains available, but cannot be mistaken
+    # for a newly built release or bypass the current legal-document checks.
+    if legacy_1_0_0:
+        assert hashlib.sha256(apk.read_bytes()).hexdigest()=='3513daa267dc5bbefa0036b81ea48307c73489cdeb22001ccd9ff7a0d47e88a0', 'Legacy download differs from the published 1.0.0 APK'
     with zipfile.ZipFile(apk) as archive:
         manifest=binary_xml(archive.read('AndroidManifest.xml'))
         package=next(a for t,a in manifest if t=='manifest');app=next(a for t,a in manifest if t=='application')
         assert package['package']=='com.hinote.studio.v54maintenance',package
-        assert package['versionCode']==67 and package['versionName']=='1.0.0',package
+        assert (package['versionCode'],package['versionName'])==((67,'1.0.0') if legacy_1_0_0 else (68,'1.0.1')),package
         assert app['label']=='HiNote Studio',app
         assert not app.get('debuggable',0) and not app.get('testOnly',0),app
         assert not app.get('allowBackup',1) and not app.get('usesCleartextTraffic',1),app
@@ -139,7 +143,16 @@ def verify(apk):
         components=json.loads(archive.read('assets/legal/licenses.json'))['components']
         assert notice['contact_email']=='soporte.hinotestudio@gmail.com',notice['contact_email']
         publisher=json.loads((Path(__file__).resolve().parents[2]/'distribution/publisher.json').read_text())
-        assert notice['policy_url_verified'] and notice['policy_url']==publisher['policy_url']
+        assert notice['policy_url_verified']
+        if not legacy_1_0_0:
+            assert notice['policy_url']==publisher['policy_url']=='https://victor55101.github.io/HiNote-Studio-Tablet/'
+            assert notice['terms_url']==publisher['terms_url']=='https://victor55101.github.io/HiNote-Studio-Tablet/terms.html'
+            assert notice['terms_url_verified']
+            terms=archive.read('assets/legal/terms.html').decode()
+            assert "default-src 'none'" in terms and '<script' not in terms and '<iframe' not in terms
+            assert 'Condiciones de uso' in terms and 'Las funciones ofrecidas gratuitamente se mantienen gratuitas' in terms
+            assert terms.split('<body>',1)[1].rsplit('</body>',1)[0]==notice['terms_html']
+            assert 'chatgpt.site' not in json.dumps(notice)
         assert notice['policy_url'].startswith('https://') and 'github.com/' not in notice['policy_url']
         assert 'Esta versión' not in notice['welcome_summary'] and 'Esta versión' not in policy
         assert '10. Responsable y contacto' in policy and '8. Soporte y derechos sobre tus datos' in policy
@@ -173,13 +186,16 @@ def verify(apk):
         'python_version':'3.11.17','openssl_version':'3.5.9',
         'backup_resources':backup_resources,
         'legal_viewer':'native','support_email':notice['contact_email'],'policy_url':notice['policy_url'],
+        'terms_url':notice.get('terms_url'),'terms_included':bool(notice.get('terms_html')),
         'original_characters':len(bank['glyphs']),'original_complete':original_complete,
         'policy_is_draft':'Aviso para revisión' in policy,'signature_verified':False}
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('apk',type=Path)
     parser.add_argument('--output',type=Path);parser.add_argument('--apksigner',type=Path)
-    parser.add_argument('--expected-certificate');args=parser.parse_args();result=verify(args.apk)
+    parser.add_argument('--expected-certificate')
+    parser.add_argument('--legacy-1-0-0',action='store_true',help='Verify only the byte-identical, previously published 1.0.0 download')
+    args=parser.parse_args();result=verify(args.apk,args.legacy_1_0_0)
     if args.apksigner:
         assert result['original_complete'], 'Private expanded Original must be packaged locally before final signing'
         signed=subprocess.check_output(['java','-jar',str(args.apksigner),'verify','--verbose','--print-certs',str(args.apk)],text=True)

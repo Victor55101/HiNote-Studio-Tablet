@@ -1,0 +1,10 @@
+{
+  "version_name": "1.0.1",
+  "version_code": 68,
+  "source_commit": "d27f84cf8bf7712d9e04ab69ab1b7eb435a4ea14",
+  "base_sha256": "3513daa267dc5bbefa0036b81ea48307c73489cdeb22001ccd9ff7a0d47e88a0",
+  "patch_sha256": "abf473383d6f62aa719a5cdff4c493ff764206a7dc14ab7999f950374a769bd8",
+  "sha256": "c20680b2a0f890fbf2bc660bb064c33c04f997ef08a82101cc3a44bdf08c6ab1",
+  "certificate_sha256": "544fb3ba1fc0b599dbe70c70db294621433559f4b4664585ead097a51ede0cfa",
+  "file_name": "HiNote-Studio-1.0.1.apk"
+}

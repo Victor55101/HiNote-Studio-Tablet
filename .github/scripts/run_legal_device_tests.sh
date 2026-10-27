@@ -37,7 +37,7 @@ python3 - <<'PY'
 from pathlib import Path
 root = Path('HiNote_Studio_Tablet_Android/app/build/outputs/connected_android_test_additional_output')
 expected = [f'{page}-{theme}.png' for theme in ('light', 'dark')
-            for page in ('about', 'privacy', 'licenses', 'license-detail')]
+            for page in ('about', 'privacy', 'terms', 'licenses', 'license-detail')]
 expected += ['welcome-light.png', 'editor-before-about.png', 'editor-after-about.png']
 for name in expected:
     matches = [p for p in root.rglob(name) if p.stat().st_size > 0]

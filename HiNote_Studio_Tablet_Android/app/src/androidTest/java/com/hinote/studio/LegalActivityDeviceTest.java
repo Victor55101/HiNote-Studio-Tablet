@@ -64,6 +64,10 @@ public class LegalActivityDeviceTest {
                 screenshot("privacy-"+theme);
                 instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrumentation.waitForIdleSync();
                 assertEquals("Acerca de HiNote Studio",text(activity,"legal-heading"));
+                click(activity,"legal-terms");assertEquals("Condiciones de uso",text(activity,"legal-heading"));
+                assertTrue(text(activity,"legal-document").contains("Las funciones ofrecidas gratuitamente se mantienen gratuitas"));
+                screenshot("terms-"+theme);click(activity,"legal-back");
+                assertEquals("Acerca de HiNote Studio",text(activity,"legal-heading"));
                 click(activity,"legal-licenses");screenshot("licenses-"+theme);click(activity,"legal-license-2");
                 assertTrue(text(activity,"legal-license-text").contains("PYTHON SOFTWARE FOUNDATION"));screenshot("license-detail-"+theme);
                 click(activity,"legal-back");assertEquals("Licencias de componentes",text(activity,"legal-heading"));

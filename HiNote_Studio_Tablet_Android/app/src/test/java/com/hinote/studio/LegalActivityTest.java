@@ -70,12 +70,35 @@ public class LegalActivityTest {
             activity.onBackPressed();assertEquals("Acerca de HiNote Studio",value(activity,"legal-heading"));
         }finally{close(host);}
     }
+    @Test public void termsAreAvailableOfflinePreserveTheBackStackAndOpenDirectPagesUrls(){
+        var host=Robolectric.buildActivity(LegalActivity.class).setup();
+        try{
+            LegalActivity activity=host.get();click(activity,"legal-terms");
+            assertEquals("Condiciones de uso",value(activity,"legal-heading"));
+            String body=value(activity,"legal-document");
+            assertTrue(body.contains("Las funciones ofrecidas gratuitamente se mantienen gratuitas"));
+            assertTrue(body.contains("no reclama la propiedad de tus notas"));
+            activity.openLink("privacy.html");assertEquals("Privacidad",value(activity,"legal-heading"));
+            click(activity,"legal-policy-web");Intent web=shadowOf(activity).getNextStartedActivity();
+            assertEquals(Intent.ACTION_VIEW,web.getAction());
+            assertEquals("https://victor55101.github.io/HiNote-Studio-Tablet/",web.getDataString());
+            activity.onBackPressed();assertEquals("Condiciones de uso",value(activity,"legal-heading"));
+            click(activity,"legal-terms-web");web=shadowOf(activity).getNextStartedActivity();
+            assertEquals("https://victor55101.github.io/HiNote-Studio-Tablet/terms.html",web.getDataString());
+            activity.openLink("https://hinote-studio-privacidad.fond-clock-3967.chatgpt.site");
+            assertNull(shadowOf(activity).getNextStartedActivity());
+            host.recreate();assertEquals("Condiciones de uso",value(host.get(),"legal-heading"));
+            host.get().onBackPressed();assertEquals("Acerca de HiNote Studio",value(host.get(),"legal-heading"));
+        }finally{close(host);}
+    }
     @Test public void welcomeIsInformationalAndIsRememberedOnlyWhenDismissed(){
         Intent intent=new Intent(org.robolectric.RuntimeEnvironment.getApplication(),LegalActivity.class).putExtra(LegalActivity.EXTRA_WELCOME,true);
         var host=Robolectric.buildActivity(LegalActivity.class,intent).setup();
         try{
             LegalActivity activity=host.get();assertTrue(LegalActivity.needsWelcome(activity));assertEquals("Continuar",value(activity,"legal-back"));
             click(activity,"legal-privacy");activity.onBackPressed();assertTrue(LegalActivity.needsWelcome(activity));
+            click(activity,"legal-terms");assertEquals("Condiciones de uso",value(activity,"legal-heading"));
+            activity.onBackPressed();assertTrue(LegalActivity.needsWelcome(activity));
             assertEquals("Bienvenido a HiNote Studio",value(activity,"legal-heading"));click(activity,"legal-back");
             assertTrue(activity.isFinishing());assertFalse(LegalActivity.needsWelcome(activity));
         }finally{close(host);}
