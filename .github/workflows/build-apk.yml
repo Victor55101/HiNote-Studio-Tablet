@@ -2,9 +2,9 @@ name: Build HiNote Studio production from V54.4
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, production-v54-4]
   pull_request:
-    branches: [main, v54-maintenance]
+    branches: [main, v54-maintenance, production-v54-4]
 permissions:
   contents: read
 concurrency:
@@ -59,7 +59,7 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: Solo-CI-SIN-FIRMA-No-instalar-HiNote-Studio-1.0.0
+          name: Solo-CI-SIN-FIRMA-No-instalar-HiNote-Studio-1.0.1
           path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk
       - name: Verify production artifact and report store readiness
         run: python .github/scripts/verify_production_apk.py HiNote_Studio_Tablet_Android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk --output distribution/apk-verification.json
@@ -121,7 +121,7 @@ jobs:
           if-no-files-found: warn
 
   signed-download:
-    name: Descarga firmada e instalable 1.0.0
+    name: Descarga anterior firmada 1.0.0 (no contiene los cambios de 1.0.1)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -145,7 +145,7 @@ jobs:
         run: |
           signer_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner.jar | sort -V | tail -n 1)"
           test -n "$signer_path"
-          python3 .github/scripts/verify_production_apk.py signed-release/HiNote-Studio-1.0.0.apk \
+          python3 .github/scripts/verify_production_apk.py signed-release/HiNote-Studio-1.0.0.apk --legacy-1-0-0 \
             --apksigner "$signer_path" \
             --expected-certificate 544fb3ba1fc0b599dbe70c70db294621433559f4b4664585ead097a51ede0cfa \
             --output signed-release/verification.json

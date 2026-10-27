@@ -15,14 +15,17 @@ PUBLISHER=ROOT/'distribution/publisher.json'
 
 def pending_fields(config):
     missing=[]
-    for key in ('publisher_name','postal_address','privacy_email','policy_url'):
+    for key in ('publisher_name','postal_address','privacy_email','policy_url','terms_url','terms_version'):
         if not isinstance(config.get(key),str) or not config[key].strip():missing.append(key)
     email=config.get('privacy_email','')
     if email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email):missing.append('valid_privacy_email')
     url=urlparse(config.get('policy_url',''))
     if config.get('policy_url') and (url.scheme!='https' or not url.hostname or url.username or url.password):missing.append('https_policy_url')
+    terms_url=urlparse(config.get('terms_url',''))
+    if config.get('terms_url') and (terms_url.scheme!='https' or not terms_url.hostname or terms_url.username or terms_url.password):missing.append('https_terms_url')
     if config.get('email_verified') is not True:missing.append('email_verified')
     if config.get('policy_url_verified') is not True:missing.append('policy_url_verified')
+    if config.get('terms_url_verified') is not True:missing.append('terms_url_verified')
     return missing
 
 def page(title,body):
@@ -88,14 +91,54 @@ def privacy(config):
 <p>Las notas y calibraciones que permanecen únicamente en tu dispositivo se gestionan desde la app: puedes editarlas, exportar perfiles y borrar los datos locales. El desarrollador no puede recuperar ni eliminar a distancia ese contenido.</p>
 <h2>9. Cambios y alcance</h2>
 <p>La versión del aviso aparece al inicio. El texto completo permanece accesible tocando el logo de la app y entrando en «Acerca de → Privacidad». Los cambios se informarán dentro de la aplicación y en la página pública del aviso. La bienvenida es informativa; el botón Continuar no es una autorización general para tratamientos nuevos. Un futuro servicio en línea, publicidad o tratamiento adicional deberá informarse antes de activarse y contar con la base jurídica que corresponda.</p>
-<p>El aviso web se consulta en una página independiente de HiNote Studio. Al abrirla, tu navegador se conecta con el proveedor de alojamiento y se aplica también su política de privacidad. Consultar el aviso dentro de la app no necesita conexión.</p>
+<p>El aviso web se aloja en GitHub Pages, un servicio de GitHub. Al abrirlo, tu navegador se conecta directamente a ese alojamiento y comunica los datos técnicos necesarios para servir la página, como la dirección IP, conforme a la política de privacidad del proveedor. Consultar el aviso dentro de la app no necesita conexión.</p>
 <p>HiNote Studio es un proyecto independiente. Huawei y Huawei Notes son denominaciones de sus respectivos titulares. Este aviso se refiere a HiNote Studio; consulta las condiciones de las otras aplicaciones y proveedores que decidas utilizar.</p>
 <h2>10. Responsable y contacto</h2><dl>
 <dt>Responsable · desarrollador independiente</dt><dd>'''+esc('publisher_name')+'''</dd>
 <dt>Domicilio de contacto</dt><dd>'''+esc('postal_address')+'''</dd>
 <dt>Soporte, privacidad y derechos sobre tus datos</dt><dd>'''+contact+'''</dd></dl>
-<p><a href="licenses.html">Consultar componentes y licencias</a></p>'''
+<p><a href="terms.html">Consultar condiciones de uso</a> · <a href="licenses.html">Consultar componentes y licencias</a></p>'''
     return page('Política de privacidad',body)
+
+def terms(config):
+    esc=lambda key:html.escape(config.get(key,'').strip()) or 'Pendiente de completar antes de publicar'
+    contact=esc('privacy_email')
+    if config.get('email_verified') is True and config.get('privacy_email'):
+        contact='<a href="mailto:'+html.escape(config['privacy_email'],quote=True)+'">'+contact+'</a>'
+    body='''<h1>Condiciones de uso de HiNote Studio</h1>
+<p class="muted">Acuerdo de licencia para la persona usuaria · Actualizado el '''+esc('terms_version')+'''</p>
+<p>Estas condiciones explican el permiso para utilizar HiNote Studio y las responsabilidades relacionadas con su uso. Puedes consultarlas sin conexión desde «Acerca de → Condiciones de uso». La política de privacidad y las licencias de componentes se presentan por separado.</p>
+<h2>1. La aplicación y su responsable</h2>
+<p>HiNote Studio convierte texto en trazos de escritura personal mediante calibraciones, permite editar notas y crea archivos .hinote compatibles con Huawei Notes. El desarrollador responsable es '''+esc('publisher_name')+'''. Su información de contacto figura al final de este acuerdo.</p>
+<h2>2. Permiso de uso</h2>
+<p>El desarrollador te concede una licencia no exclusiva para instalar y utilizar la aplicación en dispositivos que controles, con fines personales, académicos o profesionales lícitos. El permiso abarca crear, guardar, respaldar y exportar tus notas y calibraciones. No se transfiere la propiedad intelectual de la aplicación.</p>
+<p>HiNote Studio no reclama la propiedad de tus notas, textos, documentos ni muestras de escritura. Conservas los derechos que te correspondan sobre tu contenido y puedes utilizar los archivos que generes fuera de la aplicación.</p>
+<h2>3. Acceso gratuito y ofertas de pago</h2>
+<p>La aplicación no incluye cobros, suscripciones ni compras integradas. Las funciones ofrecidas gratuitamente se mantienen gratuitas para quienes las recibieron: no se exige un pago posterior para seguir utilizando ese acceso.</p>
+<p>Cualquier edición alternativa o complemento de pago se identificará por separado y explicará sus funciones, precio y condiciones antes de la compra. Una descarga gratuita, el botón Continuar de la bienvenida o una actualización no autorizan cargos. No se incorporan una fecha de caducidad ni un bloqueo remoto del acceso gratuito.</p>
+<h2>4. Uso permitido y derechos de terceros</h2>
+<p>Utiliza contenido y muestras de escritura propios o para los que tengas autorización. No utilices la aplicación para suplantar identidades, falsificar firmas o documentos ni vulnerar derechos de otras personas. La escritura generada no acredita la identidad ni la autoría de una persona.</p>
+<p>No presentes la aplicación como propia ni redistribuyas sus elementos protegidos sin autorización, salvo lo permitido por la ley o por las licencias aplicables. Los componentes de terceros conservan sus propios permisos y condiciones, que prevalecen para esos componentes. Este acuerdo no restringe los derechos que esas licencias te otorguen.</p>
+<h2>5. Compatibilidad y relación con Huawei</h2>
+<p>La compatibilidad depende de la tablet, el sistema y la edición de Huawei Notes instalada. Comprueba la importación y el aspecto de un archivo de prueba antes de confiar en un flujo de trabajo. Una actualización de otra aplicación o del sistema puede modificar la compatibilidad.</p>
+<p>HiNote Studio es un proyecto independiente. Huawei y Huawei Notes pertenecen a sus respectivos titulares; su mención indica interoperabilidad y no implica patrocinio, afiliación ni aprobación por Huawei. La aplicación no sustituye a Huawei Notes.</p>
+<h2>6. Guardado, respaldos y privacidad</h2>
+<p>Las notas y calibraciones se procesan localmente. Guarda tu trabajo y respalda los perfiles que quieras conservar antes de borrar los datos, desinstalar o cambiar de dispositivo. El desarrollador no puede recuperar a distancia el contenido almacenado únicamente en tu tablet. Los archivos exportados no incluyen cifrado ni contraseña propios.</p>
+<p>Consulta la <a href="privacy.html">política de privacidad</a> para conocer el uso de archivos, las copias temporales, los PDF adjuntos y los datos que puedas enviar voluntariamente al solicitar soporte.</p>
+<h2>7. Soporte y mantenimiento</h2>
+<p>Puedes comunicar problemas al correo de contacto indicando la versión instalada, el dispositivo y una descripción del fallo. Comparte solo la información necesaria. Se podrán ofrecer correcciones y mejoras, sin prometer una duración de soporte, una compatibilidad permanente o funciones futuras concretas.</p>
+<p>La aplicación es una herramienta de edición: revisa el contenido y la exportación antes de entregarlos o compartirlos. Nada de lo indicado aquí excluye las garantías, las responsabilidades del proveedor ni los derechos de la persona consumidora que sean obligatorios según la legislación aplicable.</p>
+<h2>8. Compras y reembolsos</h2>
+<p>La descarga gratuita no genera un importe que reembolsar. Si se ofrecen productos de pago, antes de adquirirlos se informarán el canal de compra, el precio y el procedimiento de soporte y reembolso aplicable. Los derechos legales de la persona consumidora se respetan en todos los casos; estas condiciones no establecen una exclusión general de reembolsos.</p>
+<h2>9. Cambios en estas condiciones</h2>
+<p>La fecha del acuerdo aparece al inicio. Los cambios se comunicarán en la aplicación y en la página pública. No convierten retroactivamente el acceso gratuito en una obligación de pago. Los servicios opcionales o compras futuras requerirán la información y la aceptación que correspondan antes de activarse.</p>
+<h2>10. Responsable y contacto</h2><dl>
+<dt>Desarrollador responsable</dt><dd>'''+esc('publisher_name')+'''</dd>
+<dt>Domicilio de contacto</dt><dd>'''+esc('postal_address')+'''</dd>
+<dt>Soporte y consultas sobre estas condiciones</dt><dd>'''+contact+'''</dd></dl>
+<p>Se respetan las disposiciones obligatorias aplicables en México y los derechos imperativos que correspondan en el lugar de residencia de la persona usuaria.</p>
+<p><a href="privacy.html">Consultar privacidad</a> · <a href="licenses.html">Consultar componentes y licencias</a></p>'''
+    return page('Condiciones de uso',body)
 
 def licenses():
     body='''<h1>Componentes y licencias</h1><p>HiNote Studio utiliza los siguientes componentes. Las licencias originales se conservan en este apartado. La cuadrícula de exportación se genera mediante líneas y medidas funcionales; no se empaqueta la fotografía del papel ni la cubierta de la nota de origen.</p><p>El formato .hinote se utiliza para interoperabilidad con Huawei Notes. La aplicación no incluye el APK de Huawei Notes ni se presenta como una aplicación oficial de Huawei.</p>'''
@@ -123,11 +166,14 @@ LICENSE_LABELS={
 def native_documents(config):
     policy=privacy(config)
     body=policy.split('<body>',1)[1].rsplit('</body>',1)[0]
-    notice={'schema':1,'policy_version':config['policy_version'],
+    notice={'schema':2,'policy_version':config['policy_version'],
         'contact_email':config.get('privacy_email','') if config.get('email_verified') else '',
         'policy_url':config.get('policy_url',''),'policy_url_verified':config.get('policy_url_verified') is True,
         'welcome_summary':'HiNote Studio convierte texto en trazos con tu escritura. Tus notas, calibraciones y archivos se guardan y procesan en este dispositivo. La app no requiere una cuenta ni envía ese contenido al desarrollador. Tú eliges qué importar, guardar o exportar a Huawei Notes.',
-        'privacy_html':body}
+        'privacy_html':body,
+        'terms_version':config.get('terms_version',''),
+        'terms_url':config.get('terms_url',''),'terms_url_verified':config.get('terms_url_verified') is True,
+        'terms_html':terms(config).split('<body>',1)[1].rsplit('</body>',1)[0]}
     components=[]
     for path in sorted((ROOT/'distribution/third_party').glob('*.txt')):
         name,license=LICENSE_LABELS[path.stem]
@@ -149,7 +195,9 @@ class PolicyMarkdown(HTMLParser):
         elif tag in ('strong','b'):self.parts.append('**')
         elif tag=='dt':self.parts.append('**\n\n')
         elif tag=='a':
-            url=self.links.pop().replace('licenses.html','../distribution/THIRD_PARTY.md');self.parts.append(']('+url+')')
+            url=self.links.pop()
+            url={'licenses.html':'../distribution/THIRD_PARTY.md','terms.html':'TERMS.md','privacy.html':'PRIVACY.md'}.get(url,url)
+            self.parts.append(']('+url+')')
     def handle_data(self,data):
         value=data.replace('\\','\\\\').replace('<','&lt;').replace('>','&gt;')
         for char in ('[',']','*','_','`'):value=value.replace(char,'\\'+char)
@@ -162,6 +210,7 @@ def main():
     ASSETS.mkdir(parents=True,exist_ok=True)
     text=privacy(config)
     (ASSETS/'privacy.html').write_text(text)
+    (ASSETS/'terms.html').write_text(terms(config))
     (ASSETS/'licenses.html').write_text(licenses())
     notice,components=native_documents(config)
     (ASSETS/'notice.json').write_text(json.dumps(notice,ensure_ascii=False,indent=2)+'\n')
@@ -169,9 +218,14 @@ def main():
     public=ROOT/'docs/privacy';public.mkdir(parents=True,exist_ok=True)
     (public/'index.html').write_text(text)
     (public/'licenses.html').write_text(licenses().replace('href="privacy.html"','href="index.html"'))
+    (public/'terms.html').write_text(terms(config).replace('href="privacy.html"','href="index.html"'))
     markdown=PolicyMarkdown();markdown.feed(notice['privacy_html'])
     (ROOT/'docs/PRIVACY.md').write_text(markdown.result())
-    report={'ready_for_store':not missing,'policy_version':config['policy_version'],'missing_fields':missing}
+    agreement=PolicyMarkdown();agreement.feed(notice['terms_html'])
+    (ROOT/'docs/TERMS.md').write_text(agreement.result())
+    report={'legal_information_complete':not missing,'ready_for_store':False,
+        'policy_version':config['policy_version'],'terms_version':config.get('terms_version',''),
+        'missing_fields':missing,'pending_checks':['signed_final_apk','physical_device_validation','appgallery_review']}
     (ROOT/'distribution/publication-status.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))
     if args.require_ready and missing:raise SystemExit('Store submission blocked: publisher/contact/policy URL information is incomplete.')

@@ -1,5 +1,12 @@
 {
-  "ready_for_store": true,
-  "policy_version": "2026-10-25",
-  "missing_fields": []
+  "legal_information_complete": true,
+  "ready_for_store": false,
+  "policy_version": "2026-10-27",
+  "terms_version": "2026-10-27",
+  "missing_fields": [],
+  "pending_checks": [
+    "signed_final_apk",
+    "physical_device_validation",
+    "appgallery_review"
+  ]
 }

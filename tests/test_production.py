@@ -19,12 +19,14 @@ class ProductionTests(unittest.TestCase):
     def test_publisher_identity_and_verified_channels_are_required_for_store(self):
         config={'publisher_name':'Persona de prueba','postal_address':'Domicilio de prueba',
             'privacy_email':'privacy@example.org','policy_url':'https://example.org/privacy',
-            'email_verified':True,'policy_url_verified':True,'policy_version':'2026-10-24'}
+            'email_verified':True,'policy_url_verified':True,'policy_version':'2026-10-24',
+            'terms_url':'https://example.org/terms','terms_url_verified':True,'terms_version':'2026-10-27'}
         self.assertEqual(legal.pending_fields(config),[])
-        for key in ('publisher_name','postal_address','privacy_email','policy_url','email_verified','policy_url_verified'):
+        for key in ('publisher_name','postal_address','privacy_email','policy_url','email_verified','policy_url_verified','terms_url','terms_version','terms_url_verified'):
             incomplete={**config,key:False if key.endswith('verified') else ''}
             self.assertIn(key,legal.pending_fields(incomplete))
         self.assertIn('https_policy_url',legal.pending_fields({**config,'policy_url':'http://example.org'}))
+        self.assertIn('https_terms_url',legal.pending_fields({**config,'terms_url':'http://example.org'}))
 
     def test_unconfirmed_email_is_not_a_live_contact_or_mail_link(self):
         config={'policy_version':'2026-10-24','proposed_privacy_email':'proposed@example.org'}
@@ -95,5 +97,29 @@ class ProductionTests(unittest.TestCase):
         notice,_=legal.native_documents(config);markdown=legal.PolicyMarkdown();markdown.feed(notice['privacy_html'])
         self.assertNotIn('<b>[persona]</b>',markdown.result())
         self.assertIn('&lt;b&gt;\\[persona\\]&lt;/b&gt;',markdown.result())
+
+    def test_terms_are_offline_complete_and_preserve_free_access_and_user_rights(self):
+        config=json.loads((ROOT/'distribution/publisher.json').read_text())
+        notice,_=legal.native_documents(config)
+        agreement=legal.terms(config)
+        for value in (config['publisher_name'],config['postal_address'],config['privacy_email'],
+                      'Las funciones ofrecidas gratuitamente se mantienen gratuitas',
+                      'no reclama la propiedad de tus notas','No se incorporan una fecha de caducidad',
+                      'derechos de la persona consumidora','licencias aplicables'):
+            self.assertIn(value,agreement);self.assertIn(value,notice['terms_html'])
+        self.assertIn("default-src 'none'",agreement)
+        self.assertNotIn('<script',agreement);self.assertNotIn('<iframe',agreement)
+        markdown=legal.PolicyMarkdown();markdown.feed(notice['terms_html'])
+        self.assertEqual(markdown.result(),(ROOT/'docs/TERMS.md').read_text())
+        self.assertEqual(agreement,(ROOT/'HiNote_Studio_Tablet_Android/app/src/main/assets/legal/terms.html').read_text())
+
+    def test_active_public_links_open_github_pages_without_chatgpt(self):
+        config=json.loads((ROOT/'distribution/publisher.json').read_text())
+        notice,_=legal.native_documents(config)
+        base='https://victor55101.github.io/HiNote-Studio-Tablet/'
+        self.assertEqual(notice['policy_url'],base)
+        self.assertEqual(notice['terms_url'],base+'terms.html')
+        self.assertTrue(notice['policy_url_verified']);self.assertTrue(notice['terms_url_verified'])
+        for value in (config,notice):self.assertNotIn('chatgpt.site',json.dumps(value))
 
 if __name__=='__main__':unittest.main()

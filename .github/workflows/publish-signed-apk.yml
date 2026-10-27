@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p signed-release
           curl --fail --silent --show-error --location --retry 2 --proto '=https' --proto-redir '=https' \
-            'https://hinote-studio-privacidad.fond-clock-3967.chatgpt.site/assets/releases/HiNote-Studio-1.0.0.apk' \
+            'https://github.com/Victor55101/HiNote-Studio-Tablet/releases/download/v1.0.0/HiNote-Studio-1.0.0.apk' \
             --output signed-release/HiNote-Studio-1.0.0.apk
           printf '%s  %s\n' '3513daa267dc5bbefa0036b81ea48307c73489cdeb22001ccd9ff7a0d47e88a0' 'HiNote-Studio-1.0.0.apk' > signed-release/SHA256SUMS.txt
           cd signed-release
@@ -40,7 +40,7 @@ jobs:
         run: |
           signer_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner.jar | sort -V | tail -n 1)"
           test -n "$signer_path"
-          python3 .github/scripts/verify_production_apk.py signed-release/HiNote-Studio-1.0.0.apk \
+          python3 .github/scripts/verify_production_apk.py signed-release/HiNote-Studio-1.0.0.apk --legacy-1-0-0 \
             --apksigner "$signer_path" \
             --expected-certificate 544fb3ba1fc0b599dbe70c70db294621433559f4b4664585ead097a51ede0cfa \
             --output signed-release/verification.json

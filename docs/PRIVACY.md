@@ -1,6 +1,6 @@
 # Política de privacidad de HiNote Studio
 
-Versión del aviso: 2026-10-25 · Aplicación Android · México
+Versión del aviso: 2026-10-27 · Aplicación Android · México
 
 HiNote Studio convierte texto en trazos de escritura personal mediante calibraciones y crea archivos compatibles con Huawei Notes. Este aviso describe el funcionamiento de la aplicación y el tratamiento de información asociado a su uso.
 
@@ -82,7 +82,7 @@ Las notas y calibraciones que permanecen únicamente en tu dispositivo se gestio
 
 La versión del aviso aparece al inicio. El texto completo permanece accesible tocando el logo de la app y entrando en «Acerca de → Privacidad». Los cambios se informarán dentro de la aplicación y en la página pública del aviso. La bienvenida es informativa; el botón Continuar no es una autorización general para tratamientos nuevos. Un futuro servicio en línea, publicidad o tratamiento adicional deberá informarse antes de activarse y contar con la base jurídica que corresponda.
 
-El aviso web se consulta en una página independiente de HiNote Studio. Al abrirla, tu navegador se conecta con el proveedor de alojamiento y se aplica también su política de privacidad. Consultar el aviso dentro de la app no necesita conexión.
+El aviso web se aloja en GitHub Pages, un servicio de GitHub. Al abrirlo, tu navegador se conecta directamente a ese alojamiento y comunica los datos técnicos necesarios para servir la página, como la dirección IP, conforme a la política de privacidad del proveedor. Consultar el aviso dentro de la app no necesita conexión.
 
 HiNote Studio es un proyecto independiente. Huawei y Huawei Notes son denominaciones de sus respectivos titulares. Este aviso se refiere a HiNote Studio; consulta las condiciones de las otras aplicaciones y proveedores que decidas utilizar.
 
@@ -100,4 +100,4 @@ Cda. de Totli 3, José María Morelos y Pavón, Iztapalapa, 09230 Ciudad de Méx
 
 [soporte.hinotestudio@gmail.com](mailto:soporte.hinotestudio@gmail.com)
 
-[Consultar componentes y licencias](../distribution/THIRD_PARTY.md)
+[Consultar condiciones de uso](TERMS.md) · [Consultar componentes y licencias](../distribution/THIRD_PARTY.md)

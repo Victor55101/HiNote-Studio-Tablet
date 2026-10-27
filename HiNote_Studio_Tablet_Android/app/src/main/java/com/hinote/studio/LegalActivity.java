@@ -157,10 +157,13 @@ public final class LegalActivity extends Activity {
     void openLink(String url){
         if("licenses.html".equals(url)){navigate("licenses");return;}
         if("privacy.html".equals(url)){navigate("privacy");return;}
+        if("terms.html".equals(url)){navigate("terms");return;}
         if(notice==null)return;
         String email=notice.optString("contact_email");
         if(("mailto:"+email).equals(url)){contact();return;}
-        if(url.equals(notice.optString("policy_url"))&&"https".equals(Uri.parse(url).getScheme())){
+        boolean publicPolicy=notice.optBoolean("policy_url_verified")&&url.equals(notice.optString("policy_url"));
+        boolean publicTerms=notice.optBoolean("terms_url_verified")&&url.equals(notice.optString("terms_url"));
+        if((publicPolicy||publicTerms)&&"https".equals(Uri.parse(url).getScheme())){
             try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}
             catch(RuntimeException unavailable){Toast.makeText(this,"No hay un navegador disponible",Toast.LENGTH_SHORT).show();}
         }
@@ -172,24 +175,29 @@ public final class LegalActivity extends Activity {
         try{startActivity(intent);}catch(RuntimeException unavailable){Toast.makeText(this,"No hay una app de correo disponible",Toast.LENGTH_SHORT).show();}
     }
     private void render(){
-        content.removeAllViews();heading.setText("about".equals(page)?"Acerca de HiNote Studio":"welcome".equals(page)?"Bienvenido a HiNote Studio":"privacy".equals(page)?"Privacidad":"licenses".equals(page)?"Licencias de componentes":"contact".equals(page)?"Contacto":"data".equals(page)?"Datos locales":"Licencia del componente");
+        content.removeAllViews();heading.setText("about".equals(page)?"Acerca de HiNote Studio":"welcome".equals(page)?"Bienvenido a HiNote Studio":"privacy".equals(page)?"Privacidad":"terms".equals(page)?"Condiciones de uso":"licenses".equals(page)?"Licencias de componentes":"contact".equals(page)?"Contacto":"data".equals(page)?"Datos locales":"Licencia del componente");
         back.setText("welcome".equals(page)?"Continuar":"Volver");
         try{
             if(notice==null)throw new IllegalStateException("Información no disponible");
             if("welcome".equals(page)){
                 brand();paragraph(notice.getString("welcome_summary"));
                 row("Privacidad","Consulta cómo se utiliza la información","legal-privacy",()->navigate("privacy"));
+                row("Condiciones de uso","Permiso de uso, soporte y tus derechos","legal-terms",()->navigate("terms"));
                 row("Licencias","Componentes que hacen posible la aplicación","legal-licenses",()->navigate("licenses"));
                 paragraph("Puedes consultar esta información después tocando el logo de la app. Continuar cierra esta bienvenida.");
             }else if("about".equals(page)){
                 brand();
                 row("Privacidad","Información, almacenamiento y derechos","legal-privacy",()->navigate("privacy"));
+                row("Condiciones de uso","Licencia de la aplicación y tus derechos","legal-terms",()->navigate("terms"));
                 row("Licencias","Avisos de los componentes utilizados","legal-licenses",()->navigate("licenses"));
                 row("Contacto",notice.getString("contact_email"),"legal-contact",()->navigate("contact"));
                 row("Datos locales","Guardado y eliminación en este dispositivo","legal-data",()->navigate("data"));
             }else if("privacy".equals(page)){
                 document(notice.getString("privacy_html"));
                 if(notice.optBoolean("policy_url_verified"))row("Consultar versión web","Abrir el aviso público en tu navegador","legal-policy-web",()->openLink(notice.optString("policy_url")));
+            }else if("terms".equals(page)){
+                document(notice.getString("terms_html"));
+                if(notice.optBoolean("terms_url_verified"))row("Consultar versión web","Abrir las condiciones en tu navegador","legal-terms-web",()->openLink(notice.optString("terms_url")));
             }else if("licenses".equals(page)){
                 paragraph("HiNote Studio utiliza estos componentes. Aquí puedes consultar sus autores, permisos y condiciones originales.");
                 JSONArray components=licenses();
