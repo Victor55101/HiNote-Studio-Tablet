@@ -715,7 +715,7 @@ NotebookUI.init();
   document.addEventListener('pointerdown',event=>{
     touch=null;touchRevision++;
     if((event.pointerType!=='touch'&&event.pointerType!=='pen')||!event.isPrimary||mode==='physical')return;
-    const node=typingField(event.target);
+    const node=typingField(event.target)||window.ProEditor?.typingTarget(event);
     if(!node){window.AndroidBridge?.cancelTouchKeyboard?.(!!event.target.closest('#previewWrap'));return;}
     touch={id:event.pointerId,node,x:event.clientX,y:event.clientY,moved:false};
     // Restore the field's original hint before its default focus/selection.

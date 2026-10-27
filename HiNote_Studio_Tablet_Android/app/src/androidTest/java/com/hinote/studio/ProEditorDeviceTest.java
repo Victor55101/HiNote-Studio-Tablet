@@ -5,6 +5,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.view.View;
+import android.view.MotionEvent;
+import android.os.SystemClock;
+import org.json.JSONObject;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -38,7 +41,7 @@ public class ProEditorDeviceTest {
     private void waitFor(String predicate)throws Exception{
         long end=System.currentTimeMillis()+45000;
         while(System.currentTimeMillis()<end){if("true".equals(js(predicate)))return;Thread.sleep(150);}
-        fail("Timed out: "+predicate+"; "+js("document.body.innerText.slice(0,1000)"));
+        fail("Timed out: "+predicate+"; "+js("JSON.stringify({text:readLines().map(lineText),focus:document.activeElement?.id,selection:bookmark(),hint:document.getElementById('proHint')?.textContent})"));
     }
     @Test public void realWebViewTypesLiveAndExportsTheSameGeometry()throws Exception{
         assertTrue(BuildConfig.PRO_EDITOR);
@@ -49,6 +52,14 @@ public class ProEditorDeviceTest {
             instrumentation.runOnMainSync(()->web=find(activity.getWindow().getDecorView()));assertNotNull(web);
             waitFor("!!window.ProEditor?.active");
             js("renderLines([[{text:'Apuntes con mi escritura',...DEFAULT_STYLE}]]);restoreSelection({start:{line:0,offset:23},end:{line:0,offset:23}});changed();true");
+            instrumentation.runOnMainSync(()->web.requestFocus());
+            JSONObject point=new JSONObject(js("(()=>{const c=ProEditor.testPlan().pages[0].rows[0].carets.at(-1),r=$('canvasShell').getBoundingClientRect();return {x:r.left+c.x*.675*zoom,y:r.top+(c.y-20)*.675*zoom}})()"));
+            int[] location=new int[2];instrumentation.runOnMainSync(()->web.getLocationOnScreen(location));
+            long now=SystemClock.uptimeMillis();
+            instrumentation.sendPointerSync(MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0));
+            instrumentation.sendPointerSync(MotionEvent.obtain(now,now+100,MotionEvent.ACTION_UP,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0));
+            Thread.sleep(500);instrumentation.waitForIdleSync();
+            assertEquals("true",js("document.activeElement===editor"));
             instrumentation.sendStringSync(" Pro");
             waitFor("lineText(readLines()[0]).includes(' Pro')");
             assertEquals("true",js("document.body.classList.contains('proUnified') && ProEditor.testPlan().pages[0].items.length>10"));

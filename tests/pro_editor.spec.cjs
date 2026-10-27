@@ -28,6 +28,15 @@ const bank=JSON.parse(cp.execFileSync('python3',['tests/pro_fixture.py'],{cwd:ro
     await page.mouse.click(point.x,point.y);await page.keyboard.type('PRO ');
     assert.match(await page.evaluate(()=>lineText(readLines()[0])),/^Hola PRO Hugo/);
     await page.keyboard.press('Control+z');assert.match(await page.evaluate(()=>lineText(readLines()[0])),/^Hola Hugo/);
+    // Touch tapping, one-finger pan and two-finger zoom use the same surface.
+    await page.touchscreen.tap(point.x,point.y);await page.keyboard.type('T');
+    assert.match(await page.evaluate(()=>lineText(readLines()[0])),/^Hola THugo/);
+    await page.evaluate(()=>{
+      const root=$('previewWrap'),capture=root.setPointerCapture;root.setPointerCapture=()=>{};const b=$('canvasShell').getBoundingClientRect(),event=(type,id,x,y)=>root.dispatchEvent(new PointerEvent(type,{pointerId:id,pointerType:'touch',isPrimary:id===101,clientX:x,clientY:y,button:0,bubbles:true,cancelable:true}));
+      window.proZoomBefore=zoom;event('pointerdown',101,b.left+100,b.top+180);event('pointerdown',102,b.left+200,b.top+180);event('pointermove',102,b.left+250,b.top+180);event('pointerup',102,b.left+250,b.top+180);event('pointerup',101,b.left+100,b.top+180);root.setPointerCapture=capture;
+    });
+    assert.ok(await page.evaluate(()=>zoom>proZoomBefore));
+    // Synthetic pointers have no native capture; real browser pointers above do.
     // Native IME intermediate changes are drawn without committing the model.
     await page.evaluate(()=>{restoreSelection({start:{line:0,offset:4},end:{line:0,offset:4}});editor.dispatchEvent(new CompositionEvent('compositionstart'));document.execCommand('insertText',false,'ñ');editor.dispatchEvent(new InputEvent('input',{isComposing:true,inputType:'insertCompositionText'}));});
     assert.ok(await page.evaluate(()=>ProEditor.testPlan().pages.some(p=>p.items.some(c=>c.ch==='ñ'))));

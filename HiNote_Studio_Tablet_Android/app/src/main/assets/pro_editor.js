@@ -170,7 +170,7 @@ window.ProEditor = (() => {
     clearTimeout(refreshTimer);requestLibrary();
   }
   init();
-  return {get active(){return active;},get enabled(){return enabled;},changed,showPage,exportPlan,selection,reload:()=>{if(enabled)requestLibrary();},
+  return {get active(){return active;},get enabled(){return enabled;},changed,showPage,exportPlan,selection,typingTarget:e=>active&&e.target.closest('#canvasShell')&&!e.target.closest('button')&&!ImageEditor.hitAt(e)?editor:null,reload:()=>{if(enabled)requestLibrary();},
     metrics:()=>({layoutMs:lastLayoutMs,paintMs:lastPaintMs,cacheSize:cache.size,pages:plan?.pages.length||0}),
     testPlan:()=>plan};
 })();
