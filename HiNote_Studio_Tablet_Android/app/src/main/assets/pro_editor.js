@@ -129,6 +129,13 @@ window.ProEditor = (() => {
     if(gesture.drag){move(e.shiftKey?(bookmark()?.start||point):point,point);$p('previewWrap').setPointerCapture(e.pointerId);}
     else gesture.timer=setTimeout(()=>{if(!gesture||gesture.moved)return;const text=lineText(readLines()[point.line]),before=text.slice(0,point.offset).match(/[\p{L}\p{N}]+$/u)?.[0]?.length||0,after=text.slice(point.offset).match(/^[\p{L}\p{N}]+/u)?.[0]?.length||0;gesture.drag=true;gesture.start={line:point.line,offset:point.offset-before};move(gesture.start,{line:point.line,offset:point.offset+after});},450);
   }
+  window.onProViewport=(height,width)=>{
+    if(!enabled||!Number.isFinite(height)||!Number.isFinite(width)||width<=0)return;
+    const cssHeight=Math.max(120,height*innerWidth/width),value=`${cssHeight}px`;
+    if(document.documentElement.style.getPropertyValue('--pro-viewport-height')===value)return;
+    document.documentElement.style.setProperty('--pro-viewport-height',value);
+    lastCaretKey=null;if(active)requestAnimationFrame(showPage);
+  };
   function init(){
     if(!enabled)return;
     document.body.classList.add('proEdition');document.querySelector('.titlewrap h1').textContent='HiNote Studio Pro';

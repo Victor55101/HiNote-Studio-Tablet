@@ -59,6 +59,9 @@ const bank=JSON.parse(cp.execFileSync('python3',['tests/pro_fixture.py'],{cwd:ro
     fs.writeFileSync(path.join(root,'test-results/pro-performance.json'),JSON.stringify({environment:'Headless Chromium desktop; not a tablet measurement',p95Ms:p95,samples:times},null,2));
     await page.evaluate(()=>{$('noteTitle').value='Mis apuntes · Pro';currentPage=0;zoom=.8;applyZoom();restoreSelection({start:{line:0,offset:0},end:{line:0,offset:0}});});
     await page.screenshot({path:path.join(root,'test-results/pro-unified.png')});
+    await page.evaluate(()=>onProViewport(700,innerWidth));
+    assert.ok(await page.evaluate(()=>document.querySelector('.previewFooter').getBoundingClientRect().bottom<=701),'Navigation must stay above the keyboard');
+    await page.evaluate(()=>onProViewport(1000,innerWidth));
     // Reload preserves text; classic fallback is explicit and reversible.
     await page.evaluate(()=>saveDraft());await page.reload();await page.waitForFunction(()=>ProEditor?.active);
     assert.equal(await page.evaluate(()=>readLines().length),65);

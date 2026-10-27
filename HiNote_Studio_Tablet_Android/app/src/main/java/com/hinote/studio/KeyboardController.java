@@ -53,7 +53,7 @@ final class KeyboardController implements InputManager.InputDeviceListener {
     }
     void start(){if(active)return;active=true;if(inputs!=null)inputs.registerInputDeviceListener(this,handler);activity.getWindow().getDecorView().getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
         // Floating keyboards can change IME visibility without resizing a view.
-        if(android.os.Build.VERSION.SDK_INT>=30)web.setOnApplyWindowInsetsListener((view,insets)->{setImeVisibility(insets.isVisible(android.view.WindowInsets.Type.ime()));return view.onApplyWindowInsets(insets);});
+        if(android.os.Build.VERSION.SDK_INT>=30)web.setOnApplyWindowInsetsListener((view,insets)->{setImeVisibility(insets.isVisible(android.view.WindowInsets.Type.ime()));publishProViewport(insets.getInsets(android.view.WindowInsets.Type.ime()).bottom);return view.onApplyWindowInsets(insets);});
         checkImeVisibility();refresh();}
     void stop(){active=false;cancelTouch();if(inputs!=null)inputs.unregisterInputDeviceListener(this);activity.getWindow().getDecorView().getViewTreeObserver().removeOnGlobalLayoutListener(layoutListener);if(android.os.Build.VERSION.SDK_INT>=30)web.setOnApplyWindowInsetsListener(null);handler.removeCallbacksAndMessages(null);activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);}
     private void checkImeVisibility(){
@@ -62,6 +62,13 @@ final class KeyboardController implements InputManager.InputDeviceListener {
         if(android.os.Build.VERSION.SDK_INT>=30){android.view.WindowInsets insets=decor.getRootWindowInsets();visible=insets!=null&&insets.isVisible(android.view.WindowInsets.Type.ime());}
         else{Rect frame=new Rect();decor.getWindowVisibleDisplayFrame(frame);visible=decor.getRootView().getHeight()-frame.bottom>160*activity.getResources().getDisplayMetrics().density;}
         setImeVisibility(visible);
+        if(android.os.Build.VERSION.SDK_INT>=30){android.view.WindowInsets insets=decor.getRootWindowInsets();if(insets!=null)publishProViewport(insets.getInsets(android.view.WindowInsets.Type.ime()).bottom);}
+        else{Rect frame=new Rect();decor.getWindowVisibleDisplayFrame(frame);publishProViewport(Math.max(0,decor.getRootView().getHeight()-frame.bottom));}
+    }
+    private void publishProViewport(int imeBottom){
+        if(!BuildConfig.PRO_EDITOR||web.getWidth()<=0||web.getHeight()<=0)return;
+        int height=Math.max(1,Math.min(web.getHeight(),activity.getWindow().getDecorView().getHeight()-imeBottom));
+        web.evaluateJavascript("window.onProViewport && window.onProViewport("+height+","+web.getWidth()+");",null);
     }
     private void setImeVisibility(boolean visible){if(visible!=imeVisible){imeVisible=visible;if(active)web.evaluateJavascript("window.onKeyboardVisibility && window.onKeyboardVisibility("+visible+");",null);}}
     void refresh(){

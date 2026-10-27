@@ -77,6 +77,8 @@ public class ProEditorDeviceTest {
                 assertTrue(connection.commitText(" Pro",1));
             });
             waitFor("lineText(readLines()[0]).includes(' Pro')");
+            waitFor("getComputedStyle(document.documentElement).getPropertyValue('--pro-viewport-height').trim().length>0");
+            assertEquals("true",js("document.querySelector('.app').getBoundingClientRect().height<=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pro-viewport-height'))+1"));
             assertEquals("true",js("document.body.classList.contains('proUnified') && ProEditor.testPlan().pages[0].items.length>10"));
             js("$('noteTitle').value='Prueba del editor Pro';saveDraft();refreshPreview();true");
             waitFor("!composing && composition?.layout?.engine==='hinote-live-v1'");
