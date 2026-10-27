@@ -7,6 +7,8 @@ import android.graphics.Bitmap;
 import android.view.View;
 import android.view.MotionEvent;
 import android.os.SystemClock;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
 import org.json.JSONObject;
 import android.view.ViewGroup;
 import android.webkit.WebView;
@@ -51,16 +53,20 @@ public class ProEditorDeviceTest {
         try{
             instrumentation.runOnMainSync(()->web=find(activity.getWindow().getDecorView()));assertNotNull(web);
             waitFor("!!window.ProEditor?.active");
-            js("renderLines([[{text:'Apuntes con mi escritura',...DEFAULT_STYLE}]]);restoreSelection({start:{line:0,offset:23},end:{line:0,offset:23}});changed();true");
+            js("renderLines([[{text:'Apuntes con mi escritura',...DEFAULT_STYLE}]]);restoreSelection({start:{line:0,offset:23},end:{line:0,offset:23}},false);changed();true");
             instrumentation.runOnMainSync(()->web.requestFocus());
             JSONObject point=new JSONObject(js("(()=>{const c=ProEditor.testPlan().pages[0].rows[0].carets.at(-1),r=$('canvasShell').getBoundingClientRect();return {x:r.left+c.x*.675*zoom,y:r.top+(c.y-20)*.675*zoom}})()"));
             int[] location=new int[2];instrumentation.runOnMainSync(()->web.getLocationOnScreen(location));
             long now=SystemClock.uptimeMillis();
-            instrumentation.sendPointerSync(MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0));
-            instrumentation.sendPointerSync(MotionEvent.obtain(now,now+100,MotionEvent.ACTION_UP,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0));
+            instrumentation.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0),true);
+            instrumentation.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now+100,MotionEvent.ACTION_UP,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0),true);
             Thread.sleep(500);instrumentation.waitForIdleSync();
             assertEquals("true",js("document.activeElement===editor"));
-            instrumentation.sendStringSync(" Pro");
+            instrumentation.runOnMainSync(()->{
+                InputConnection connection=web.onCreateInputConnection(new EditorInfo());
+                assertNotNull("Native IME input connection",connection);
+                assertTrue(connection.commitText(" Pro",1));
+            });
             waitFor("lineText(readLines()[0]).includes(' Pro')");
             assertEquals("true",js("document.body.classList.contains('proUnified') && ProEditor.testPlan().pages[0].items.length>10"));
             js("$('noteTitle').value='Prueba del editor Pro';saveDraft();refreshPreview();true");
