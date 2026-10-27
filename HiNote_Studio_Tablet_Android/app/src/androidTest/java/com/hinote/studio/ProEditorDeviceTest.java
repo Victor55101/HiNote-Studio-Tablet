@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.view.View;
 import android.view.MotionEvent;
+import android.view.InputDevice;
 import android.os.SystemClock;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -58,8 +59,11 @@ public class ProEditorDeviceTest {
             JSONObject point=new JSONObject(js("(()=>{const c=ProEditor.testPlan().pages[0].rows[0].carets.at(-1),r=$('canvasShell').getBoundingClientRect();return {x:r.left+c.x*.675*zoom,y:r.top+(c.y-20)*.675*zoom}})()"));
             int[] location=new int[2];instrumentation.runOnMainSync(()->web.getLocationOnScreen(location));
             long now=SystemClock.uptimeMillis();
-            instrumentation.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0),true);
-            instrumentation.getUiAutomation().injectInputEvent(MotionEvent.obtain(now,now+100,MotionEvent.ACTION_UP,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0),true);
+            for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP}){
+                MotionEvent event=MotionEvent.obtain(now,now+(action==MotionEvent.ACTION_UP?100:0),action,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0);
+                event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+                try{assertTrue(instrumentation.getUiAutomation().injectInputEvent(event,true));}finally{event.recycle();}
+            }
             Thread.sleep(500);instrumentation.waitForIdleSync();
             assertEquals("true",js("document.activeElement===editor"));
             instrumentation.runOnMainSync(()->{
