@@ -32,6 +32,11 @@ adb shell settings put global animator_duration_scale 0
 adb shell wm size 1600x1000
 adb shell wm density 160
 adb shell input keyevent 82
+# This disposable emulator has no home-screen test. The Google launcher may
+# show its own boot-time ANR while Gradle competes for the runner's CPU; that
+# system dialog intercepts app touches. Disable only that unrelated launcher.
+adb shell am force-stop com.google.android.apps.nexuslauncher || true
+adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher || true
 gradle --no-daemon -p HiNote_Studio_Tablet_Android connectedProDebugAndroidTest -PhinoteTestAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.hinote.studio.ProEditorDeviceTest
 python3 - <<'PY'
 from pathlib import Path
