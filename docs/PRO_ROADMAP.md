@@ -1,7 +1,7 @@
 # HiNote Studio Pro: propuesta y base de desarrollo
 
 Fecha: 2026-10-27.
-Estado: rama creada y arquitectura revisada; funciones Pro todavía no implementadas.
+Estado: primera entrega de desarrollo Pro 0.1.0. Editor en vivo para texto y listas implementado; cálculos y gráficas vinculadas pendientes.
 Rama: `pro-development`.
 Base exacta: tag `v1.0.1`, commit `ed4d7f8a46c87d24f3c9b1893a1cb2fc9c13f696`, derivado de V54.4.
 La rama de producción sigue siendo `production-v54-4`. No basar Pro en `main`, que conserva código anterior.
@@ -9,6 +9,18 @@ La rama de producción sigue siendo `production-v54-4`. No basar Pro en `main`, 
 ## Objetivo
 
 Crear una edición orientada a apuntes técnicos: edición directa sobre la página manuscrita, tablas con cálculos y gráficas vinculadas a datos. Aprovechar la escritura personal y la interoperabilidad existentes. No presentar el alcance inicial como un reemplazo completo de Excel.
+
+## Entrega 0.1.0
+
+El nuevo editor compone la geometría de la escritura localmente en JavaScript y dibuja la página con los trazos de la calibración. La entrada nativa mantiene el modelo de texto, el formato, la composición de acentos y el historial. Un caché de párrafos y otro de imágenes de glifos evitan repetir trabajo que no ha cambiado.
+
+La exportación recibe el plan de posiciones, valida sus referencias contra el documento y recupera de la calibración los puntos, presión y metadatos originales. No vuelve a distribuir el texto con otro motor.
+
+La aplicación se instala por separado como `com.hinote.studio.pro`, versión `0.1.0`, código `1`. Sus borradores y perfiles pertenecen a esa instalación. Los respaldos de calibración se pueden importar desde la app estable.
+
+La edición directa cubre texto y listas. Las notas que contienen tablas, fórmulas, gráficas o PDF pasan a la vista clásica, con un aviso visible. La representación y edición directa de esos objetos siguen pendientes. Las imágenes conservan sus herramientas existentes sobre la página.
+
+Las pruebas del navegador incluyen escritura por teclado, toque, selección, formato, composición de acentos, paginación, gestos de zoom, restauración de borradores y rendimiento. Las pruebas Python verifican que la exportación conserva las posiciones y la presión, rechaza planes incompletos o inválidos y genera .hinote válidos. El rendimiento de escritorio no garantiza el mismo tiempo en una tablet física.
 
 La separación de ramas organiza el desarrollo; no crea automáticamente otra aplicación instalable. Antes del primer APK Pro se definirá una identidad de paquete de desarrollo independiente para probar ambas instalaciones sin sustituir la app estable ni sus datos. Nombre comercial, precio, identificador definitivo y mecanismo de compra quedan pendientes.
 
@@ -94,4 +106,4 @@ El APK 1.0.1 ya está disponible en un Release público de GitHub; no se conoce 
 
 La matriz de funciones para una futura edición gratuita está pendiente de decisión; este cambio no retira funciones ni modifica condiciones existentes. Si se propone una edición de lanzamiento más limitada, habrá que definir el tratamiento de quienes ya recibieron la 1.0.1 y consultar el alcance de la cláusula 3.12 de Huawei. No se presupone una excepción por llamar a la distribución beta, cambiar el nombre o cambiar el paquete.
 
-Esta rama inicia el trabajo de diseño. No se ha creado un APK Pro, activado cobros ni enviado una nueva app a AppGallery.
+La primera entrega Pro es una prueba del editor. No activa cobros ni envía una nueva app a AppGallery.

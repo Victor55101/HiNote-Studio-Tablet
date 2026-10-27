@@ -1,0 +1,76 @@
+name: Descargar HiNote Studio Pro firmado
+on:
+  push:
+    branches: [pro-development]
+    paths:
+      - '.github/workflows/publish-pro.yml'
+      - 'distribution/releases/pro-0.1.0.*'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hinote-pro-signed-0.1.0
+  cancel-in-progress: false
+jobs:
+  signed-download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Confirmar pruebas del código compilado
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json,os,subprocess
+          release=json.load(open('distribution/releases/pro-0.1.0.json'))
+          api=f"repos/{os.environ['GH_REPO']}/actions/runs/{release['validation_run']}"
+          run=json.loads(subprocess.check_output(['gh','api',api]))
+          assert run['head_sha']==release['source_commit'] and run['conclusion']=='success'
+          jobs=json.loads(subprocess.check_output(['gh','api',api+'/jobs']))['jobs']
+          assert {'test','build','device'} <= {j['name'] for j in jobs if j['conclusion']=='success'}
+          PY
+      - name: Restaurar y verificar el APK firmado
+        run: |
+          python -m pip install bsdiff4==1.2.6
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            'https://github.com/Victor55101/HiNote-Studio-Tablet/releases/download/v1.0.1/HiNote-Studio-1.0.1.apk' \
+            --output "$RUNNER_TEMP/base.apk"
+          python .github/scripts/restore_pro_release.py "$RUNNER_TEMP/base.apk" --output signed-pro/HiNote-Studio-Pro-0.1.0.apk
+          signer_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner.jar | sort -V | tail -n 1)"
+          test -n "$signer_path"
+          python .github/scripts/verify_pro_apk.py signed-pro/HiNote-Studio-Pro-0.1.0.apk --apksigner "$signer_path" --output signed-pro/verification.json
+          python .github/scripts/check_legal_links.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HiNote-Studio-Pro-0.1.0-FIRMADO-INSTALABLE
+          path: signed-pro/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Preparar borrador de entrega
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view pro-v0.1.0 --json tagName > /dev/null 2>&1; then
+            mkdir existing-pro
+            gh release download pro-v0.1.0 --pattern HiNote-Studio-Pro-0.1.0.apk --dir existing-pro
+            cmp existing-pro/HiNote-Studio-Pro-0.1.0.apk signed-pro/HiNote-Studio-Pro-0.1.0.apk
+          else
+            gh release create pro-v0.1.0 signed-pro/HiNote-Studio-Pro-0.1.0.apk signed-pro/SHA256SUMS.txt signed-pro/verification.json \
+              --target "${{ github.sha }}" --title 'HiNote Studio Pro 0.1.0 · Editor en vivo' \
+              --notes-file distribution/releases/pro-0.1.0.md --draft --prerelease --latest=false
+          fi
