@@ -1,4 +1,16 @@
-# HiNote Studio Tablet — V54.4 (base funcional V54)
+# HiNote Studio — 1.0.1, basada en V54.4
+
+Código 68 · `1.0.1` · [Preparación para AppGallery](docs/APPGALLERY_PREPARATION.md).
+Incluye condiciones de uso consultables sin conexión y enlaces directos al
+aviso de privacidad y al acuerdo en GitHub Pages. Conserva el acceso gratuito
+sin añadir cobros ni bloqueos. El modelo comercial requiere resolver la
+aplicación de la cláusula 3.12 con Huawei antes de publicar.
+Tocar el logo abre **Acerca de**, con versión instalada, privacidad, licencias,
+contacto y datos locales. La bienvenida informativa aparece una sola vez. Los
+documentos se muestran con controles nativos, sin depender de un WebView.
+El [aviso público](docs/PRIVACY.md) y la copia local se generan de la misma fuente,
+con la identidad y el contacto confirmados por el titular del proyecto.
+La compilación no implica publicación ni aprobación de una tienda.
 
 App Android para convertir texto a trazos manuscritos, guardar varias calibraciones personales y exportar notas a Huawei Notes como `.hinote`.
 

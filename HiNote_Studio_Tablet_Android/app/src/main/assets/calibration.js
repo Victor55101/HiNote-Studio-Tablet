@@ -44,6 +44,12 @@ const CalibrationUI = (() => {
   }
   function draw(){
     const p=current();if(!p)return;
+    // Selection inspects a profile; activeProfile is the handwriting actually
+    // used by the document. Recompute labels after every activation.
+    for(const option of el('profileList').options){
+      const profile=profiles.find(item=>item.id===option.value);
+      if(profile){const label=profile.name+(profile.id===activeProfile?' · activa':'');if(option.textContent!==label)option.textContent=label;}
+    }
     el('profileHeading').textContent=p.name+(p.protected?' · predeterminada y protegida':'');
     el('profileName').value=p.name;
     el('profileCoverage').textContent=`${p.found.length} encontrados · ${p.missing.length} faltantes · ${p.fallback.length} disponibles en Original · ${p.unavailable.length} sin muestra`;
@@ -52,7 +58,7 @@ const CalibrationUI = (() => {
     el('importReview').classList.toggle('hidden',!review);
     if(review)el('importReviewText').textContent=(review.copiesOriginal?'Se guardará como Original ampliada. ':'')+(review.replaced?`Se reemplazarán ${review.replaced} caracteres del perfil con las muestras importadas. `:'')+'Las filas vacías no borran caracteres existentes. Guardar el perfil no cambia automáticamente la letra de tu nota.';
     el('activeProfileSelect').value=activeProfile;
-    drawCharacters();controls();window.StudioUI?.profile(p,profiles.find(x=>x.id===activeProfile));
+    drawCharacters();controls();window.StudioUI?.profile(p,profiles.find(x=>x.id===activeProfile));window.StudioUI?.syncSelects?.();
   }
   function updateCatalog(data){
     profiles=data.profiles;groups=data.groups||{};
@@ -70,7 +76,7 @@ const CalibrationUI = (() => {
     try{
       const data=JSON.parse(raw||'{}');
       if(data.profiles){updateCatalog(data);status(data.problems?.length?data.problems.join('\n'):'Elige un perfil para ver sus caracteres.');}
-      else if(data.review){review=data;view='found';draw();status('Calibración analizada. Revisa encontrados y faltantes antes de guardar.');}
+      else if(data.review){review=data;view='found';draw();status('Calibración analizada. Revisa el resultado y elige Guardar perfil o Descartar en el aviso superior.');}
       else if(data.preview){el('profilePreview').src=data.preview;el('profilePreview').classList.remove('hidden');el('profilePreviewWarnings').textContent=(data.warnings||[]).join(' · ');status('Vista de la primera página de prueba.');}
       else if(data.saved||data.deleted){
         review=null;if(data.saved)selected=data.saved;

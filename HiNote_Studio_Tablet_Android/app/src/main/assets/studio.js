@@ -78,7 +78,10 @@ window.StudioUI = (() => {
     characters.append(top,el('characterLegend'),el('characterGrid'),el('profileWarnings'));
     const template=el('templateOptions'),test=el('profilePreviewOptions');template.open=true;test.open=true;
     profileTabs=tabs([['characters','Caracteres'],['template','Crear plantilla'],['test','Probar esta escritura']],key=>{characters.classList.toggle('hidden',key!=='characters');template.classList.toggle('hidden',key!=='template');test.classList.toggle('hidden',key!=='test');});profileTabs.bar.id='profileInspectorTabs';
-    content.append(profileTabs.bar,paneBody);paneBody.append(characters,template,test,el('importReview'));profileTabs.select('characters');
+    content.append(profileTabs.bar,paneBody);paneBody.append(characters,template,test);profileTabs.select('characters');
+    // Keep the existing review notice outside the scrolling character pane.
+    // It stays visible without moving focus, opening a keyboard or a modal.
+    el('calibrationStatus').after(el('importReview'));
     const templateLayout=node('div','templateLayout'),settings=node('div'),summary=node('aside','templateSummary');
     for(const n of [...template.children])if(n.tagName!=='SUMMARY')settings.append(n);
     summary.append(node('strong',null,'Resumen'),el('templateCount'),settings.querySelector('.profileActions'),settings.querySelector('small'));

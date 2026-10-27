@@ -4,6 +4,7 @@ __pycache__/
 **/build/
 local.properties
 node_modules/
+node_modules
 test-results/
 HiNote_Studio_Tablet_Android/app/src/main/assets/glyphs_v11.json
 HiNote_Studio_Tablet_Android/app/src/main/assets/glyphs_v22.json
@@ -17,3 +18,9 @@ HiNote_Studio_Tablet_Android/.github/
 # Android signing keys are private and must be backed up separately.
 *.keystore
 *.jks
+*.p12
+*.pem
+
+# Expanded handwriting is supplied only during private local APK packaging.
+private-release-assets/
+.github/assets/glyph_original_extension_v25.json.gz

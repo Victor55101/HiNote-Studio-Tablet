@@ -272,6 +272,41 @@ test('Profile choice persists in draft and switching invalidates the old preview
   assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));
   await page.click('#refreshBtn');const call=await page.evaluate(()=>bridgeCalls.filter(c=>c[0]==='compose').at(-1));assert.equal(JSON.parse(call[2]).profile,'a'.repeat(32));
 });
+test('Calibration active labels follow the applied handwriting independently of inspection',async page=>{
+  await calibrationBridge(page);
+  const labels=()=>page.locator('#profileList option').allTextContents();
+  assert.deepEqual(await labels(),['Original · activa','Mi letra nueva']);
+  await page.selectOption('#profileList','a'.repeat(32));
+  assert.deepEqual(await labels(),['Original · activa','Mi letra nueva']);
+  await page.click('#useProfile');
+  assert.deepEqual(await labels(),['Original','Mi letra nueva · activa']);
+  assert.equal(await page.evaluate(()=>activeProfile),'a'.repeat(32));
+  await page.selectOption('#profileList','original');
+  assert.deepEqual(await labels(),['Original','Mi letra nueva · activa']);
+  await page.click('#useProfile');
+  assert.deepEqual(await labels(),['Original · activa','Mi letra nueva']);
+  await page.screenshot({path:path.join(root,'test-results','calibration-active-labels.png')});
+});
+test('Calibration review actions stay visible without scrolling the 110-character result',async page=>{
+  await calibrationBridge(page);await page.click('#importProfile');
+  await page.evaluate(()=>{
+    const chars=Array.from({length:110},(_,i)=>String.fromCodePoint(0x400+i));
+    const detail={...testProfiles[1],name:'Original ampliada',found:chars,missing:[],fallback:[],unavailable:[],incomplete:[],variants:Object.fromEntries(chars.map(ch=>[ch,8]))};
+    const c=bridgeCalls.filter(c=>c[0]==='calibration-import').at(-1);
+    onCalibrationResult(c[2],JSON.stringify({review:true,replaced:0,detail}),null);
+  });
+  for(const size of [{width:1280,height:850},{width:600,height:700}]){
+    await page.setViewportSize(size);
+    const bounds=await page.locator('#importReview').boundingBox();
+    assert.ok(bounds&&bounds.y>=0&&bounds.y+bounds.height<=size.height);
+    for(const id of ['commitProfile','discardProfile']){
+      const r=await page.locator('#'+id).boundingBox();assert.ok(r&&r.y>=0&&r.y+r.height<=size.height,id);
+    }
+    assert.equal(await page.evaluate(()=>activeProfile),'original');
+    assert.equal(await page.evaluate(()=>document.querySelector('.profilePanes').contains(document.getElementById('importReview'))),false);
+    await page.screenshot({path:path.join(root,'test-results',`calibration-review-${size.width}.png`)});
+  }
+});
 test('Calibration imports are reviewed before saving and stale callbacks are ignored',async page=>{
   await calibrationBridge(page);await page.fill('#importProfileName','Otra');await page.click('#importProfile');
   assert.equal(await page.getAttribute('#editor','contenteditable'),'false');assert.equal(await page.isDisabled('#exportBtn'),true);
@@ -1263,11 +1298,12 @@ require('./clipboard.spec.cjs')({test,setup,select,lines,assert});
 require('./v54_1.spec.cjs')({test,setup,select,lines,paste,assert,openMath,openTable,importImage});
 require('./v54_3.spec.cjs')({test,setup,select,lines,assert});
 require('./v54_4.spec.cjs')({test,setup,assert,openMath});
+require('./production.spec.cjs')({test,setup,select,lines,assert});
 require('./v54.spec.cjs')({test,setup,assert,openMath,openTable,importImage});
 
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/clipboard.js','/theme.js','/theme.css','/editor.js','/text_model.js','/pdfs.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/privacy.js','/clipboard.js','/theme.js','/theme.css','/editor.js','/text_model.js','/pdfs.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));

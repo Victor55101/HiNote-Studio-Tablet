@@ -4,39 +4,32 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.graphics.Rect;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-/** One page at a time. Preview ink is transparent; exports use Huawei's native paper. */
+/** One page at a time. The export grid is drawn by HiNote, without a paper image. */
 final class PageRenderer {
-    static void renderForExport(String json, File destination, JSONArray images, File paper, Runnable check) throws Exception {
-        render(json, destination, false, 0, images, false, paper, check);
+    static void renderForExport(String json, File destination, JSONArray images, Runnable check) throws Exception {
+        render(json,destination,true,58.8,images,false,1,null,check);
     }
-    static void renderForExport(String json, File destination, JSONArray images, File paper, File pdf, Runnable check) throws Exception {
-        render(json,destination,false,0,images,false,paper,1,pdf,check);
+    static void renderForExport(String json, File destination, JSONArray images, File pdf, Runnable check) throws Exception {
+        render(json,destination,true,58.8,images,false,1,pdf,check);
     }
     static void renderPreview(String json, File destination, int resolution, File pdf, Runnable check) throws Exception {
-        render(json,destination,false,0,new JSONArray(),true,null,resolution>1?2:1,pdf,check);
+        render(json,destination,false,0,new JSONArray(),true,resolution>1?2:1,pdf,check);
     }
     static void render(String json, File destination, boolean grid, double gridStep, Runnable check) throws Exception {
         render(json, destination, grid, gridStep, new JSONArray(), false, check);
     }
     static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, Runnable check) throws Exception {
-        render(json, destination, grid, gridStep, images, inkOnly, null, check);
+        render(json, destination, grid, gridStep, images, inkOnly, 1, null, check);
     }
     static void renderPreview(String json, File destination, int resolution, Runnable check) throws Exception {
-        render(json, destination, false, 0, new JSONArray(), true, null, resolution > 1 ? 2 : 1, check);
+        render(json, destination, false, 0, new JSONArray(), true, resolution > 1 ? 2 : 1, null, check);
     }
-    private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, Runnable check) throws Exception {
-        render(json, destination, grid, gridStep, images, inkOnly, paper, 1, check);
-    }
-    private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, int resolution, Runnable check) throws Exception {
-        render(json,destination,grid,gridStep,images,inkOnly,paper,resolution,null,check);
-    }
-    private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, File paper, int resolution, File pdf, Runnable check) throws Exception {
+    private static void render(String json, File destination, boolean grid, double gridStep, JSONArray images, boolean inkOnly, int resolution, File pdf, Runnable check) throws Exception {
         check.run();
         // At most 1350 x 2160 (11.2 MiB), one page at a time. Export size is unchanged.
         Bitmap bitmap=Bitmap.createBitmap(675*resolution,1080*resolution,Bitmap.Config.ARGB_8888);
@@ -45,21 +38,11 @@ final class PageRenderer {
             Canvas canvas=new Canvas(bitmap); canvas.drawColor(inkOnly ? Color.TRANSPARENT : Color.WHITE);
             if(pdf!=null){
                 Bitmap background=ImageStore.decode(pdf,2160);
-                try{canvas.drawBitmap(background,null,new Rect(0,0,bitmap.getWidth(),bitmap.getHeight()),new Paint(Paint.FILTER_BITMAP_FLAG));}finally{background.recycle();}
-            }
-            if(paper!=null&&pdf==null){
-                Bitmap nativePaper=ImageStore.decode(paper,1080);
-                try{
-                    if(nativePaper.getWidth()!=675 || nativePaper.getHeight()!=1080)throw new IOException("Papel nativo inválido");
-                    canvas.drawBitmap(nativePaper,0,0,null);
-                    // Remove the template's single dash with a clean band from
-                    // the same columns; vertical grid lines keep their exact phase.
-                    canvas.drawBitmap(nativePaper,new Rect(40,88,88,104),new Rect(40,56,88,72),null);
-                }finally{nativePaper.recycle();}
+                try{canvas.drawBitmap(background,null,new android.graphics.Rect(0,0,bitmap.getWidth(),bitmap.getHeight()),new Paint(Paint.FILTER_BITMAP_FLAG));}finally{background.recycle();}
             }
             canvas.scale(.675f*resolution,.675f*resolution);
             Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
-            if(grid && !inkOnly){
+            if(grid && !inkOnly && pdf==null){
                 paint.setColor(Color.argb(46,115,160,180)); paint.setStrokeWidth(.6f);
                 float step=(float)Math.max(1,gridStep);
                 for(float x=0;x<=1000;x+=step)canvas.drawLine(x,0,x,1600,paint);

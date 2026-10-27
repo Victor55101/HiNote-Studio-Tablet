@@ -95,21 +95,22 @@ public class ImageStoreTest {
         File page=new File(directory,"page.jpg");PageRenderer.render(strokes,page,false,58.8,new JSONArray().put(im),false,()->{});
         b=BitmapFactory.decodeFile(page.getPath());assertTrue(Color.red(b.getPixel(135,162))<80);assertTrue(Color.red(b.getPixel(169,216))>180);b.recycle();
     }
-    @Test public void exportedPaperMatchesHuaweiAndHasNoCalibrationDash() throws Exception {
-        File paper=new File("src/main/assets/paper_base3_source.jpg");
-        assertTrue("Generated paper asset must exist",paper.isFile());
+    @Test public void exportedPaperIsGeneratedWithoutSourceImagesOrCalibrationInk() throws Exception {
+        assertFalse("An original thumbnail must not be bundled",new File("src/main/assets/paper_base3_source.jpg").exists());
         File output=new File(directory,"native.jpg");
-        PageRenderer.renderForExport("{\"strokes\":[]}",output,new JSONArray(),paper,()->{});
-        Bitmap result=BitmapFactory.decodeFile(output.getPath()),original=BitmapFactory.decodeFile(paper.getPath());
+        PageRenderer.renderForExport("{\"strokes\":[]}",output,new JSONArray(),()->{});
+        Bitmap result=BitmapFactory.decodeFile(output.getPath());
         assertEquals(675,result.getWidth());assertEquals(1080,result.getHeight());
-        // Template ink and JPEG ringing must be gone, including on blank pages.
+        // There is no source calibration dash. The grid has the same functional
+        // lattice as the editor, measured in logical 1000 x 1600 coordinates.
         for(int x=32;x<96;x++)for(int y=48;y<80;y++)assertTrue(Color.red(result.getPixel(x,y))>185);
-        assertTrue(Color.red(result.getPixel(600,700))<240);
-        assertTrue(Color.red(result.getPixel(620,700))>248);
-        long error=0;int samples=0;
-        for(int x=0;x<675;x+=3)for(int y=240;y<1080;y+=3){error+=Math.abs(Color.red(result.getPixel(x,y))-Color.red(original.getPixel(x,y)));samples++;}
-        assertTrue("Export must retain native grid color and spacing",error/(double)samples<2);
-        result.recycle();original.recycle();
+        for(int line=2;line<14;line++){
+            int x=(int)Math.round(line*58.8*.675),darkest=255;
+            for(int dx=-1;dx<=1;dx++)darkest=Math.min(darkest,Color.red(result.getPixel(x+dx,100)));
+            assertTrue("A grid division must be visible at its logical position",darkest<254);
+            assertTrue("Cell interiors remain white",Color.red(result.getPixel(x+15,100))>248);
+        }
+        result.recycle();
         File diagnostic=new File("build/reports/tests/native-paper.jpg");diagnostic.getParentFile().mkdirs();
         Files.copy(output.toPath(),diagnostic.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }

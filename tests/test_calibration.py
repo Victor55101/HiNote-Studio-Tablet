@@ -57,6 +57,20 @@ class CalibrationTests(unittest.TestCase):
         cal.prepare_import(note,self.work)
         return guides,note
 
+    def test_protected_original_has_all_basic_characters_and_eight_variants(self):
+        # Synthetic coverage fixture, independent of the private uploaded ink.
+        complete={**self.original,'glyphs':{**self.original['glyphs'],**{ch:copy.deepcopy(self.original['glyphs']['a']) for ch in '!¡&$°'}},'original_revision':'v25'}
+        (self.project/'glyphs_v24.json').write_text(json.dumps(complete))
+        profile=cal.load_profile(self.project,'original')
+        detail=cal.summary(self.project,profile)
+        self.assertEqual(profile['revision'],'v25')
+        self.assertEqual(set(profile['glyphs']),set(cal.BASE))
+        self.assertEqual(len(profile['glyphs']),110)
+        self.assertTrue(detail['protected'])
+        self.assertEqual(detail['missing'],[])
+        self.assertEqual(detail['incomplete'],[])
+        for ch in '!¡&$°':self.assertEqual(len(profile['glyphs'][ch]),8)
+
     def import_profile(self, chars='a_', filled=None, target=''):
         guides,_=self.template(chars,filled)
         review=json.loads(cal.extract(self.project,self.work,json.dumps(guides),'Mi prueba',target))

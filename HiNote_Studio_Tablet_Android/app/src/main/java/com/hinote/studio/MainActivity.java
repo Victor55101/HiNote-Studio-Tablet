@@ -60,9 +60,11 @@ public class MainActivity extends Activity {
     private NotesProbe notesProbe;
     private final AtomicBoolean notebookBusy=new AtomicBoolean(),notebookCancelled=new AtomicBoolean();
     private volatile int notebookTicket;
+    private boolean legalActive, legalWelcomeOpened;
 
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
+        legalWelcomeOpened=state!=null&&state.getBoolean("legalWelcomeOpened",false);
         draftFile=new AtomicFile(new File(getFilesDir(),"draft-v23.json"));
         exportFolder=new ExportFolder(this);
         try {imageStore=new ImageStore(getFilesDir());pdfStore=new PdfStore(getFilesDir(),getCacheDir());} catch(IOException e){startupError=message(e);}
@@ -90,7 +92,10 @@ public class MainActivity extends Activity {
                 File[] old=getCacheDir().listFiles();
                 if(old!=null)for(File f:old)if(f.getName().startsWith("hinote-session-")&&!f.equals(sessionDir)&&System.currentTimeMillis()-f.lastModified()>86400000L)deleteTree(f);
                 synchronized(ENGINE_START_LOCK){
-                    copyEngineAsset("glyphs_v24.json");copyEngineAsset("template_1stroke.hinote");copyEngineAsset("paper_base3_source.jpg");
+                    copyEngineAsset("glyphs_v24.json");copyEngineAsset("template_1stroke.hinote");
+                    // Only the obsolete bundled paper is removed. User profiles,
+                    // draft, images and PDF imports are left in place on update.
+                    new File(getFilesDir(),"paper_base3_source.jpg").delete();
                     if(!Python.isStarted())Python.start(new AndroidPlatform(getApplicationContext()));
                 }
                 backend=Python.getInstance().getModule("mobile_backend");
@@ -104,10 +109,16 @@ public class MainActivity extends Activity {
         if(android.os.Build.VERSION.SDK_INT>=33)ws.setAlgorithmicDarkeningAllowed(false);
         if(android.os.Build.VERSION.SDK_INT>=33)getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
             android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::handleEditorBack);
-        ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setBuiltInZoomControls(false);
+        WebSecurity.configure(webView,true);ws.setBuiltInZoomControls(false);
         webView.setWebViewClient(new WebViewClient(){
-            @Override public void onPageFinished(WebView view,String url){if(keyboardController!=null)keyboardController.publish();}
-            @Override public boolean shouldOverrideUrlLoading(WebView view,String url){return !url.startsWith("file:///android_asset/");}
+            @Override public void onPageFinished(WebView view,String url){
+                if(keyboardController!=null)keyboardController.publish();
+                if(WebSecurity.editorNavigation(url)&&!BuildConfig.NOTES_PROBE&&!legalWelcomeOpened&&LegalActivity.needsWelcome(MainActivity.this)){
+                    legalWelcomeOpened=true;
+                    view.post(()->openLegal(true));
+                }
+            }
+            @Override public boolean shouldOverrideUrlLoading(WebView view,String url){return !WebSecurity.editorNavigation(url);}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
                 Uri uri=request.getUrl();
                 if("https".equals(uri.getScheme()) && "hinote.local".equals(uri.getHost())){
@@ -117,7 +128,7 @@ public class MainActivity extends Activity {
                         return new WebResourceResponse(source.getName().endsWith(".png")?"image/png":"image/jpeg",null,new FileInputStream(source));
                     }catch(Exception e){return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",null,new ByteArrayInputStream(new byte[0]));}
                 }
-                if(!"file".equals(uri.getScheme()) && !"data".equals(uri.getScheme()))
+                if(!"GET".equals(request.getMethod()) || (!WebSecurity.packagedAsset(uri) && !"data".equals(uri.getScheme())))
                     return new WebResourceResponse("text/plain","UTF-8",403,"Blocked",null,new ByteArrayInputStream(new byte[0]));
                 return null;
             }
@@ -132,10 +143,13 @@ public class MainActivity extends Activity {
             notesProbe=new NotesProbe(this,(ticket,data,error)->send("onNotesProbeResult",ticket+","+(data==null?"null":quote(data))+","+(error==null?"null":quote(error))));
             notesProbe.receive(getIntent());
         }
-        webView.loadUrl("file:///android_asset/index.html");
+        webView.loadUrl(WebSecurity.EDITOR_URL);
     }
     private void copyEngineAsset(String name)throws Exception{
-        File out=new File(getFilesDir(),name);if(out.isFile()&&out.length()>0)return;
+        File out=new File(getFilesDir(),name);
+        // Refresh both bundled assets on upgrades too. Only the protected bank
+        // and format template are replaced; custom profiles and drafts are
+        // stored separately and must survive updates unchanged.
         File partial=new File(getFilesDir(),name+".part");
         try(InputStream in=getAssets().open(name);FileOutputStream stream=new FileOutputStream(partial)){
             byte[] buffer=new byte[16384];int n;while((n=in.read(buffer))!=-1)stream.write(buffer,0,n);stream.getFD().sync();
@@ -321,6 +335,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void requestTouchKeyboard(){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.requestTouchKeyboard();});}
         @JavascriptInterface public void cancelTouchKeyboard(boolean previewNavigation){runOnUiThread(()->{if(!destroyed&&keyboardController!=null)keyboardController.cancelTouchInput(previewNavigation);});}
         @JavascriptInterface public String readRichClipboard(){return destroyed||!clipboardFocused?"":RichClipboard.read(MainActivity.this);}
+        @JavascriptInterface public void openAbout(){runOnUiThread(()->openLegal(false));}
         @JavascriptInterface public void requestOpenNotes(String snapshot,String title,boolean grid,String images,int pages){
             if(destroyed||notebookBusy.get()||calibrating.get()||importing.get()||choosingFolder.get()||!exporting.compareAndSet(false,true))return;
             if(snapshot==null||!snapshot.equals(latestSnapshot)){finishExport(false,"Actualiza la vista antes de exportar");return;}
@@ -461,7 +476,7 @@ public class MainActivity extends Activity {
             for(int j=0;j<images.length();j++)if(images.getJSONObject(j).getInt("page")==i)pageImages.put(images.getJSONObject(j));
             String json=i<info.getInt("page_count")?backend.callAttr("page_preview",sessionDir.getPath(),snapshot,i).toString():"{\"strokes\":[]}";
             JSONObject pdf=new JSONObject(json).optJSONObject("pdf");
-            PageRenderer.renderForExport(json,new File(work,"page-"+i+"-native.jpg"),pageImages,new File(getFilesDir(),"paper_base3_source.jpg"),pdf==null?null:pdfStore.preview(pdf,1,token::check),token::check);
+            PageRenderer.renderForExport(json,new File(work,"page-"+i+"-native.jpg"),pageImages,pdf==null?null:pdfStore.preview(pdf,1,token::check),token::check);
             token.onProgress(i+1);
         }
         token.check();backend.callAttr("export_snapshot",getFilesDir().getPath(),sessionDir.getPath(),snapshot,title,true,output.getPath(),token,images.toString(),count,work.getPath());
@@ -474,7 +489,7 @@ public class MainActivity extends Activity {
             if("page-sample-bridge".equals(action)){
                 if(!work.mkdirs())throw new IOException("No se pudo preparar el temporal");
                 output=ProbeFileProvider.create(this,"hinote");
-                PageRenderer.renderForExport(TransferInk.SAMPLE,new File(work,"page-0-native.jpg"),new JSONArray(),new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
+                PageRenderer.renderForExport(TransferInk.SAMPLE,new File(work,"page-0-native.jpg"),new JSONArray(),token::check);
                 backend.callAttr("export_transfer_sample",getFilesDir().getPath(),sessionDir.getPath(),TransferInk.SAMPLE,output.getPath(),work.getPath(),token);
                 token.check();notesProbe.openBridge(output,ticket);output=null;return;
             }
@@ -497,7 +512,7 @@ public class MainActivity extends Activity {
             output=ProbeFileProvider.create(this,"page-png".equals(action)?"png":"hinote");
             if("page-png".equals(action))PageRenderer.render(json,output,args.optBoolean("grid",true),40.0/.675,images,false,token::check);
             else{
-                PageRenderer.renderForExport(json,new File(work,"page-0-native.jpg"),images,new File(getFilesDir(),"paper_base3_source.jpg"),token::check);
+                PageRenderer.renderForExport(json,new File(work,"page-0-native.jpg"),images,token::check);
                 backend.callAttr("export_probe_page",getFilesDir().getPath(),sessionDir.getPath(),snapshot,page,args.optString("title","Prueba")+" · Página "+(page+1),output.getPath(),token,images.toString(),count,work.getPath());
             }
             token.check();if("page-bridge".equals(action))notesProbe.openBridge(output,ticket);else notesProbe.publishPage(action,output,page,ticket);output=null;
@@ -566,7 +581,13 @@ public class MainActivity extends Activity {
         });
     }
     @Override public void onBackPressed(){handleEditorBack();}
-    @Override protected void onResume(){super.onResume();if(keyboardController!=null)keyboardController.start();}
+    private void openLegal(boolean welcome){
+        if(destroyed||isFinishing()||legalActive)return;
+        legalActive=true;
+        startActivity(new Intent(this,LegalActivity.class).putExtra(LegalActivity.EXTRA_WELCOME,welcome));
+    }
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("legalWelcomeOpened",legalWelcomeOpened);super.onSaveInstanceState(state);}
+    @Override protected void onResume(){super.onResume();legalActive=false;if(keyboardController!=null)keyboardController.start();}
     @Override public void onWindowFocusChanged(boolean focus){clipboardFocused=focus;super.onWindowFocusChanged(focus);if(focus&&keyboardController!=null)keyboardController.windowFocused();}
     @Override public void onConfigurationChanged(android.content.res.Configuration config){super.onConfigurationChanged(config);if(keyboardController!=null)keyboardController.refresh();}
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){boolean handled=super.dispatchKeyEvent(event);if(keyboardController!=null)keyboardController.observe(event);return handled;}

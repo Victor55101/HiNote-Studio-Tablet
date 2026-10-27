@@ -1,0 +1,9 @@
+SQLite
+https://sqlite.org/copyright.html
+
+SQLite is in the public domain. The SQLite library is included by the Python
+runtime distributed with Chaquopy. No separate license is required for the
+public-domain SQLite source.
+
+The runtime also includes Android platform libraries supplied by the operating
+system, which are not redistributed as part of HiNote Studio.
