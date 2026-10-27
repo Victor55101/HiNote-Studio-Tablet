@@ -134,6 +134,7 @@ window.ProEditor = (() => {
     document.body.classList.add('proEdition');document.querySelector('.titlewrap h1').textContent='HiNote Studio Pro';
     const bar=document.createElement('div');bar.className='proBar';bar.innerHTML='<div><strong>Tu documento</strong><span id="proHint" role="status">Preparando tu escritura…</span></div><button class="btn" id="proCopy" hidden>Copiar selección</button><button class="btn" id="proMode" aria-pressed="false">Editor unificado</button>';
     bar.firstElementChild.prepend($p('noteTitle'));
+    document.querySelector('.previewFooter .center').prepend($p('pageBadge'));
     $p('previewWrap').before(bar);$p('proCopy').onclick=()=>{resumeEditor();if(!document.execCommand('copy'))toast('Usa Ctrl+C para copiar la selección');};
     $p('proMode').onclick=()=>{manualClassic=active||!manualClassic;changed();if(!active)drawCurrent();else applyZoom();};
     const selectionCanvas=document.createElement('canvas');selectionCanvas.id='proSelection';selectionCanvas.setAttribute('aria-hidden','true');$p('canvasShell').append(selectionCanvas);

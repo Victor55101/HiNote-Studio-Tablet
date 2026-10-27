@@ -9,6 +9,7 @@ import android.view.MotionEvent;
 import android.view.InputDevice;
 import android.os.SystemClock;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.InputConnection;
 import org.json.JSONObject;
 import android.view.ViewGroup;
@@ -55,17 +56,21 @@ public class ProEditorDeviceTest {
             instrumentation.runOnMainSync(()->web=find(activity.getWindow().getDecorView()));assertNotNull(web);
             waitFor("!!window.ProEditor?.active");
             js("renderLines([[{text:'Apuntes con mi escritura',...DEFAULT_STYLE}]]);restoreSelection({start:{line:0,offset:23},end:{line:0,offset:23}},false);changed();true");
-            instrumentation.runOnMainSync(()->web.requestFocus());
-            JSONObject point=new JSONObject(js("(()=>{const c=ProEditor.testPlan().pages[0].rows[0].carets.at(-1),r=$('canvasShell').getBoundingClientRect();return {x:r.left+c.x*.675*zoom,y:r.top+(c.y-20)*.675*zoom}})()"));
+            js("editor.blur();zoom=.65;applyZoom();true");
+            instrumentation.runOnMainSync(()->{web.requestFocus();((InputMethodManager)context.getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(web.getWindowToken(),0);});
+            Thread.sleep(600);
+            JSONObject point=new JSONObject(js("(()=>{const c=ProEditor.testPlan().pages[0].rows[0].carets.at(-1),r=$('canvasShell').getBoundingClientRect();const w=$('previewWrap').getBoundingClientRect();return {x:r.left+c.x*.675*zoom,y:Math.max(w.top+8,Math.min(w.bottom-8,r.top+(c.y-20)*.675*zoom))}})()"));
             int[] location=new int[2];instrumentation.runOnMainSync(()->web.getLocationOnScreen(location));
+            double ratio=web.getWidth()/Double.parseDouble(js("window.innerWidth"));
+            System.out.println("PRO_DEVICE "+js("JSON.stringify({viewport:[innerWidth,innerHeight,devicePixelRatio],focus:document.activeElement.id,preview:$('previewWrap').getBoundingClientRect().toJSON(),canvas:$('canvasShell').getBoundingClientRect().toJSON()})")+" point="+point+" ratio="+ratio);
             long now=SystemClock.uptimeMillis();
             for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP}){
-                MotionEvent event=MotionEvent.obtain(now,now+(action==MotionEvent.ACTION_UP?100:0),action,location[0]+(float)point.getDouble("x"),location[1]+(float)point.getDouble("y"),0);
+                MotionEvent event=MotionEvent.obtain(now,now+(action==MotionEvent.ACTION_UP?100:0),action,location[0]+(float)(point.getDouble("x")*ratio),location[1]+(float)(point.getDouble("y")*ratio),0);
                 event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
                 try{assertTrue(instrumentation.getUiAutomation().injectInputEvent(event,true));}finally{event.recycle();}
             }
             Thread.sleep(500);instrumentation.waitForIdleSync();
-            assertEquals("true",js("document.activeElement===editor"));
+            assertEquals(js("JSON.stringify({focus:document.activeElement.id,text:readLines().map(lineText),keyboard:window.hinoteKeyboardCanShow?.()})"),"true",js("document.activeElement===editor"));
             instrumentation.runOnMainSync(()->{
                 InputConnection connection=web.onCreateInputConnection(new EditorInfo());
                 assertNotNull("Native IME input connection",connection);
