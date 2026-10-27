@@ -193,6 +193,16 @@ public class MainActivity extends Activity {
     public final class Bridge{
         @JavascriptInterface public String getTheme(){return themeController==null?"light":themeController.get();}
         @JavascriptInterface public void setTheme(String theme){if(ThemeController.valid(theme))runOnUiThread(()->{if(!destroyed&&themeController!=null)themeController.set(theme,webView);});}
+        @JavascriptInterface public boolean isProEditor(){return BuildConfig.PRO_EDITOR;}
+        @JavascriptInterface public void requestLiveLibrary(String profile,int ticket){
+            if(!BuildConfig.PRO_EDITOR||destroyed)return;
+            worker.execute(()->{
+                try{
+                    ready();String data=backend.callAttr("pro_live_library",getFilesDir().getPath(),profile).toString();
+                    send("onProLibrary",ticket+","+quote(data)+",null");
+                }catch(Exception error){send("onProLibrary",ticket+",null,"+quote(message(error)));}
+            });
+        }
         @JavascriptInterface public boolean isNotesProbe(){return BuildConfig.NOTES_PROBE;}
         @JavascriptInterface public boolean hasProbeShare(){return BuildConfig.NOTES_PROBE&&notesProbe!=null&&notesProbe.hasShared();}
         @JavascriptInterface public void requestProbeAction(String action,String raw,int ticket){

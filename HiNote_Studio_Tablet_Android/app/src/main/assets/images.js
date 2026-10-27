@@ -185,6 +185,7 @@ const ImageEditor = (() => {
       scrollX:el('previewWrap').scrollLeft,scrollY:el('previewWrap').scrollTop};
   }
   function pointerDown(e){
+    if(window.ProEditor?.active&&!active)return;
     const corner=cornerAt(e);
     if((!corner&&e.target.closest('.tableQuickActions,.tableResize,.objectQuickActions,.objectResize'))||MathGraphEditor.isDragging())return;
     if(e.target.closest('.imageQuickActions')&&!e.target.closest('[data-handle]'))return;

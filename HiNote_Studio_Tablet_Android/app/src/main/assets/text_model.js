@@ -395,6 +395,7 @@ function deleteStructure(backwards){
   return false;
 }
 function scrollCaretIntoView(root=editor){
+  if(window.ProEditor?.active)return;
   const selection=getSelection();if(!selection?.rangeCount||!root.contains(selection.focusNode))return;
   const range=document.createRange();range.setStart(selection.focusNode,selection.focusOffset);range.collapse(true);
   let rect=range.getBoundingClientRect();

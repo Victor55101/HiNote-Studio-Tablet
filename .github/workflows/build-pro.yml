@@ -1,0 +1,63 @@
+name: HiNote Studio Pro development
+on:
+  push:
+    branches: [pro-development]
+    paths-ignore: ['docs/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hinote-pro-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python .github/scripts/prepare_assets.py
+      - run: python .github/scripts/prepare_legal.py
+      - run: python -m unittest discover -s tests -p 'test_*.py'
+      - run: npm install --no-save --no-audit --no-fund playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/editor.spec.cjs
+      - run: node tests/pro_editor.spec.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Pro-editor-validation
+          path: test-results/
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: python .github/scripts/prepare_assets.py
+      - run: python .github/scripts/prepare_legal.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - run: gradle --no-daemon testProReleaseUnitTest assembleProRelease
+        working-directory: HiNote_Studio_Tablet_Android
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Pro-Android-validation
+          path: HiNote_Studio_Tablet_Android/app/build/reports/tests/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pro-0.1.0-Solo-CI-SIN-FIRMA-No-instalar
+          path: HiNote_Studio_Tablet_Android/app/build/outputs/apk/pro/release/app-pro-release-unsigned.apk

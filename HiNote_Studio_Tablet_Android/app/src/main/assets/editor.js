@@ -405,10 +405,10 @@ function settings() {
   return {letter_spacing: bounded($('letterSpacing').value, -8, 8, 0), word_spacing: bounded($('wordSpacing').value, 12, 60, 26),
     line_grid_rows: Math.round(bounded($('lineRows').value, 1, 4, 1)), list_indent_squares: 0, auto_line_spacing: true, seed: 12345, profile: activeProfile};
 }
-function serializeDocument() {
+function serializeDocument(includePro=true) {
   const config = settings();
   const lines=readLines(),markers=listMarkers(lines);
-  return {paragraphs:lines.map((line,i)=>{
+  return {...(includePro&&window.ProEditor?.active?{pro_layout:ProEditor.exportPlan()}:{}),paragraphs:lines.map((line,i)=>{
     if(PdfEditor.isLine(line))return {type:'pdf',pdf:PdfEditor.normalize(line[0].pdf)};
     if(TableEditor.isLine(line))return {type:'table',table:TableEditor.get(line[0].tableId)};
     if(MathGraphEditor.isLine(line)){const object=MathGraphEditor.get(line[0].objectId);return {type:object.kind,object};}
@@ -503,8 +503,10 @@ function changed() {
   if (window.AndroidBridge) AndroidBridge.invalidateCompose(revision);
   $('status').textContent = 'Vista pendiente…'; controls(); queueDraft();
   if(!$('autoPreview').checked||characterCount()>12000)$('status').textContent = 'Pulsa Actualizar para ver los cambios';
+  window.ProEditor?.changed();
 }
 function scheduleAutoPreview(n=characterCount()){
+  if(window.ProEditor?.active)return;
   clearTimeout(refreshTimer);
   const migrating=PdfEditor.hasAnchors();
   if(!autoRefreshPending||!migrating&&(!$('autoPreview').checked||n>12000)||ime||exporting||composing||CalibrationUI.isBusy()||NotebookUI.isBusy()||PdfEditor.isBusy()||MathGraphEditor.isOpen()||TableEditor.isOpen()||folderBusy)return;
@@ -535,6 +537,7 @@ window.onComposeResult = (id, json) => {
   if(saveRequested){saveRequested=false;exportNote(pendingExportMode);}
 };
 window.onComposePageReady = (id, json, index, data) => {
+  if(window.ProEditor?.active)return;
   if(id!==revision||!composing||index!==currentPage)return;
   const result=JSON.parse(json),img=new Image(),request=++pageRequest;
   const fresh=()=>id===revision&&composing&&index===currentPage&&request===pageRequest;
@@ -556,6 +559,7 @@ window.onWorkProgress = (kind, id, page) => {
   if (kind === 'calibration') window.onCalibrationProgress(id,`Analizando página ${page}…`);
 };
 function drawCurrent() {
+  if(window.ProEditor?.active){ProEditor.showPage();return;}
   window.AndroidBridge?.setPreviewPage?.(currentPage);
   const keep=shownPreview?.snapshot===composition?.snapshot&&shownPreview?.index===currentPage;
   const previousShown=shownPreview;
@@ -575,6 +579,7 @@ function drawCurrent() {
   requestPreview();
 }
 function requestPreview(){
+  if(window.ProEditor?.active){ProEditor.showPage();return;}
   if(!window.AndroidBridge||!composition||currentPage>=composition.page_count||previewRevision!==revision||exporting||CalibrationUI.isBusy()||composing)return;
   const snapshot=composition.snapshot,index=currentPage,resolution=previewResolution();
   if([requestedPreview,shownPreview].some(p=>p?.snapshot===snapshot&&p.index===index&&p.resolution>=resolution))return;
@@ -586,6 +591,7 @@ function requestPreview(){
 }
 function schedulePreviewQuality(){clearTimeout(qualityTimer);qualityTimer=setTimeout(requestPreview,220);}
 window.onPageResult = (id, snapshot, index, data, error) => {
+  if(window.ProEditor?.active)return;
   const fresh = () => id === pageRequest && composition?.snapshot === snapshot && index === currentPage && previewRevision === revision;
   if (!fresh()) return;
   if (error) { requestedPreview=null;$('status').textContent = 'Error de vista'; toast(error); return; }
@@ -604,6 +610,7 @@ function applyZoom() {
   TableEditor.render();
   MathGraphEditor.render();
   schedulePreviewQuality();
+  if(window.ProEditor?.active)ProEditor.showPage();
 }
 function exportNote(mode='save') {
   if (exporting || CalibrationUI.isBusy() || NotebookUI.isBusy() || MathGraphEditor.isOpen() || TableEditor.isOpen() || folderBusy || ImageEditor.isBusy() || ime) return;

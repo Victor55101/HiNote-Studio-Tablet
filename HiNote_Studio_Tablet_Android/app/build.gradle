@@ -14,6 +14,7 @@ android {
         versionCode 68
         versionName '1.0.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        buildConfigField 'boolean', 'PRO_EDITOR', 'false'
 
         ndk {
             // The override is only used by the isolated emulator test job.
@@ -32,6 +33,15 @@ android {
     buildFeatures { buildConfig true }
     flavorDimensions 'edition'
     productFlavors {
+        pro {
+            dimension 'edition'
+            applicationIdSuffix '.pro'
+            versionCode 1
+            versionName '0.1.0'
+            buildConfigField 'boolean', 'NOTES_PROBE', 'false'
+            buildConfigField 'boolean', 'PRO_EDITOR', 'true'
+            manifestPlaceholders = [appLabel: 'HiNote Studio Pro']
+        }
         production {
             dimension 'edition'
             // Update the user's accepted V54.2-V54.4 installation in place.

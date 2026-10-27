@@ -135,7 +135,7 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
               "profile": profile_id, "profile_revision": profile_revision}
     previous = old_info = resume = None
     checkpoints = []
-    if previous_snapshot:
+    if previous_snapshot and "pro_layout" not in doc:
         try:
             previous = _snapshot(cache, previous_snapshot)
             old_inputs = json.loads((previous / "inputs.json").read_text(encoding="utf-8"))
@@ -230,9 +230,13 @@ def compose(project_dir, cache_dir, document_json, settings_json, token=None, pr
                 raise ValueError("La nota supera el espacio de trabajo de 512 MB; divídela en varias notas.")
             if token is not None: token.onProgress(index + 1)
             ready()
-        result = compose_document(project / "glyphs_v24.json", doc, **settings,
-            page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library,
-            resume_state=resume, checkpoint_sink=save_checkpoint if previous_snapshot is not None else None)
+        if "pro_layout" in doc:
+            from pro_editor import compose_live
+            result = compose_live(doc, library, settings, sink, lambda: _check(token))
+        else:
+            result = compose_document(project / "glyphs_v24.json", doc, **settings,
+                page_sink=sink, check_cancelled=lambda: _check(token), max_pages=MAX_PAGES, library_data=library,
+                resume_state=resume, checkpoint_sink=save_checkpoint if previous_snapshot is not None else None)
         used = set()
         for para in doc["paragraphs"]:
             if para.get("type") in ("formula", "graph"):
@@ -401,3 +405,8 @@ def _export_images(raw, count, directory):
 def remove_snapshot(cache_dir, snapshot_id):
     if re.fullmatch(r"[0-9a-f]{32}", snapshot_id):
         shutil.rmtree(Path(cache_dir)/snapshot_id, ignore_errors=True)
+
+
+def pro_live_library(project_dir, profile):
+    from pro_editor import live_library
+    return _json(live_library(project_dir, profile))

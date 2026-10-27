@@ -1303,7 +1303,7 @@ require('./v54.spec.cjs')({test,setup,assert,openMath,openTable,importImage});
 
 (async () => {
   const server = http.createServer((request,response) => {
-    const url=request.url.split('?')[0],file=['/privacy.js','/clipboard.js','/theme.js','/theme.css','/editor.js','/text_model.js','/pdfs.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
+    const url=request.url.split('?')[0],file=['/pro_editor.js','/pro_layout.js','/pro_editor.css','/privacy.js','/clipboard.js','/theme.js','/theme.css','/editor.js','/text_model.js','/pdfs.js','/images.js','/images.css','/tables.js','/tables.css','/math_graph.js','/math_graph.css','/notebooks.js','/notes_probe.js','/calibration.js','/calibration.css','/logo-hinote.svg','/studio.js','/studio_controls.js','/studio.css','/fonts/Manrope.ttf'].includes(url)?url.slice(1):'index.html';
     response.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); response.end(fs.readFileSync(path.join(assets,file)));
   });
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
